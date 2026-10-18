@@ -1,0 +1,24 @@
+import {useState} from 'react'
+type Subject='math'|'chinese'|'english'|'physics'
+type Item={exposure_id:string; question_version_id:string; stem:string; options:string[]; kind:string; knowledge_ids:string[]; purpose:string}
+const subjects:Record<Subject,string>={math:'数学',chinese:'语文',english:'英语',physics:'物理'}
+export default function App(){
+ const [token,setToken]=useState(''); const [subject,setSubject]=useState<Subject>('math'); const [item,setItem]=useState<Item|null>(null)
+ const [answer,setAnswer]=useState('');const [target,setTarget]=useState(90);const [minutes,setMinutes]=useState(15)
+ const [examscore,setExamscore]=useState(72);const [exammax,setExammax]=useState(100)
+ const [message,setMessage]=useState('输入私有访问令牌后开始。');const [plan,setPlan]=useState<any>(null)
+ async function call(path:string, method='GET',body?:unknown){try{const r=await fetch(path,{method,headers:{'Authorization':`Bearer ${token}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const v=await r.json();if(!r.ok)throw new Error(typeof v.detail==='string'?v.detail:`HTTP ${r.status}`);return v}catch(e){setMessage(String(e));throw e}}
+ async function next(purpose:'training'|'evaluation'){try{const v=await call(`/api/practice/next?subject=${subject}&purpose=${purpose}`);setItem(v);setAnswer('');setMessage(purpose==='evaluation'?'独立验证：这道题必须自行完成。':'练习题已加载。')}catch{}}
+ async function submit(){if(!item)return;try{const v=await call('/api/practice/attempts','POST',{client_attempt_id:crypto.randomUUID(),exposure_id:item.exposure_id,answer,hints_used:false});setMessage(v.earned_points===null?'主观题已记录，尚未评分。':`本题得分：${v.earned_points}/${v.max_points}`);setItem(null)}catch{}}
+ async function saveGoal(){try{const v=await call('/api/goals','POST',{subject,target_points:Number(target),max_points:subject==='physics'?80:100,minutes_per_day:Number(minutes)});setMessage(`目标版本 ${v.version} 已保存；这不是中考成绩预测。`)}catch{}}
+ async function saveExam(){try{const v=await call('/api/school-exams','POST',{subject,title:'手动录入的学校考试',exam_date:new Date().toISOString().slice(0,10),earned_points:Number(examscore),max_points:Number(exammax),confirmed_by_user:true});setMessage(`学校考试已保存（${v.id}），仅录入总分不会生成知识点证据。`)}catch{}}
+ async function loadPlan(){try{setPlan(await call(`/api/guidance/plan?subject=${subject}`));setMessage('当前计划属于未校准的规则推荐，不代表预测分数。')}catch{}}
+ return <main className="page"><header><div><span className="eyebrow">SHUTONG · PRIVATE BETA</span><h1>书童 <small>目标驱动的中考练习</small></h1></div><span className="pill">本地 / 私有</span></header>
+ <section className="card"><label>访问令牌（仅保留在页面内存中，不会持久化）<input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="SHUTONG_TOKEN" autoComplete="off"/></label><p className="muted">当前为开发验证界面，需在管理员审核发布题目后才能开始练习。</p></section>
+ <section className="card"><h2>训练科目</h2><div className="tabs">{(Object.keys(subjects) as Subject[]).map(k=><button className={subject===k?'selected':''} key={k} onClick={()=>{setSubject(k);setTarget(k==='physics'?70:90);setItem(null);setPlan(null)}}>{subjects[k]}</button>)}</div></section>
+ <div className="columns"><section className="card"><h2>设定目标</h2><label>科目目标分<input type="number" min="0" max={subject==='physics'?80:100} value={target} onChange={e=>setTarget(Number(e.target.value))}/></label><label>每天练习分钟数<input type="number" min="5" max="240" value={minutes} onChange={e=>setMinutes(Number(e.target.value))}/></label><button onClick={saveGoal}>保存目标</button><p className="muted">英语听说和物理实验部分暂未完整训练；规划阈值是未校准假设。</p></section>
+ <section className="card"><h2>学校考试</h2><label>获得分数<input type="number" value={examscore} onChange={e=>setExamscore(Number(e.target.value))}/></label><label>考试满分<input type="number" value={exammax} onChange={e=>setExammax(Number(e.target.value))}/></label><button onClick={saveExam}>记录已核对总分</button><p className="muted">只录入总分，不生成虚构考点表现。</p></section></div>
+ <section className="card"><h2>真题训练与独立验证</h2><div className="tabs"><button onClick={()=>next('training')}>开始练习</button><button className="secondary" onClick={()=>next('evaluation')}>领取未见题验证</button></div>{item&&<div className="question"><span className="eyebrow">{item.purpose==='evaluation'?'独立验证':'专项训练'} · {item.knowledge_ids.join(', ')}</span><h3>{item.stem}</h3>{item.options.map(x=><div key={x}>{x}</div>)}<label>答案（选择题填写选项键，如 B）<input value={answer} onChange={e=>setAnswer(e.target.value)}/></label><button onClick={submit}>提交答案</button></div>}</section>
+ <section className="card"><h2>差距与训练计划</h2><button onClick={loadPlan}>刷新学习计划</button>{plan&&<><p className="muted">模型：{plan.model_version} · 目标版本：{plan.goal_version}</p>{plan.steps.length===0?<p>暂无已发布知识点，请先导入已审核题目。</p>:plan.steps.map((s:any)=><div className="step" key={s.knowledge_id}><b>{s.knowledge_id}</b> · {s.gap_type}<p>{s.reason}</p></div>)}</>}</section>
+ <p className="notification" role="status">{message}</p><footer>开发基础版 · 不含真实历年中考试卷 · 不作中考分数预测</footer></main>
+}

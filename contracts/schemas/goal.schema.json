@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/shutong/goal.schema.json",
+  "title": "GoalDTO",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subject", "target_points", "max_points", "minutes_per_day"],
+  "properties": {
+    "subject": {"enum": ["math", "chinese", "english", "physics"]},
+    "target_points": {"type": "number", "minimum": 0},
+    "max_points": {"type": "number", "exclusiveMinimum": 0},
+    "minutes_per_day": {"type": "integer", "minimum": 5, "maximum": 240}
+  }
+}

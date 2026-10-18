@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/shutong/evidence.schema.json",
+  "title": "EvidenceProjection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_event_id", "question_version_id", "knowledge_id", "earned_points", "max_points", "independent", "is_first_exposure", "scoring_origin"],
+  "properties": {
+    "source_event_id": {"type": "string", "minLength": 1},
+    "question_version_id": {"type": "string", "minLength": 1},
+    "knowledge_id": {"type": "string", "minLength": 1},
+    "earned_points": {"type": "number", "minimum": 0},
+    "max_points": {"type": "number", "exclusiveMinimum": 0},
+    "independent": {"type": "boolean"},
+    "is_first_exposure": {"type": "boolean"},
+    "scoring_origin": {"enum": ["reviewed_answer_key", "teacher_confirmed", "self_assessment", "ungraded_subjective"]}
+  }
+}

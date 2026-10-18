@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/shutong/source-document.schema.json",
+  "title": "SourceDocumentManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "subject", "exam_year", "source_url", "rights_status", "verified", "sha256"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "subject": {"enum": ["math", "chinese", "english", "physics"]},
+    "exam_year": {"type": "integer", "minimum": 1990, "maximum": 2100},
+    "source_url": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "rights_status": {"enum": ["unknown", "personal_use_reviewed", "licensed"]},
+    "verified": {"type": "boolean"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "description": "Future controlled file-ingestion manifest; not equivalent to current minimal HTTP SourceIn DTO."
+}

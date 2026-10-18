@@ -1,0 +1,4 @@
+jsonschema[format]>=4.23,<5
+PyYAML>=6,<7
+markdown-it-py>=3,<5
+pytest>=8,<10

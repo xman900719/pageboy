@@ -1,0 +1,45 @@
+name: Verify foundation
+on:
+  push:
+  pull_request:
+jobs:
+  api-and-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install API and tool dependencies
+        run: |
+          python -m pip install -e './services/api[test]'
+          python -m pip install -r requirements-tools.txt
+      - name: Contract, docs and snapshot checks
+        run: |
+          python scripts/validate_contracts.py
+          python scripts/check_docs.py
+          python scripts/check_openapi.py
+          python -m pytest scripts/test_docs_checker.py -q
+      - name: Build Docs as Code site (strict)
+        run: |
+          python -m pip install zensical
+          zensical build --strict
+      - name: API tests
+        run: |
+          cd services/api
+          pytest -q
+      - name: Database migration smoke
+        run: |
+          cd services/api
+          DATABASE_URL=sqlite+pysqlite:////tmp/shutong-ci.sqlite3 python -m alembic upgrade head
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install front-end
+        run: cd apps/web && npm ci --no-audit --no-fund
+      - name: Build front-end
+        run: cd apps/web && npm run build

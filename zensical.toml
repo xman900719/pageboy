@@ -1,0 +1,7 @@
+[project]
+site_name = "书童 · ShuTong Docs"
+site_description = "个人中考训练系统 V1.6 工程文档"
+docs_dir = "docs"
+site_dir = "site"
+strict = true
+use_directory_urls = true
