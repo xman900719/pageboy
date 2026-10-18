@@ -2,7 +2,7 @@
 
 ## 架构
 
-一套 FastAPI 模块化单体 + React/Vite Web/PWA + PostgreSQL（开发测试可 SQLite）。四个业务逻辑域由轻量 HTTP/应用编排层调用，**不是四个微服务**。OCR/AI 在独立管线处理，不能与正式判分或在线事务直接耦合。
+一套 FastAPI 模块化单体 + React/Vite Web/PWA + PostgreSQL（开发测试可 SQLite）。四个业务逻辑域由轻量 HTTP/应用编排层调用，**不是四个微服务**。本地 OCR/文本提取由独立适配模块处理，不能与正式判分直接耦合；当前同步解析有时间与输入大小上限，不引入消息中间件。
 
 ```mermaid
 flowchart TB
@@ -16,7 +16,7 @@ flowchart TB
   PRC --> DB
   EVD --> DB
   GAP -.纯领域函数.-> APP
-  APP --> STORAGE[私有文件仓库/待实施]
+  APP --> STORAGE[私有原件目录/ST-003]
 ```
 
 ## 领域职责

@@ -22,4 +22,4 @@ createdb -h 127.0.0.1 -U recovery_operator shutong_recovery
 pg_restore -h 127.0.0.1 -U recovery_operator -d shutong_recovery --no-owner /secure/isolated-restore/postgres.dump
 ```
 
-上面脚本还需要根据 `restic restore` 的实际目录结构调整路径。未实现文件存储前，附件步骤只能标记 N/A；已包含附件的实际数据绝不能省略联合恢复验证。`ST-OPS-01` 必须产出**真实演练报告**。
+上面脚本还需要根据 `restic restore` 的实际目录结构调整路径。ST-003 已实现私有原件目录；已包含附件的实际数据绝不能省略联合恢复验证，当前覆盖范围以备份策略为准。`ST-OPS-01` 必须产出**真实演练报告**。

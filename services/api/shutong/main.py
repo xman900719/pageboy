@@ -2,28 +2,22 @@
 from __future__ import annotations
 import os
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from .auth import require_owner
+from .content import create_question_draft
+from .ingestion import router as ingestion_router, require_import_integrity
 from .database import get_db
 from . import models as m
 from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, GoalIn, Subject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
+app.include_router(ingestion_router)
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if x.strip()], allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["Authorization", "Content-Type"])
-
-
-def require_owner(authorization: str | None = Header(default=None)) -> str:
-    import hmac
-    expected = os.getenv("SHUTONG_TOKEN")
-    if not expected:
-        raise HTTPException(503, detail="SHUTONG_TOKEN is not configured")
-    if authorization is None or not authorization.startswith("Bearer ") or not hmac.compare_digest(authorization[7:], expected):
-        raise HTTPException(401, detail="Owner authorization required", headers={"WWW-Authenticate": "Bearer"})
-    return "owner"
 
 @app.get("/health/live")
 def live():
@@ -48,11 +42,9 @@ def add_question(payload: QuestionIn, owner: str = Depends(require_owner), db: S
     src = db.get(m.SourceDocument, payload.source_document_id)
     if src is None:
         raise HTTPException(404, detail="source not found")
-    q = m.Question(source_document_id=src.id, subject=src.subject)
-    db.add(q); db.flush()
-    v = m.QuestionVersion(question_id=q.id, version=1, **payload.model_dump(exclude={"source_document_id"}))
-    db.add(v); db.commit(); db.refresh(v)
-    return {"id": v.id, "question_id": q.id, "status": v.status}
+    v = create_question_draft(db, src, payload)
+    db.commit(); db.refresh(v)
+    return {"id": v.id, "question_id": v.question_id, "status": v.status}
 
 @app.post("/api/admin/questions/{version_id}/revisions", status_code=201, response_model=QuestionRevisionOut,
           responses={401: {"description": "Owner authorization required"}, 404: {"description": "Version not found"},
@@ -71,6 +63,10 @@ def revise_question(version_id: str, payload: QuestionIn, owner: str = Depends(r
     revised = m.QuestionVersion(question_id=question.id, version=next_version, **payload.model_dump(exclude={"source_document_id"}))
     db.add(revised)
     try:
+        db.flush()
+        imported = db.get(m.ImportedQuestion, original.id)
+        if imported is not None:
+            db.add(m.ImportedQuestion(question_version_id=revised.id, attachment_id=imported.attachment_id))
         db.commit()
     except IntegrityError:
         # 版本唯一约束拦截并行修订的编号冲突，失败请求不留下部分记录。
@@ -98,6 +94,7 @@ def publish_question(version_id: str, owner: str = Depends(require_owner), db: S
     src = db.get(m.SourceDocument, db.get(m.Question, v.question_id).source_document_id)
     if v.status != "reviewed" or not v.reviewed_by_human or src is None or not src.verified or src.rights_status not in {"licensed", "personal_use_reviewed"}:
         raise HTTPException(409, detail="QUESTION_NOT_APPROVED_FOR_PRIVATE_PUBLICATION")
+    require_import_integrity(db, v)
     v.status = "published"; v.published_at = datetime.now(timezone.utc)
     db.commit()
     return {"id": v.id, "status": "published"}

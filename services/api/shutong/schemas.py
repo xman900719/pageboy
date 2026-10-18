@@ -1,7 +1,7 @@
 from __future__ import annotations
-from datetime import date
-from typing import Literal
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from datetime import date, datetime
+from typing import Annotated, Literal
+from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, model_validator
 
 Subject = Literal["math", "chinese", "english", "physics"]
 
@@ -32,6 +32,61 @@ class QuestionRevisionOut(BaseModel):
     question_id: str
     version: int = Field(ge=2)
     status: Literal["draft"]
+
+ReviewNote = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+class SourceReviewIn(BaseModel):
+    exam_year: int = Field(strict=True, ge=1990, le=2100)
+    source_url: HttpUrl
+    acquired_at: date
+    rights_status: Literal["unknown", "personal_use_reviewed", "licensed"]
+    rights_basis: ReviewNote
+    applicable: bool = Field(strict=True)
+    applicability_note: ReviewNote
+    reviewed_by_human: bool = Field(strict=True, description="必须为 true，表示人工核查来源与适用性")
+
+    @model_validator(mode="after")
+    def require_review(self):
+        if not self.reviewed_by_human or self.source_url.scheme != "https":
+            raise ValueError("human review and HTTPS source URL required")
+        return self
+
+class ImportConfirmationIn(BaseModel):
+    confirmed_by_human: bool = Field(strict=True, description="必须为 true，表示人工核对结构化题目")
+    questions: list[QuestionIn] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed_by_human:
+            raise ValueError("human confirmation required")
+        return self
+
+class AttachmentOut(BaseModel):
+    id: str
+    source_document_id: str
+    filename: str
+    media_type: Literal["application/pdf", "image/png", "image/jpeg"]
+    sha256: str = Field(pattern="^[0-9a-f]{64}$")
+    byte_size: int = Field(gt=0)
+    status: Literal["uploaded", "parsed", "needs_manual_input", "confirmed"]
+    extracted_text: str | None
+    parser_version: str | None
+    parsed_at: datetime | None
+    confirmed_at: datetime | None
+    created_at: datetime
+    question_version_ids: list[str]
+
+class SourceReviewRecordOut(BaseModel):
+    id: str
+    metadata: SourceReviewIn
+    reviewed_by: str
+    created_at: datetime
+
+class SourceDetailOut(BaseModel):
+    id: str
+    source: SourceIn
+    reviews: list[SourceReviewRecordOut]
+    attachments: list[AttachmentOut]
 
 class AttemptIn(BaseModel):
     client_attempt_id: str = Field(min_length=1, max_length=128)

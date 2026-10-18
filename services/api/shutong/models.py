@@ -93,3 +93,40 @@ class Goal(Base):
     max_points: Mapped[float] = mapped_column(Float)
     minutes_per_day: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class SourceReview(Base):
+    __tablename__ = "source_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    source_document_id: Mapped[str] = mapped_column(ForeignKey("source_documents.id"), index=True)
+    exam_year: Mapped[int] = mapped_column(Integer)
+    source_url: Mapped[str] = mapped_column(Text)
+    acquired_at: Mapped[date] = mapped_column(Date)
+    rights_status: Mapped[str] = mapped_column(String(32))
+    rights_basis: Mapped[str] = mapped_column(Text)
+    applicable: Mapped[bool] = mapped_column(Boolean)
+    applicability_note: Mapped[str] = mapped_column(Text)
+    reviewed_by: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class SourceAttachment(Base):
+    __tablename__ = "source_attachments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    source_document_id: Mapped[str] = mapped_column(ForeignKey("source_documents.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(40))
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(32))
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    status: Mapped[str] = mapped_column(String(32), default="uploaded")
+    extracted_text: Mapped[str | None] = mapped_column(Text)
+    parser_version: Mapped[str | None] = mapped_column(String(256))
+    parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_by: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class ImportedQuestion(Base):
+    __tablename__ = "imported_questions"
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"), primary_key=True)
+    attachment_id: Mapped[str] = mapped_column(ForeignKey("source_attachments.id"), index=True)

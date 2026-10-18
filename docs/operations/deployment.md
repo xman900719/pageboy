@@ -19,6 +19,6 @@ cd infra
 # docker compose --env-file .env -f compose.yaml up -d api
 ```
 
-当前 Compose 不包含生产前端反向代理、证书管理或完整附件存储挂载；**禁止将它描述为完整生产就绪部署**。增加服务健康检查、镜像版本固定及告警，部署前通过恢复门禁。
+当前 Compose 已将 ST-003 私有原件挂载到 `/var/lib/shutong/attachments` 的 `private_files` 卷，但不包含生产前端反向代理或证书管理；**禁止将它描述为完整生产就绪部署**。上线前仍须验证健康检查、固定镜像版本及配置告警，并通过恢复门禁。
 
 恢复目标与备份保留策略只在 [backup-policy.md](backup-policy.md) 定义；操作命令在 [recovery-runbook.md](recovery-runbook.md)。

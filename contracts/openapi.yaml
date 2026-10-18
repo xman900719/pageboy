@@ -1,5 +1,86 @@
 components:
   schemas:
+    AttachmentOut:
+      properties:
+        byte_size:
+          exclusiveMinimum: 0.0
+          title: Byte Size
+          type: integer
+        confirmed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Confirmed At
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        extracted_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Extracted Text
+        filename:
+          title: Filename
+          type: string
+        id:
+          title: Id
+          type: string
+        media_type:
+          enum:
+          - application/pdf
+          - image/png
+          - image/jpeg
+          title: Media Type
+          type: string
+        parsed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Parsed At
+        parser_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parser Version
+        question_version_ids:
+          items:
+            type: string
+          title: Question Version Ids
+          type: array
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        source_document_id:
+          title: Source Document Id
+          type: string
+        status:
+          enum:
+          - uploaded
+          - parsed
+          - needs_manual_input
+          - confirmed
+          title: Status
+          type: string
+      required:
+      - id
+      - source_document_id
+      - filename
+      - media_type
+      - sha256
+      - byte_size
+      - status
+      - extracted_text
+      - parser_version
+      - parsed_at
+      - confirmed_at
+      - created_at
+      - question_version_ids
+      title: AttachmentOut
+      type: object
     AttemptIn:
       properties:
         answer:
@@ -61,6 +142,24 @@ components:
           title: Detail
           type: array
       title: HTTPValidationError
+      type: object
+    ImportConfirmationIn:
+      properties:
+        confirmed_by_human:
+          description: 必须为 true，表示人工核对结构化题目
+          title: Confirmed By Human
+          type: boolean
+        questions:
+          items:
+            $ref: '#/components/schemas/QuestionIn'
+          maxItems: 100
+          minItems: 1
+          title: Questions
+          type: array
+      required:
+      - confirmed_by_human
+      - questions
+      title: ImportConfirmationIn
       type: object
     QuestionIn:
       properties:
@@ -167,6 +266,30 @@ components:
       - max_points
       title: SchoolExamIn
       type: object
+    SourceDetailOut:
+      properties:
+        attachments:
+          items:
+            $ref: '#/components/schemas/AttachmentOut'
+          title: Attachments
+          type: array
+        id:
+          title: Id
+          type: string
+        reviews:
+          items:
+            $ref: '#/components/schemas/SourceReviewRecordOut'
+          title: Reviews
+          type: array
+        source:
+          $ref: '#/components/schemas/SourceIn'
+      required:
+      - id
+      - source
+      - reviews
+      - attachments
+      title: SourceDetailOut
+      type: object
     SourceIn:
       properties:
         exam_year:
@@ -211,6 +334,79 @@ components:
       - subject
       title: SourceIn
       type: object
+    SourceReviewIn:
+      properties:
+        acquired_at:
+          format: date
+          title: Acquired At
+          type: string
+        applicability_note:
+          maxLength: 2000
+          minLength: 1
+          title: Applicability Note
+          type: string
+        applicable:
+          title: Applicable
+          type: boolean
+        exam_year:
+          maximum: 2100.0
+          minimum: 1990.0
+          title: Exam Year
+          type: integer
+        reviewed_by_human:
+          description: 必须为 true，表示人工核查来源与适用性
+          title: Reviewed By Human
+          type: boolean
+        rights_basis:
+          maxLength: 2000
+          minLength: 1
+          title: Rights Basis
+          type: string
+        rights_status:
+          enum:
+          - unknown
+          - personal_use_reviewed
+          - licensed
+          title: Rights Status
+          type: string
+        source_url:
+          format: uri
+          maxLength: 2083
+          minLength: 1
+          title: Source Url
+          type: string
+      required:
+      - exam_year
+      - source_url
+      - acquired_at
+      - rights_status
+      - rights_basis
+      - applicable
+      - applicability_note
+      - reviewed_by_human
+      title: SourceReviewIn
+      type: object
+    SourceReviewRecordOut:
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: string
+        metadata:
+          $ref: '#/components/schemas/SourceReviewIn'
+        reviewed_by:
+          title: Reviewed By
+          type: string
+      required:
+      - id
+      - metadata
+      - reviewed_by
+      - created_at
+      title: SourceReviewRecordOut
+      type: object
     ValidationError:
       properties:
         ctx:
@@ -242,6 +438,144 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
+  /api/admin/attachments/{attachment_id}:
+    get:
+      operationId: get_attachment_api_admin_attachments__attachment_id__get
+      parameters:
+      - in: path
+        name: attachment_id
+        required: true
+        schema:
+          title: Attachment Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Attachment
+      tags:
+      - private content ingestion
+  /api/admin/attachments/{attachment_id}/confirm:
+    post:
+      operationId: confirm_import_api_admin_attachments__attachment_id__confirm_post
+      parameters:
+      - in: path
+        name: attachment_id
+        required: true
+        schema:
+          title: Attachment Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportConfirmationIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm Import
+      tags:
+      - private content ingestion
+  /api/admin/attachments/{attachment_id}/download:
+    get:
+      operationId: download_attachment_api_admin_attachments__attachment_id__download_get
+      parameters:
+      - in: path
+        name: attachment_id
+        required: true
+        schema:
+          title: Attachment Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Download Attachment
+      tags:
+      - private content ingestion
+  /api/admin/attachments/{attachment_id}/parse:
+    post:
+      operationId: parse_attachment_api_admin_attachments__attachment_id__parse_post
+      parameters:
+      - in: path
+        name: attachment_id
+        required: true
+        schema:
+          title: Attachment Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Parse Attachment
+      tags:
+      - private content ingestion
   /api/admin/questions:
     post:
       operationId: add_question_api_admin_questions_post
@@ -381,6 +715,36 @@ paths:
           description: Validation Error
       summary: Revise Question
   /api/admin/sources:
+    get:
+      operationId: source_ledger_api_admin_sources_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SourceDetailOut'
+                title: Response Source Ledger Api Admin Sources Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Source Ledger
+      tags:
+      - private content ingestion
     post:
       operationId: add_source_api_admin_sources_post
       parameters:
@@ -411,6 +775,148 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add Source
+  /api/admin/sources/{source_id}:
+    get:
+      operationId: source_details_api_admin_sources__source_id__get
+      parameters:
+      - in: path
+        name: source_id
+        required: true
+        schema:
+          title: Source Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceDetailOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Source Details
+      tags:
+      - private content ingestion
+  /api/admin/sources/{source_id}/attachments:
+    post:
+      description: 原始二进制请求体；上限 10 MiB，不使用公开目录或外部下载 URL。
+      operationId: upload_attachment_api_admin_sources__source_id__attachments_post
+      parameters:
+      - in: path
+        name: source_id
+        required: true
+        schema:
+          title: Source Id
+          type: string
+      - in: query
+        name: filename
+        required: true
+        schema:
+          maxLength: 255
+          minLength: 1
+          pattern: ^[^/\\\x00-\x1f\x7f]+$
+          title: Filename
+          type: string
+      - in: query
+        name: expected_sha256
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Expected Sha256
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/pdf:
+            schema:
+              format: binary
+              type: string
+          image/jpeg:
+            schema:
+              format: binary
+              type: string
+          image/png:
+            schema:
+              format: binary
+              type: string
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Upload Attachment
+      tags:
+      - private content ingestion
+  /api/admin/sources/{source_id}/review:
+    post:
+      operationId: review_source_api_admin_sources__source_id__review_post
+      parameters:
+      - in: path
+        name: source_id
+        required: true
+        schema:
+          title: Source Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceReviewIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceReviewRecordOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Review Source
+      tags:
+      - private content ingestion
   /api/goals:
     post:
       operationId: set_goal_api_goals_post

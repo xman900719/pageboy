@@ -20,7 +20,9 @@
 
 - ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。后续开发从 ST-002 开始。
 
-- ST-002：本地验收已完成，AC-CNT-02 正反例及 PostgreSQL 真实并发验证通过（6 轮 × 8 请求、独立连接）；[验证记录](docs/quality/st-002-question-revisions.md)。本轮仅本地提交，远端 CI 未运行。下一项为 ST-003。
+- ST-002：本地验收已完成，AC-CNT-02 正反例及 PostgreSQL 真实并发验证通过（6 轮 × 8 请求、独立连接）；[验证记录](docs/quality/st-002-question-revisions.md)。本轮仅本地提交，远端 CI 未运行。后续 ST-003 见下条。
+
+- ST-003：本地验收完成，来源台账、私有原件/哈希、PDF 文本/图片 OCR 草稿及人工确认通过 AC-CNT-01/03 范围测试；[验证记录](docs/quality/st-003-private-ingestion.md)。学校私卷、扫描 PDF 自动 OCR、审核 UI 和联合备份不在本项完成范围；远端 CI 未运行。下一项 ST-004。
 
 ## 阶段门禁
 
