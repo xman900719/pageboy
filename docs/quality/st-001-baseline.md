@@ -1,11 +1,11 @@
-# ST-001 本地基线验证记录
+# ST-001 基线与远端 CI 验证记录
 
-日期：2026-10-18。范围：交接包本地开发基线；不代表完整 MVP、远端 CI 或运行灾备验收完成。用户确认暂保留远端 CI 未验证。
+日期：2026-10-18。范围：交接包本地开发基线与远端 CI；ST-001 已完成，AC-DOC-01/02/03 均通过。完整 MVP 与运行灾备验收仍未完成。
 
 ## 环境与初始状态
 
-- 接手目录没有 `.git`，已按启动页初始化本地仓库；无远端推送。
-- Python 3.14.4、Node 22.19.0、npm 10.9.3；CI 配置 Python 3.12，尚未在该环境执行。
+- 接手目录没有 `.git`，首次本地验收时按启动页初始化仓库；远端推送及验证见下文。
+- 初始本地环境：Python 3.14.4、Node 22.19.0、npm 10.9.3；后续已验证远端 Python 3.12.15 环境。
 - `.agent/policies/` 与用户引用的 `/home/xc/.codex/RTK.md` 均不存在；已读取根目录契约和当前设计/验收文档。
 - 后端未改动时：API/业务测试 8 passed，文档检查器 2 passed；Schema 正反例、链接和 OpenAPI 检查通过。
 - Web 初始 `npm run build` 失败：`src/main.tsx(5,49): TS2339: Property 'env' does not exist on type 'ImportMeta'`。
@@ -58,7 +58,7 @@ PY
 
 ## 未验证、兼容与回滚
 
-- AC-DOC-03 远端触发、GitHub Actions 执行、PostgreSQL、部署与恢复演练未验证；ST-001 不标记全部完成。
+- PostgreSQL、部署与恢复演练未验证，属于后续集成/运行任务；ST-001 的本地与远端验收已通过。
 - API 测试存在一条 Starlette 对 httpx TestClient 的弃用警告；本次没有为消除警告替换测试框架。
 - 不涉及业务数据迁移或 API 变更；修复可按 Git 文件差异回退，缓存可重新生成，无需数据库回滚。
 - `MANIFEST.sha256` 保留交接包原始清单，用于追溯输入；它不是后续 Git 工作树的实时校验清单。
@@ -72,5 +72,28 @@ PY
 - 已添加 `origin` 并推送验证分支 `codex/st-001-ci`，基线提交为 `001fabb577369e044aaec0bdf6d655848139af41`。
 - 独立触发提交：[`4a5dd6f`](https://github.com/xman900719/pageboy/commit/4a5dd6fc61604d6b4035cd9a4e798e17fb926f9c)，`git diff HEAD^ HEAD --name-only` 仅输出 `AGENTS.md`。该提交添加一条说明验证用途的 HTML 注释。
 - 推送后本地 `python scripts/check_docs.py` 与 `zensical build --strict` 均通过。
-- 本机 `gh` 未登录；GitHub 连接器账号为 owner，但当前仓库/API 读取返回 404，尚无 Actions 日志证据。用户已选择授权连接器，等待权限生效后核对运行结果。
-- 推送成功仅证明 Git 写入成功，不能据此认定 CI 触发或通过；AC-DOC-03 仍待核实。
+- 初期本机 `gh` 未登录，GitHub 连接器返回 404，导致无法读取日志；用户随后完成本机 `gh` 登录，现已通过 GitHub CLI 获取运行和完整日志。
+- 远端验证完成：AC-DOC-03 的触发提交、push 事件和作业结果均已核实，证据如下。
+
+## 远端验收证据与结论
+
+实际执行以下命令读取 GitHub 运行记录与日志：
+
+```bash
+gh run list --repo xman900719/pageboy --commit 4a5dd6fc61604d6b4035cd9a4e798e17fb926f9c --json databaseId,headSha,event,status,conclusion,url,workflowName
+gh run view 39117777469 --repo xman900719/pageboy --json conclusion,event,headSha,jobs,url
+gh run view 39117777469 --repo xman900719/pageboy --log
+git diff 4a5dd6f^ 4a5dd6f --name-only
+```
+
+结果：差异仅 `AGENTS.md`；运行事件为 `push`，head SHA 与完整验证提交一致，状态 `completed`、结论 `success`。运行于 2026-10-18 10:03:53–10:04:21 UTC。
+
+| 证据 | 实际结果 |
+|---|---|
+| [AGENTS-only 运行 39117777469](https://github.com/xman900719/pageboy/actions/runs/39117777469) | Verify foundation 成功，两个作业全部成功 |
+| [api-and-docs](https://github.com/xman900719/pageboy/actions/runs/39117777469/job/117646960330) | Python 3.12.15；Schema 正反例、22 篇文档链接、OpenAPI、2 项检查器测试、Zensical 严格构建、8 项 API/业务测试、SQLite Alembic upgrade head 全部通过 |
+| [web-build](https://github.com/xman900719/pageboy/actions/runs/39117777469/job/117646960442) | Node 22；npm ci 与 npm run build 全部通过 |
+| [基线运行 39117762585](https://github.com/xman900719/pageboy/actions/runs/39117762585) | 提交 001fabb，结论 success |
+| [后续文档运行 39117900851](https://github.com/xman900719/pageboy/actions/runs/39117900851) | 提交 21ceb41，结论 success；多次推送均能运行 CI |
+
+ST-001 完成：AC-DOC-01/02/03 均有实际执行证据。测试日志存在一条 Starlette/httpx 弃用警告，Actions 提示旧版本 action 的 Node 20 运行时弃用；两者未导致失败，后续按维护任务处理。本次只同步验收状态，不修改业务 API、数据结构或 Workflow；回滚仅需回退文档提交，无数据库操作。

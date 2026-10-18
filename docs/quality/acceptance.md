@@ -4,9 +4,9 @@
 
 | ID | 验收要求 | 初始状态 / 对应任务 |
 |---|---|---|
-| AC-DOC-01 | 错误年份类型、SHA、URL等反例 Schema 失败 | 本地正反例校验通过；ST-001 |
-| AC-DOC-02 | Markdown 不存在的图片导致校验失败 | 本地 2 项检查器测试通过；ST-001 |
-| AC-DOC-03 | 只变更 `AGENTS.md` 亦触发 CI | 静态检查通过；仅修改 AGENTS.md 的提交 `4a5dd6f` 已推送，等待 API 授权读取远端结果 |
+| AC-DOC-01 | 错误年份类型、SHA、URL等反例 Schema 失败 | 本地与远端 CI 正反例校验通过；ST-001 |
+| AC-DOC-02 | Markdown 不存在的图片导致校验失败 | 本地与远端 CI 2 项检查器测试通过；ST-001 |
+| AC-DOC-03 | 只变更 `AGENTS.md` 亦触发 CI | 已通过；`4a5dd6f` 仅修改 AGENTS.md，[push CI 两个作业成功](https://github.com/xman900719/pageboy/actions/runs/39117777469) |
 | AC-CNT-01 | 未审题或来源未确认禁止发布 | foundation API 测试 |
 | AC-CNT-02 | 题目修订生成新版本、历史记录不变 | 未实施；ST-002 |
 | AC-CNT-03 | 原件哈希、来源/版权及人工审核工作流 | 部分实现；ST-003 |

@@ -18,7 +18,7 @@
 
 ## 执行记录
 
-- ST-001：本地基线通过，修复前端类型与文档站点链接问题；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-03 已推送仅修改 AGENTS.md 的独立验证提交 `4a5dd6f`；等待连接器授权以读取实际 CI 结果，任务未标记全部完成。下一项开发任务为 ST-002。
+- ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。下一项开发任务为 ST-002。
 
 ## 阶段门禁
 
