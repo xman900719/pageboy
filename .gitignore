@@ -25,3 +25,4 @@ secrets/
 *.tsbuildinfo
 site/
 .cache/
+.slim/deepwork/
