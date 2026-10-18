@@ -63,3 +63,14 @@ PY
 - 不涉及业务数据迁移或 API 变更；修复可按 Git 文件差异回退，缓存可重新生成，无需数据库回滚。
 - `MANIFEST.sha256` 保留交接包原始清单，用于追溯输入；它不是后续 Git 工作树的实时校验清单。
 - 下一项开发任务：ST-002；附件导入、并发曝光和长期真实数据恢复门禁仍未完成。
+
+## 远端验证进展（2026-10-18）
+
+用户提供目标仓库并要求完成 ST-001 剩余验证；本轮只处理 ST-001。
+
+- 仓库：<https://github.com/xman900719/pageboy>；SSH 认证为仓库 owner，读取远端成功，初始没有分支。
+- 已添加 `origin` 并推送验证分支 `codex/st-001-ci`，基线提交为 `001fabb577369e044aaec0bdf6d655848139af41`。
+- 独立触发提交：[`4a5dd6f`](https://github.com/xman900719/pageboy/commit/4a5dd6fc61604d6b4035cd9a4e798e17fb926f9c)，`git diff HEAD^ HEAD --name-only` 仅输出 `AGENTS.md`。该提交添加一条说明验证用途的 HTML 注释。
+- 推送后本地 `python scripts/check_docs.py` 与 `zensical build --strict` 均通过。
+- 本机 `gh` 未登录；GitHub 连接器账号为 owner，但当前仓库/API 读取返回 404，尚无 Actions 日志证据。用户已选择授权连接器，等待权限生效后核对运行结果。
+- 推送成功仅证明 Git 写入成功，不能据此认定 CI 触发或通过；AC-DOC-03 仍待核实。

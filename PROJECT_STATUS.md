@@ -13,14 +13,14 @@
 
 ## 当前环境验证记录（2026-10-18）
 
-ST-001 本地基线已验证；用户确认暂保留远端 CI 未验证。完整命令、初始失败及修复证据见 [ST-001 验证记录](docs/quality/st-001-baseline.md)。整体任务不标记全部完成。
+ST-001 本地基线已验证；目标远端已配置，验证分支与仅修改 AGENTS.md 的提交已推送，正在等待 GitHub 连接器访问授权以读取 CI 结果。完整命令、初始失败及修复证据见 [ST-001 验证记录](docs/quality/st-001-baseline.md)。整体任务不标记全部完成。
 
 - Python API/业务测试：8 passed；文档检查器测试：2 passed。
 - Schema 正反例、22 篇 Markdown 链接/图片、API/OpenAPI 快照一致性：通过。
 - 隔离临时 SQLite 数据库 Alembic 初始迁移：通过，`0001 (head)`。
 - Web：初始构建因缺少 Vite 类型声明失败；修复后 `npm ci` 与 `npm run build` 通过。
 - Zensical：初始严格构建因站点外 Markdown 链接失败；修复后严格构建通过。
-- GitHub Actions：触发配置静态检查通过；远端运行及仅修改 `AGENTS.md` 的触发实验未验证。
+- GitHub Actions：触发配置静态检查通过；`codex/st-001-ci` 上的 `4a5dd6f` 仅修改 `AGENTS.md` 且已推送。连接器 API 返回 404，实际触发及作业结果仍未验证。
 - PostgreSQL 容器联调、VPS/Tailscale 部署、备份还原：均未验证。
 - 本地 Python 为 3.14.4，CI 配置为 3.12；CI 环境执行未验证。测试有一条 Starlette/httpx 弃用警告。
 
