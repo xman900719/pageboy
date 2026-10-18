@@ -4,16 +4,20 @@
 
 **从本交接包实现「书童」的可靠、可持续开发 MVP**。不得因为存在总体设计文件而默认业务功能已经编码。先修基线、再纵切、后扩展四科。
 
+## 当前接手点
+
+ST-001 已完成当时的本地/远端基线，ST-002/003 已本地验收；后续由接手 agent 从 **ST-004** 继续。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前本地提交链；不要从落后的 main 或仅有 ST-001 的副本重新实现。
+
 ## 启动检查（顺序执行）
 
 1. `git status --short`，确认工作树干净；如为新解压文件夹，先 `git init`，建立首次提交，但**不自动推送**任何远端。
 2. 阅读 `AGENTS.md`、`docs/product/overview.md`、`docs/design/architecture.md`、`docs/design/data-model.md`、`docs/quality/acceptance.md`。
-3. `cd services/api && pip install -e '.[test]' && pytest -q && python -m alembic upgrade head`。
+3. 安装当前 API/测试依赖后，从根目录执行 `PATH="$PWD/.venv/bin:$PATH" make verify`；迁移仅在明确隔离的临时库验证，禁止对未知 `DATABASE_URL` 直接执行升级。
 4. `python scripts/validate_contracts.py && python scripts/check_docs.py && python scripts/check_openapi.py`。
-5. `cd apps/web && npm install && npm run build`；如果网络不可用，记录“未执行”，不要编造通过。
-6. 必须先理解本包中 P0-风险清单，再按 `IMPLEMENTATION_PLAN.md` 的 `ST-001` 开始；所有“完成”需对应测试证据。
+5. `cd apps/web && npm ci && npm run build`；如果网络不可用，记录“未执行”，不要编造通过。
+6. 理解 P0 风险与已有验收证据，按 `IMPLEMENTATION_PLAN.md` 从下一项未完成任务继续（当前为 ST-004）；所有“完成”需对应实际测试证据。
 
-## 首轮优先任务
+## 任务顺序（当前状态见实施计划）
 
 - **ST-001**：校验基线与修复发现的问题，生成可审阅的首次提交。
 - **ST-002**：将已发布题的修订升级为不可变新版本，并补充反例。
@@ -25,13 +29,10 @@
 ## 面向用户的交付格式
 
 ```
-任务 ID：ST-xxx
-修改的文件：...
-完成与未完成：...
-实际执行：...（含通过/失败）
-重要不变量验证：...
-兼容与回滚：...
-下一步：...
+结果：任务 ID、变更摘要、提交 SHA、完成与未完成
+范围：修改文件、契约/文档同步、兼容与回滚边界
+验证证据：实际命令、正反例结果、通过/失败/未验证
+剩余事项：遗留风险、阻塞条件、下一任务 ID
 ```
 
 ## 重要边界
