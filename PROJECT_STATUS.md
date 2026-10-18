@@ -21,7 +21,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 - Web：初始构建因缺少 Vite 类型声明失败；修复后 `npm ci` 与 `npm run build` 通过。
 - Zensical：初始严格构建因站点外 Markdown 链接失败；修复后严格构建通过。
 - GitHub Actions：仅修改 `AGENTS.md` 的 `4a5dd6f` 触发 push CI，两个作业全部通过；[实际运行](https://github.com/xman900719/pageboy/actions/runs/39117777469)。基线提交和后续文档提交的 CI 也通过。
-- PostgreSQL 容器联调、VPS/Tailscale 部署、备份还原：均未验证。
+- PostgreSQL 16.15：ST-002 修订接口的隔离真实并发验证通过（6 轮、每轮 8 请求/8 连接）；完整应用容器联调、VPS/Tailscale 部署、备份还原仍未验证。
 - 本地 Python 为 3.14.4，远端 Python 3.12.15 已验证。测试有一条 Starlette/httpx 弃用警告；Actions 有 Node 20 运行时弃用提示，均未导致失败。
 
 ## 优先风险
@@ -35,4 +35,4 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 
 ## ST-002 本地验证（2026-10-18）
 
-已实现已发布题的修订草稿接口，新练习使用最新已发布版；旧版、曝光、作答和评分保持不变，同一题换版不恢复未见资格。本地新增 12 项正反例测试通过，API/业务合计 20 passed；文档检查器 2 passed，Schema、23 篇 Markdown、OpenAPI、Zensical 严格构建均通过。本轮仅本地提交，ST-002 远端 CI 未运行。验收及兼容/回滚边界见 [ST-002 验证记录](docs/quality/st-002-question-revisions.md)。
+已实现已发布题的修订草稿接口，新练习使用最新已发布版；旧版、曝光、作答和评分保持不变，同一题换版不恢复未见资格。本地新增 12 项正反例测试通过；另有 6 轮隔离 PostgreSQL 真实并发测试通过，旧历史保持不变。普通门禁为 API/业务 20 passed、6 项 PostgreSQL 集成测试明确 skipped；文档检查器 2 passed，Schema、23 篇 Markdown、OpenAPI、Zensical 严格构建均通过。本轮仅本地提交，ST-002 远端 CI 未运行。验收及兼容/回滚边界见 [ST-002 验证记录](docs/quality/st-002-question-revisions.md)。
