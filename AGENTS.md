@@ -1,5 +1,7 @@
 # AGENTS.md · 书童 (Pageboy) 工程执行契约
 
+<!-- ST-001 / AC-DOC-03：此独立提交用于验证仅修改 AGENTS.md 时的 CI 触发。 -->
+
 > Agent Core Contract v2.2 + 书童 (V1.6) 项目工程执行契约
 > 
 > 通用 Coding Agent 常驻契约与「书童」项目特定指令合并版。定义通用行为准则与项目专属红线；更多项目事实、命令与领域规则按需从 `docs/`、`contracts/` 及 `.agent/policies/`（若配置）加载。
