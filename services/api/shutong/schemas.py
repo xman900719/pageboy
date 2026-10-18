@@ -27,6 +27,12 @@ class QuestionIn(BaseModel):
             raise ValueError("single_choice needs at least 2 options")
         return self
 
+class QuestionRevisionOut(BaseModel):
+    id: str
+    question_id: str
+    version: int = Field(ge=2)
+    status: Literal["draft"]
+
 class AttemptIn(BaseModel):
     client_attempt_id: str = Field(min_length=1, max_length=128)
     exposure_id: str

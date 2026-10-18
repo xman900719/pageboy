@@ -106,6 +106,29 @@ components:
       - max_points
       title: QuestionIn
       type: object
+    QuestionRevisionOut:
+      properties:
+        id:
+          title: Id
+          type: string
+        question_id:
+          title: Question Id
+          type: string
+        status:
+          const: draft
+          title: Status
+          type: string
+        version:
+          minimum: 2.0
+          title: Version
+          type: integer
+      required:
+      - id
+      - question_id
+      - version
+      - status
+      title: QuestionRevisionOut
+      type: object
     SchoolExamIn:
       properties:
         confirmed_by_user:
@@ -312,6 +335,51 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Review Question
+  /api/admin/questions/{version_id}/revisions:
+    post:
+      description: 已发布题的更正只创建草稿，不继承原版审核状态。
+      operationId: revise_question_api_admin_questions__version_id__revisions_post
+      parameters:
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionRevisionOut'
+          description: Successful Response
+        '401':
+          description: Owner authorization required
+        '404':
+          description: Version not found
+        '409':
+          description: Unpublished version, changed source, or revision number conflict
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Revise Question
   /api/admin/sources:
     post:
       operationId: add_source_api_admin_sources_post

@@ -16,3 +16,8 @@
 初始 ORM 表包括 `source_documents`, `questions`, `question_versions`, `exposures`, `answer_attempts`, `school_exams`, `goals`；本包中的骨架存储设计**不代表已经实现所有不变量**。新增表必须来源于对应功能而不是猜测未来形态。
 
 学校私人试卷上传、考点级阅卷核对及关联附件仍待实现，不得用总分创建考点 Evidence。多考点综合题如无明确逐步骤采分点，不将总分重复分配给每个考点。
+
+
+## ST-002 版本行为
+
+修订只新增 `question_versions` 行，沿用 `Question`、来源和学科；`(question_id, version)` 唯一约束保持不变。新版本从草稿重新走审核发布流程，旧发布版和已有 `Exposure`、`AnswerAttempt` 不改写。新练习选择每题最高已发布版本号，曝光是否未见按逻辑题的所有版本查询。此变更不新增表或列，无需数据库迁移；具体接口和流程见 [内容导入与修订](ingestion.md)。

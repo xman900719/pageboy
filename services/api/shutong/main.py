@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .database import get_db
 from . import models as m
-from .schemas import SourceIn, QuestionIn, AttemptIn, SchoolExamIn, GoalIn, Subject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, GoalIn, Subject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -49,9 +50,34 @@ def add_question(payload: QuestionIn, owner: str = Depends(require_owner), db: S
         raise HTTPException(404, detail="source not found")
     q = m.Question(source_document_id=src.id, subject=src.subject)
     db.add(q); db.flush()
-    v = m.QuestionVersion(question_id=q.id, version=1, stem=payload.stem, kind=payload.kind, options=payload.options, correct_answer=payload.correct_answer, knowledge_ids=payload.knowledge_ids, max_points=payload.max_points)
+    v = m.QuestionVersion(question_id=q.id, version=1, **payload.model_dump(exclude={"source_document_id"}))
     db.add(v); db.commit(); db.refresh(v)
     return {"id": v.id, "question_id": q.id, "status": v.status}
+
+@app.post("/api/admin/questions/{version_id}/revisions", status_code=201, response_model=QuestionRevisionOut,
+          responses={401: {"description": "Owner authorization required"}, 404: {"description": "Version not found"},
+                     409: {"description": "Unpublished version, changed source, or revision number conflict"}})
+def revise_question(version_id: str, payload: QuestionIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """已发布题的更正只创建草稿，不继承原版审核状态。"""
+    original = db.get(m.QuestionVersion, version_id)
+    if original is None:
+        raise HTTPException(404, detail="version not found")
+    if original.status != "published":
+        raise HTTPException(409, detail="only published versions can be revised")
+    question = db.get(m.Question, original.question_id)
+    if payload.source_document_id != question.source_document_id:
+        raise HTTPException(409, detail="revision cannot change source")
+    next_version = db.scalar(select(func.max(m.QuestionVersion.version)).where(m.QuestionVersion.question_id == question.id)) + 1
+    revised = m.QuestionVersion(question_id=question.id, version=next_version, **payload.model_dump(exclude={"source_document_id"}))
+    db.add(revised)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 版本唯一约束拦截并行修订的编号冲突，失败请求不留下部分记录。
+        db.rollback()
+        raise HTTPException(409, detail="QUESTION_REVISION_CONFLICT")
+    db.refresh(revised)
+    return {"id": revised.id, "question_id": revised.question_id, "version": revised.version, "status": revised.status}
 
 @app.post("/api/admin/questions/{version_id}/review")
 def review_question(version_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
@@ -83,11 +109,13 @@ def subjects(owner: str = Depends(require_owner)):
 @app.get("/api/practice/next")
 def next_item(subject: Subject, purpose: str = Query(default="training", pattern="^(training|evaluation)$"), knowledge_id: str | None = None, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
     """A returned question is immediately recorded as exposed. Evaluation requires unseen item."""
-    versions = db.execute(select(m.QuestionVersion).join(m.Question).where(m.Question.subject == subject, m.QuestionVersion.status == "published").order_by(m.QuestionVersion.created_at, m.QuestionVersion.id)).scalars().all()
+    # 按逻辑题选择最新已发布版，较新的草稿不替代当前发布版。
+    latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
+    versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published").order_by(m.QuestionVersion.created_at, m.QuestionVersion.id)).scalars().all()
     for v in versions:
         if knowledge_id and knowledge_id not in v.knowledge_ids:
             continue
-        seen = db.execute(select(m.Exposure.id).where(m.Exposure.learner_id == owner, m.Exposure.question_version_id == v.id).limit(1)).first() is not None
+        seen = db.execute(select(m.Exposure.id).join(m.QuestionVersion, m.Exposure.question_version_id == m.QuestionVersion.id).where(m.Exposure.learner_id == owner, m.QuestionVersion.question_id == v.question_id).limit(1)).first() is not None
         if purpose == "evaluation" and seen:
             continue
         exp = m.Exposure(learner_id=owner, question_version_id=v.id, purpose=purpose, is_unseen_at_exposure=not seen)
