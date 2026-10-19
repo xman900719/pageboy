@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import uuid4
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Float, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Float, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
@@ -48,8 +48,11 @@ class QuestionVersion(Base):
 
 class Exposure(Base):
     __tablename__ = "exposures"
+    __table_args__ = (Index("uq_exposure_first_unseen", "learner_id", "question_id", unique=True, sqlite_where=text("is_unseen_at_exposure"), postgresql_where=text("is_unseen_at_exposure")),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    # 所有写入方必须赋值：轮换计数与未见首曝去重索引均按此列分组，NULL 会静默绕过部分唯一索引。
+    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id"), nullable=True)
     question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"))
     purpose: Mapped[str] = mapped_column(String(20))
     is_unseen_at_exposure: Mapped[bool] = mapped_column(Boolean)
@@ -57,7 +60,7 @@ class Exposure(Base):
 
 class AnswerAttempt(Base):
     __tablename__ = "answer_attempts"
-    __table_args__ = (UniqueConstraint("learner_id", "client_attempt_id", name="uq_attempt_idempotency"),)
+    __table_args__ = (UniqueConstraint("learner_id", "client_attempt_id", name="uq_attempt_idempotency"), Index("uq_attempt_exposure", "exposure_id", unique=True))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
     client_attempt_id: Mapped[str] = mapped_column(String(128))

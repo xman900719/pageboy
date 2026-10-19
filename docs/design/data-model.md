@@ -28,3 +28,14 @@
 迁移 `0002` 新增 `source_reviews`（来源评估追加记录）、`source_attachments`（owner、哈希、字节数、私有存储键、解析与确认状态）和 `imported_questions`（题目版本到原件的追溯）。文件正文不入数据库，存储键不进入 HTTP 响应。一个原件可确认多道题；修订新版本复制原件关联，旧记录不变。
 
 `0001` 的建表范围固定为原有七表，防止其动态加载新模型而提前创建 `0002` 的表。升级保留原来源、题目与学习记录；无附件的旧来源维持原发布流程。回退应用须保留新增表及文件，不能对真实导入库直接降级删表；隔离迁移测试不等于灾备演练。
+
+
+## ST-004 练习会话、轮换与曝光/作答约束
+
+练习会话为最小无状态语义：客户端按 `GET /api/practice/next` → 作答 → 再 next 的链式序列推进，服务端每次按轮换规则选出恰好一题并立即落一条 `Exposure`；不建会话表、不新增端点（兼容现有客户端与契约）。轮换规则（确定性）：候选为该科目（含 knowledge_id 过滤）每个逻辑题的最高已发布版本；training 按（该学习者对逻辑题的全版本曝光次数升序, created_at, id）轮换且不跳过已见题（复练合法）；evaluation 仅选曝光次数==0 的逻辑题，无则 404。曝光次数按 `exposures.question_id` 批量聚合。
+
+`exposures` 增加非规范化列 `question_id`（迁移 `0003` 从 `question_versions` 回填）。该列 DDL 可空但 ORM 必填：任何写入者都必须设置它，NULL 行会脱离下方唯一索引的保护。部分唯一索引 `uq_exposure_first_unseen (learner_id, question_id) WHERE is_unseen_at_exposure` 在数据库级保证每学习者每逻辑题至多一次未见首曝认定（跨版本、跨 purpose）。并发抢曝失败者：evaluation 换下一未见候选直至 404，绝不给已见题落 evaluation 曝光；training 重查 seen 后以复练身份重插（`is_unseen_at_exposure=false`）。
+
+`answer_attempts` 增加唯一索引 `uq_attempt_exposure (exposure_id)`：一个曝光至多一条有效作答。作答幂等由唯一约束在提交点裁决——同键同载荷并发重试返回同一持久行（`already_recorded`）；同键异载荷 409 `IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`；同曝光异键 409 `EXPOSURE_ALREADY_SUBMITTED`；均不产生未处理 500。
+
+迁移 `0003` 为条件式（`0001` 按当前 models 建表，新库在 0001 即含新结构），SQLite 侧经 batch 重建增删列以保持外键与 `alembic check` 干净。遗留库若已存在重复未见认定或同曝光双作答（仅旧并发缺陷可产生），索引创建诚实失败、需人工裁决，不自动改写历史；SQLite 下该失败点非原子（列已增、回填未完），需人工重跑或清理。回退仅用于隔离开发库。验证证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)。

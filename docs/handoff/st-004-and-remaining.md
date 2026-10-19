@@ -2,6 +2,8 @@
 
 交接日期：2026-10-18。用户要求后续所有实施任务由其他接手 agent 完成；本次只交付 handoff 和启动 prompt，不实施 ST-004 或后续功能。可直接复制的指令在 仓库根目录 `PROMPT_FOR_CODEX.md`。
 
+> **状态更新（2026-10-19，接手 agent）**：ST-004 已实施并通过本地验收（AC-PRC-01/AC-VAL-01，含隔离 PostgreSQL 迁移往返与 19 项真并发），证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)；本轮仅本地提交未推送。**接手点已移至 ST-005**。本文件其余内容保留为当时的交接快照，§2/§5 状态表已同步。
+
 本文件是接手导航与代码快照，不取代 仓库根目录 `IMPLEMENTATION_PLAN.md`、[验收索引](../quality/acceptance.md)、[领域不变量](../design/data-model.md) 或 OpenAPI 权威契约。历史验证不能替代接手后的基线复跑。
 
 ## 1. 接手代码与 Git 边界
@@ -27,6 +29,7 @@
 | ST-001 | 已完成本地基线及当时的远端 CI | [ST-001 记录](../quality/st-001-baseline.md)，仅改 AGENTS.md 的触发验证已通过 |
 | ST-002 | 本地验收完成 | [ST-002 记录](../quality/st-002-question-revisions.md)，不可变修订、旧历史保留；6 轮真实 PostgreSQL 修订并发通过，远端 CI 未运行 |
 | ST-003 | 本地验收完成 | [ST-003 记录](../quality/st-003-private-ingestion.md)，来源台账、私有原件、哈希、本地 PDF 文本/图片 OCR、人工确认及发布门禁；远端 CI 未运行 |
+| ST-004 | 本地验收完成 | [ST-004 记录](../quality/st-004-practice-session.md)，练习会话/轮换、曝光原子化（部分唯一索引）、作答幂等并发（隔离 PG 16.15 迁移往返 + 19 项真并发零 500）；远端 CI 未运行 |
 | 完整 MVP / 生产就绪 / 灾备 | 未完成 | 后续任务、完整联调与真实异地恢复不得按上述单项结果推定完成 |
 
 制作交接时，已重新执行 `PATH="$PWD/.venv/bin:$PATH" make verify`：API/业务 **56 passed、6 skipped**；文档检查器 **2 passed**；JSON Schema 正反例、24 篇 Markdown、OpenAPI 一致性通过。文档修改后的检查结果见本文件末尾。6 项 skipped 是可选 PostgreSQL 修订并发测试，不是普通门禁已执行的并发证据。
@@ -66,7 +69,9 @@ PATH="$PWD/.venv/bin:$PATH" make verify
 
 `make verify` 不包含前端构建、完整文档站点、可选 PostgreSQL 测试、生产联调或恢复演练。前端发生改动时再执行 `cd apps/web && npm ci && npm run build`，并按 ST-008 补充用户旅程验证。不要直接对未知 `DATABASE_URL` 执行迁移；迁移测试必须使用本次拥有的隔离库。ST-003 容器检查命令见其验证记录，脚本为 `scripts/smoke_ingestion_container.py`。
 
-## 4. ST-004 第一执行包（尚未实施）
+## 4. ST-004 第一执行包（已于 2026-10-19 实施并本地验收）
+
+> 本节保留为交接时的需求快照。实施结果与全部验证证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)：最小无状态会话与轮换规则、`exposures.question_id` + 部分唯一索引 `uq_exposure_first_unseen`、`answer_attempts.uq_attempt_exposure`、迁移 `0003`（条件式 + 回填 + 诚实失败），SQLite 单线程与 PostgreSQL 真并发（natural+colliding）均通过。
 
 目标：练习会话、稳定题目轮换、原子曝光、幂等提交与真实并发验证。验收沿用 **AC-PRC-01、AC-VAL-01**。以下是接手时需要验证的工作项，不是已确定的数据结构或已完成测试。
 
@@ -104,8 +109,8 @@ PATH="$PWD/.venv/bin:$PATH" make verify
 
 | 顺序 / 任务 | 执行目标与验收入口 | 当前状态 |
 |---|---|---|
-| ST-004 | 会话、轮换、曝光原子化、作答幂等；AC-PRC-01、AC-VAL-01 | 下一项，未实施 |
-| ST-005（ST-004 后） | 数学目标→证据→画像→差距→计划→独立复测；AC-GAP-01/02/03、AC-VAL-02，含纯函数依赖与历史回放 | 未完成；现有启发式不等于闭环验收 |
+| ST-004 | 会话、轮换、曝光原子化、作答幂等；AC-PRC-01、AC-VAL-01 | 已完成（本地验收，[证据](../quality/st-004-practice-session.md)） |
+| ST-005（ST-004 后） | 数学目标→证据→画像→差距→计划→独立复测；AC-GAP-01/02/03、AC-VAL-02，含纯函数依赖与历史回放 | **下一项，未完成**；现有启发式不等于闭环验收 |
 | ST-006（ST-005 后） | 学校私卷、逐题人工核对；AC-EVI-01/02、AC-SEC-01，不能复用内容发布权限 | 未实施 |
 | ST-007（ST-005 后） | 四科题型、公式/图表/阅读/音频/主观自评；评分来源与样例可追溯 | 未完成 |
 | ST-008（ST-005 后） | 首页、复练、阶段诊断、缺证据解释；真实用户旅程与 Playwright | 未完成，当前仅 UI 骨架 |

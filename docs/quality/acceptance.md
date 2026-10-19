@@ -10,13 +10,13 @@
 | AC-CNT-01 | 未审题或来源未确认禁止发布 | 本地导入正反例通过；[ST-003 证据](st-003-private-ingestion.md) |
 | AC-CNT-02 | 题目修订生成新版本、历史记录不变 | 12 项修订单测及 6 轮 PostgreSQL 真实并发通过；[ST-002 证据](st-002-question-revisions.md)，远端 CI 未验证 |
 | AC-CNT-03 | 原件哈希、来源/版权及人工审核工作流 | 本地 API 工作流通过；[ST-003 证据](st-003-private-ingestion.md)，不代表真实版权法律结论 |
-| AC-PRC-01 | 幂等提交且高并发不重复 | 单线程测试；并发未验证 ST-004 |
+| AC-PRC-01 | 幂等提交且高并发不重复 | 6 轮真实 PostgreSQL 并发（同键同载荷 8 并发恰 1 行且返回同一持久结果；同曝光异键 1+7×409）；[ST-004 证据](st-004-practice-session.md)，远端 CI 未验证 |
 | AC-EVI-01 | 只有学校总分不产生考点 Evidence | foundation API 测试 |
 | AC-EVI-02 | 未核对 OCR 校卷不能进入确认得分 | 未实施；ST-006 |
 | AC-GAP-01 | 缺独立证据返回证据不足不是0 | foundation 单测 |
 | AC-GAP-02 | 更换 OCR 不影响 guidance 纯业务函数 | 代码依赖静态审查待补；ST-005 |
 | AC-GAP-03 | 调整规则不修改历史 AnswerAttempt | 设计约束，需回放测试 ST-005 |
-| AC-VAL-01 | 已曝光题不能作为未见题验证 | foundation 基础测试，并发未测 ST-004 |
+| AC-VAL-01 | 已曝光题不能作为未见题验证 | 部分唯一索引原子首曝 + 6 轮并发恰 3×200+5×404；跨版本已见并发全 404；[ST-004 证据](st-004-practice-session.md)，远端 CI 未验证 |
 | AC-VAL-02 | 不可比或证据不足不能宣称涨分 | 部分实现，完整可比性待 ST-005 |
 | AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 内容原件已有私有 ACL 测试；学校私卷隔离待 ST-006 |
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **未演练**，ST-OPS-01 |

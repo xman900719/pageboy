@@ -109,31 +109,50 @@ def next_item(subject: Subject, purpose: str = Query(default="training", pattern
     # 按逻辑题选择最新已发布版，较新的草稿不替代当前发布版。
     latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
     versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published").order_by(m.QuestionVersion.created_at, m.QuestionVersion.id)).scalars().all()
-    for v in versions:
-        if knowledge_id and knowledge_id not in v.knowledge_ids:
-            continue
-        seen = db.execute(select(m.Exposure.id).join(m.QuestionVersion, m.Exposure.question_version_id == m.QuestionVersion.id).where(m.Exposure.learner_id == owner, m.QuestionVersion.question_id == v.question_id).limit(1)).first() is not None
-        if purpose == "evaluation" and seen:
-            continue
-        exp = m.Exposure(learner_id=owner, question_version_id=v.id, purpose=purpose, is_unseen_at_exposure=not seen)
-        db.add(exp); db.commit(); db.refresh(exp)
-        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": not seen, "stem": v.stem, "kind": v.kind, "options": v.options, "max_points": v.max_points, "subject": subject, "knowledge_ids": v.knowledge_ids}
+    candidates = [v for v in versions if not knowledge_id or knowledge_id in v.knowledge_ids]
+    # 曝光计数按逻辑题批量聚合。此查询必须渲染出字面 token `GROUP BY exposures.question_id`——
+    # test_practice_concurrency.py 的 is_exposure_read 钩子按它匹配以制造受控竞争窗，勿改写查询形状。
+    counts = dict(db.execute(select(m.Exposure.question_id, func.count()).where(m.Exposure.learner_id == owner).group_by(m.Exposure.question_id)).all())
+    if purpose == "training":
+        # 复练合法：全部候选按（曝光次数升序, created_at, id）轮换，绝不跳过已见题。
+        ordered = sorted(candidates, key=lambda v: (counts.get(v.question_id, 0), v.created_at, v.id))
+    else:
+        # evaluation 只认曝光次数==0 的逻辑题（含 training 已见）。
+        ordered = [v for v in candidates if counts.get(v.question_id, 0) == 0]
+    for v in ordered:
+        seen = counts.get(v.question_id, 0) > 0
+        exp = m.Exposure(learner_id=owner, question_id=v.question_id, question_version_id=v.id, purpose=purpose, is_unseen_at_exposure=not seen)
+        db.add(exp)
+        try:
+            db.commit()
+        except IntegrityError:
+            # 并发抢曝被 uq_exposure_first_unseen 拦截。evaluation 失败者绝不给已见题落曝光，换下一候选，
+            # 候选耗尽则落到 404；training 失败者重查 seen 后以复练身份重插（复练无唯一约束，合法）。
+            db.rollback()
+            if purpose == "evaluation":
+                continue
+            seen_now = db.execute(select(func.count()).select_from(m.Exposure).where(m.Exposure.learner_id == owner, m.Exposure.question_id == v.question_id)).scalar_one() > 0
+            exp = m.Exposure(learner_id=owner, question_id=v.question_id, question_version_id=v.id, purpose=purpose, is_unseen_at_exposure=not seen_now)
+            db.add(exp)
+            db.commit()  # 复练曝光不受部分唯一索引约束；若仍失败则如实抛出，不吞错。
+        db.refresh(exp)
+        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind, "options": v.options, "max_points": v.max_points, "subject": subject, "knowledge_ids": v.knowledge_ids}
     raise HTTPException(404, detail="NO_ELIGIBLE_QUESTION")
 
 @app.post("/api/practice/attempts", status_code=201)
 def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    existing = db.execute(select(m.AnswerAttempt).where(m.AnswerAttempt.learner_id == owner, m.AnswerAttempt.client_attempt_id == payload.client_attempt_id)).scalar_one_or_none()
-    if existing:
+    def resolve_existing(existing):
+        # 同幂等键复用：载荷（exposure_id/answer/hints_used）全同才承认已记录，返回已持久行的判定结果。
         if existing.exposure_id != payload.exposure_id or existing.answer != payload.answer or existing.hints_used != payload.hints_used:
             raise HTTPException(409, detail="IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD")
         return {"id": existing.id, "status": "already_recorded", "earned_points": existing.earned_points, "max_points": existing.max_points, "scoring_origin": existing.scoring_origin}
+    existing = db.execute(select(m.AnswerAttempt).where(m.AnswerAttempt.learner_id == owner, m.AnswerAttempt.client_attempt_id == payload.client_attempt_id)).scalar_one_or_none()
+    if existing:
+        return resolve_existing(existing)
     exp = db.get(m.Exposure, payload.exposure_id)
     if exp is None or exp.learner_id != owner:
         raise HTTPException(404, detail="exposure not found")
     v = db.get(m.QuestionVersion, exp.question_version_id)
-    previous = db.execute(select(m.AnswerAttempt.id).where(m.AnswerAttempt.exposure_id == exp.id).limit(1)).first()
-    if previous:
-        raise HTTPException(409, detail="EXPOSURE_ALREADY_SUBMITTED")
     # Simple objective grading only; subjective scoring remains unverified.
     if v.kind == "single_choice":
         earned = v.max_points if payload.answer.strip() == v.correct_answer.strip() else 0.0
@@ -142,7 +161,21 @@ def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: 
         earned = None
         origin = "ungraded_subjective"
     attempt = m.AnswerAttempt(learner_id=owner, client_attempt_id=payload.client_attempt_id, exposure_id=exp.id, question_version_id=v.id, answer=payload.answer, earned_points=earned, max_points=v.max_points, scoring_origin=origin, hints_used=payload.hints_used)
-    db.add(attempt); db.commit(); db.refresh(attempt)
+    db.add(attempt)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发由提交点的唯一约束裁决（uq_attempt_idempotency / uq_attempt_exposure），天然竞争无 500：
+        # 同键竞争失败者重查幂等键并按载荷比对返回；同曝光异键失败者重查曝光返回 409；都查不到则原样抛出。
+        db.rollback()
+        winner = db.execute(select(m.AnswerAttempt).where(m.AnswerAttempt.learner_id == owner, m.AnswerAttempt.client_attempt_id == payload.client_attempt_id)).scalar_one_or_none()
+        if winner is not None:
+            return resolve_existing(winner)
+        clash = db.execute(select(m.AnswerAttempt.id).where(m.AnswerAttempt.exposure_id == exp.id).limit(1)).first()
+        if clash is not None:
+            raise HTTPException(409, detail="EXPOSURE_ALREADY_SUBMITTED")
+        raise
+    db.refresh(attempt)
     return {"id": attempt.id, "status": "recorded", "earned_points": earned, "max_points": v.max_points, "scoring_origin": origin, "evaluation_valid_unseen": exp.purpose == "evaluation" and exp.is_unseen_at_exposure and not payload.hints_used}
 
 @app.post("/api/school-exams", status_code=201)
