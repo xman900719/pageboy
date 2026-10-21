@@ -45,3 +45,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 ## ST-004 本地验证（2026-10-19）
 
 练习会话（最小无状态）、确定性题目轮换、曝光原子化与作答幂等已实现：training 不再总返回排序首题；`exposures.question_id` + 部分唯一索引保证每学习者每逻辑题至多一次未见首曝（跨版本）；`answer_attempts` 每曝光至多一条有效作答，同键/同曝光并发由提交点唯一约束裁决，零未处理 500。隔离 PostgreSQL 16.15 完成迁移往返（含回填断言）与 19 项真并发测试全绿（8 请求/8 独立连接/轮，natural+colliding 受控竞争窗）；普通门禁 API 67 passed、25 skipped（可选 PG 并发项），Schema/文档/OpenAPI/zensical --strict 均通过。实现前 red 反例证实竞争真实存在（未处理 500、幂等重试被误答 409）。本轮仅本地提交，远端 CI、前端构建与吞吐压测未验证。详见 [ST-004 验证记录](docs/quality/st-004-practice-session.md)。下一项 ST-005。
+
+## ST-005 本地验证（2026-10-21）
+
+数学纵向闭环（目标→证据→画像→差距→计划→独立复测）已实现：`compare_validation` 纯函数 + `GET /api/guidance/validation`，基线=每知识点前 3 条独立未见评测证据、其后为复测；不足即 `cannot_compare`/`CANNOT_COMPARE`，相等不宣称 improved，恒 `score_prediction: None` + 免责声明（AC-VAL-02）；guidance 纯度由 AST 白名单+符号扫描+子进程三测试静态锁定（AC-GAP-02）；规则调整回放测试证明历史 AnswerAttempt 逐值不可变（AC-GAP-03）；空/不足证据一律 INSUFFICIENT_EVIDENCE/CANNOT_COMPARE 绝无 0 分（AC-GAP-01）。API 79 passed、25 skipped、0 failed；OpenAPI 重新生成并校验（仅新增 validation 路径）；make verify/zensical --strict 通过。过程缺陷（V1 测试 monkeypatch.undo 共享实例陷阱）已如实记录并最小修复。远端 CI、前端构建未验证；小样本对比不代表效果推断。详见 [ST-005 验证记录](docs/quality/st-005-math-loop.md)。下一项 ST-006。

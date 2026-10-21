@@ -1020,6 +1020,43 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Profile
+  /api/guidance/validation:
+    get:
+      description: 独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。
+      operationId: validation_api_guidance_validation_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Validation
   /api/practice/attempts:
     post:
       operationId: submit_attempt_api_practice_attempts_post

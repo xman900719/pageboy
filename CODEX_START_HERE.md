@@ -6,7 +6,7 @@
 
 ## 当前接手点
 
-ST-001 已完成当时的本地/远端基线，ST-002/003/004 已本地验收；后续由接手 agent 从 **ST-005** 继续。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前本地提交链；不要从落后的 main 或仅有 ST-001 的副本重新实现。
+ST-001 已完成当时的本地/远端基线，ST-002/003/004/005 已本地验收；后续由接手 agent 从 **ST-006** 继续。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前本地提交链；不要从落后的 main 或仅有 ST-001 的副本重新实现。
 
 ## 启动检查（顺序执行）
 
@@ -15,7 +15,7 @@ ST-001 已完成当时的本地/远端基线，ST-002/003/004 已本地验收；
 3. 安装当前 API/测试依赖后，从根目录执行 `PATH="$PWD/.venv/bin:$PATH" make verify`；迁移仅在明确隔离的临时库验证，禁止对未知 `DATABASE_URL` 直接执行升级。
 4. `python scripts/validate_contracts.py && python scripts/check_docs.py && python scripts/check_openapi.py`。
 5. `cd apps/web && npm ci && npm run build`；如果网络不可用，记录“未执行”，不要编造通过。
-6. 理解 P0 风险与已有验收证据，按 `IMPLEMENTATION_PLAN.md` 从下一项未完成任务继续（当前为 ST-005）；所有“完成”需对应实际测试证据。
+6. 理解 P0 风险与已有验收证据，按 `IMPLEMENTATION_PLAN.md` 从下一项未完成任务继续（当前为 ST-006）；所有“完成”需对应实际测试证据。
 
 ## 任务顺序（当前状态见实施计划）
 
@@ -23,7 +23,7 @@ ST-001 已完成当时的本地/远端基线，ST-002/003/004 已本地验收；
 - **ST-002**：将已发布题的修订升级为不可变新版本，并补充反例。
 - **ST-003**：实现安全的原卷和附件导入，加入元数据/哈希/人工审核门禁。
 - **ST-004**：把练习中的题目轮换与评价池隔离做可靠（原子曝光、防重复）——已完成本地验收，见 [验证记录](docs/quality/st-004-practice-session.md)。
-- **ST-005**：实现数学的证据—差距—计划—独立复测纵向用例。
+- **ST-005**：实现数学的证据—差距—计划—独立复测纵向用例——已完成本地验收，见 [验证记录](docs/quality/st-005-math-loop.md)。
 - **ST-OPS-01**：首次保存真实长期学习数据之前，搭建异地备份并在隔离环境完成真实恢复。
 
 ## 面向用户的交付格式

@@ -13,7 +13,7 @@ from .ingestion import router as ingestion_router, require_import_integrity
 from .database import get_db
 from . import models as m
 from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, GoalIn, Subject
-from .guidance import Evidence, MODEL_VERSION, summarize, make_plan
+from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
@@ -220,3 +220,20 @@ def plan(subject: Subject, owner: str = Depends(require_owner), db: Session = De
     known_ids = sorted({kid for item in knowledge for kid in item})
     result = make_plan(summarize(get_evidence(db, owner, subject)), goal.target_points, goal.max_points, goal.minutes_per_day, known_ids)
     return {"subject": subject, "goal_version": goal.version, **result}
+
+@app.get("/api/guidance/validation")
+def validation(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。"""
+    rows = db.execute(select(m.AnswerAttempt, m.QuestionVersion).join(m.Exposure, m.Exposure.id == m.AnswerAttempt.exposure_id).join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id).join(m.Question, m.Question.id == m.QuestionVersion.question_id).where(m.AnswerAttempt.learner_id == owner, m.Question.subject == subject, m.Exposure.purpose == "evaluation", m.Exposure.is_unseen_at_exposure.is_(True), m.AnswerAttempt.hints_used.is_(False), m.AnswerAttempt.earned_points.is_not(None), m.AnswerAttempt.scoring_origin == "reviewed_answer_key").order_by(m.AnswerAttempt.created_at, m.AnswerAttempt.id)).all()
+    per_kid: dict[str, dict[str, Evidence]] = {}
+    for a, v in rows:
+        if len(v.knowledge_ids) != 1:
+            continue
+        # 装配侧已保证独立未见单考点；去重属防御性（ST-004 已保证每版本至多一条 evaluation 作答）。
+        per_kid.setdefault(v.knowledge_ids[0], {}).setdefault(v.id, Evidence(source_event_id=a.id, question_version_id=v.id, knowledge_id=v.knowledge_ids[0], earned_points=a.earned_points, max_points=a.max_points, independent=True, is_first_exposure=True))
+    baseline, retest = [], []
+    for kid in sorted(per_kid):
+        items = list(per_kid[kid].values())
+        baseline.extend(items[:MIN_DISTINCT_ITEMS])
+        retest.extend(items[MIN_DISTINCT_ITEMS:])
+    return {"subject": subject, **compare_validation(baseline, retest)}
