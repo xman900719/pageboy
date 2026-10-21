@@ -11,14 +11,14 @@
 | AC-CNT-02 | 题目修订生成新版本、历史记录不变 | 12 项修订单测及 6 轮 PostgreSQL 真实并发通过；[ST-002 证据](st-002-question-revisions.md)，远端 CI 未验证 |
 | AC-CNT-03 | 原件哈希、来源/版权及人工审核工作流 | 本地 API 工作流通过；[ST-003 证据](st-003-private-ingestion.md)，不代表真实版权法律结论 |
 | AC-PRC-01 | 幂等提交且高并发不重复 | 6 轮真实 PostgreSQL 并发（同键同载荷 8 并发恰 1 行且返回同一持久结果；同曝光异键 1+7×409）；[ST-004 证据](st-004-practice-session.md)，远端 CI 未验证 |
-| AC-EVI-01 | 只有学校总分不产生考点 Evidence | foundation API 测试 |
-| AC-EVI-02 | 未核对 OCR 校卷不能进入确认得分 | 未实施；ST-006 |
+| AC-EVI-01 | 只有学校总分不产生考点 Evidence | 总分行结构上不进 get_evidence；仅已确认逐题 item 产生证据（合成键独立计数）；[ST-006 证据](st-006-school-papers.md) |
+| AC-EVI-02 | 未核对 OCR 校卷不能进入确认得分 | confirmed_by_user 人工门禁：ocr_draft 建即未确认、须经 confirm(严格 human=true) 才进证据，确认后不可变；[ST-006 证据](st-006-school-papers.md) |
 | AC-GAP-01 | 缺独立证据返回证据不足不是0 | 纵向闭环+回放测试：空/不足一律 INSUFFICIENT_EVIDENCE/CANNOT_COMPARE，绝无 0 分；[ST-005 证据](st-005-math-loop.md) |
 | AC-GAP-02 | 更换 OCR 不影响 guidance 纯业务函数 | AST 导入白名单+禁用符号扫描（含惰性 import）+干净子进程调用 3 项测试；[ST-005 证据](st-005-math-loop.md) |
 | AC-GAP-03 | 调整规则不修改历史 AnswerAttempt | API 级回放测试：规则 monkeypatch 后 DB 全行逐值不变、输出纯派生可回归；[ST-005 证据](st-005-math-loop.md) |
 | AC-VAL-01 | 已曝光题不能作为未见题验证 | 部分唯一索引原子首曝 + 6 轮并发恰 3×200+5×404；跨版本已见并发全 404；[ST-004 证据](st-004-practice-session.md)，远端 CI 未验证 |
 | AC-VAL-02 | 不可比或证据不足不能宣称涨分 | compare_validation+validation 端点：不足即 cannot_compare/CANNOT_COMPARE，相等不宣称 improved，恒 score_prediction None+免责声明；[ST-005 证据](st-005-math-loop.md) |
-| AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 内容原件已有私有 ACL 测试；学校私卷隔离待 ST-006 |
+| AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 无任何字节读取路由；存储键不进响应/OpenAPI；与内容台账/题目草稿/发布/练习结构性隔离；[ST-006 证据](st-006-school-papers.md) |
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **未演练**，ST-OPS-01 |
 | AC-OPS-02 | 异地备份失败可观察并告警 | **未演练**，ST-OPS-01/02 |
 

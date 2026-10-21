@@ -25,6 +25,7 @@
 - ST-003：本地验收完成，来源台账、私有原件/哈希、PDF 文本/图片 OCR 草稿及人工确认通过 AC-CNT-01/03 范围测试；[验证记录](docs/quality/st-003-private-ingestion.md)。学校私卷、扫描 PDF 自动 OCR、审核 UI 和联合备份不在本项完成范围；远端 CI 未运行。下一项 ST-004。
 - ST-004：本地验收完成，练习会话/轮换、曝光原子化（部分唯一索引跨版本防重复未见首曝）、作答幂等约束化通过 AC-PRC-01/AC-VAL-01 范围验证——隔离 PostgreSQL 16.15 迁移往返 + 19 项真并发（8 请求/8 独立连接/轮，零 500）；[验证记录](docs/quality/st-004-practice-session.md)。吞吐压测、远端 CI、前端用户旅程不在本项范围。下一项 ST-005。
 - ST-005：本地验收完成，数学纵向闭环通过 AC-GAP-01/02/03、AC-VAL-02 范围验证——compare_validation 纯函数 + /api/guidance/validation；纯度 AST 静态锁定、历史回放不可变、纵向闭环正反例（12 项新测试）；OpenAPI 重新生成校验；[验证记录](docs/quality/st-005-math-loop.md)。效果推断/跨时间保持/题型难度匹配不在本项范围；远端 CI 未运行。下一项 ST-006。
+- ST-006：本地验收完成，学校私卷通过 AC-EVI-01/02、AC-SEC-01 范围验证——school_exam_items 人工确认门禁 + school_paper_attachments 结构性隔离（17 项新测试 + Gate 整改 1 项）；SQLite 往返 + PG16 一次性迁移腿；OpenAPI 重新生成校验；[验证记录](docs/quality/st-006-school-papers.md)。OCR 分数表解析、附件浏览端点不在本项范围；远端 CI 未运行。下一项 ST-007。
 
 ## 阶段门禁
 

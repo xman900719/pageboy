@@ -133,3 +133,31 @@ class ImportedQuestion(Base):
     __tablename__ = "imported_questions"
     question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"), primary_key=True)
     attachment_id: Mapped[str] = mapped_column(ForeignKey("source_attachments.id"), index=True)
+
+class SchoolExamItem(Base):
+    __tablename__ = "school_exam_items"
+    __table_args__ = (UniqueConstraint("school_exam_id", "question_label", name="uq_school_exam_item_label"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    school_exam_id: Mapped[str] = mapped_column(ForeignKey("school_exams.id"), index=True)
+    question_label: Mapped[str] = mapped_column(String(160))
+    knowledge_id: Mapped[str] = mapped_column(String(100))
+    earned_points: Mapped[float] = mapped_column(Float)
+    max_points: Mapped[float] = mapped_column(Float)
+    # 原始来源，确认后不改（INV-04）："manual_entry" 录入即人工确认；"ocr_draft" 须人工确认。
+    scoring_origin: Mapped[str] = mapped_column(String(32))
+    confirmed_by_user: Mapped[bool] = mapped_column(Boolean)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class SchoolPaperAttachment(Base):
+    __tablename__ = "school_paper_attachments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    school_exam_id: Mapped[str] = mapped_column(ForeignKey("school_exams.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(40))
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(32))
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    # 仅私有存储定位；绝不进入 HTTP 响应（AC-SEC-01）。
+    storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

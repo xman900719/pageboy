@@ -39,3 +39,13 @@
 `answer_attempts` 增加唯一索引 `uq_attempt_exposure (exposure_id)`：一个曝光至多一条有效作答。作答幂等由唯一约束在提交点裁决——同键同载荷并发重试返回同一持久行（`already_recorded`）；同键异载荷 409 `IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`；同曝光异键 409 `EXPOSURE_ALREADY_SUBMITTED`；均不产生未处理 500。
 
 迁移 `0003` 为条件式（`0001` 按当前 models 建表，新库在 0001 即含新结构），SQLite 侧经 batch 重建增删列以保持外键与 `alembic check` 干净。遗留库若已存在重复未见认定或同曝光双作答（仅旧并发缺陷可产生），索引创建诚实失败、需人工裁决，不自动改写历史；SQLite 下该失败点非原子（列已增、回填未完），需人工重跑或清理。回退仅用于隔离开发库。验证证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)。
+
+
+## ST-006 学校私卷逐题核对与附件隔离
+
+学校私卷不进题库与练习流：`/api/practice/next` 永不服务校卷题目，校卷仅产生证据记录。迁移 `0004` 新增两张表：
+
+- `school_exam_items`：逐题得分，每条恰一个 `knowledge_id`（杜绝多考点总分重复分配）；`(school_exam_id, question_label)` 唯一约束防重复证据；`scoring_origin` 恒记原始来源（`manual_entry` / `ocr_draft`，确认后不改，INV-04）；`confirmed_by_user` + `confirmed_at` 为人工确认门禁——**只有确认条目才进入 `get_evidence`**（AC-EVI-02）。`manual_entry` 建即视为人工确认；`ocr_draft` 须经 `POST .../items/{id}/confirm`（必须 `confirmed_by_human=true`，可修正识别分，确认后不可变——同分重复确认 409 `SCHOOL_ITEM_ALREADY_CONFIRMED`，异分改判 409 `SCHOOL_ITEM_IMMUTABLE`）。
+- `school_paper_attachments`：校卷原件复用 ST-003 私有存储（魔数/页数/像素/10MiB 校验、0600 独占写、sha256）。**不存在任何读取校卷附件字节的端点**；存储键不进任何 HTTP 响应；校卷附件不与 `source_documents` 关联，无法被内容台账、题目草稿/发布或练习引用（AC-SEC-01）。
+
+证据装配：已确认 item 以合成键 `school-item:{id}` 并入 `get_evidence`（与练习评测条目互为不同观测，`summarize` 按 item 独立去重）；ST-005 复测装配不含校卷条目。总分行（`SchoolExam.earned_points/max_points`）永不折算考点证据（INV-05）。回退仅用于隔离开发库（删两表）。验证证据见 [ST-006 验证记录](../quality/st-006-school-papers.md)。

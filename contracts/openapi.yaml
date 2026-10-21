@@ -266,6 +266,69 @@ components:
       - max_points
       title: SchoolExamIn
       type: object
+    SchoolExamItemIn:
+      properties:
+        earned_points:
+          minimum: 0.0
+          title: Earned Points
+          type: number
+        knowledge_id:
+          maxLength: 100
+          minLength: 1
+          title: Knowledge Id
+          type: string
+        max_points:
+          exclusiveMinimum: 0.0
+          maximum: 100.0
+          title: Max Points
+          type: number
+        question_label:
+          maxLength: 160
+          minLength: 1
+          title: Question Label
+          type: string
+        scoring_origin:
+          enum:
+          - manual_entry
+          - ocr_draft
+          title: Scoring Origin
+          type: string
+      required:
+      - question_label
+      - knowledge_id
+      - earned_points
+      - max_points
+      - scoring_origin
+      title: SchoolExamItemIn
+      type: object
+    SchoolExamItemsIn:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SchoolExamItemIn'
+          maxItems: 100
+          minItems: 1
+          title: Items
+          type: array
+      required:
+      - items
+      title: SchoolExamItemsIn
+      type: object
+    SchoolItemConfirmIn:
+      properties:
+        confirmed_by_human:
+          description: 必须为 true，表示人工核对 OCR 草稿分数
+          title: Confirmed By Human
+          type: boolean
+        earned_points:
+          minimum: 0.0
+          title: Earned Points
+          type: number
+      required:
+      - confirmed_by_human
+      - earned_points
+      title: SchoolItemConfirmIn
+      type: object
     SourceDetailOut:
       properties:
         attachments:
@@ -1208,6 +1271,185 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add School Exam
+  /api/school-exams/{exam_id}:
+    get:
+      description: 考试详情 + 逐题得分（含确认状态）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。
+      operationId: get_school_exam_detail_api_school_exams__exam_id__get
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get School Exam Detail
+  /api/school-exams/{exam_id}/items:
+    post:
+      description: 逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。
+      operationId: add_school_exam_items_api_school_exams__exam_id__items_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamItemsIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Add School Exam Items
+  /api/school-exams/{exam_id}/items/{item_id}/confirm:
+    post:
+      description: 仅 ocr_draft 草稿可人工确认（可修正识别分）；确认后不可变（INV-04，改判须另建记录）。
+      operationId: confirm_school_exam_item_api_school_exams__exam_id__items__item_id__confirm_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolItemConfirmIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam Item
+  /api/school-exams/{exam_id}/paper:
+    post:
+      description: 原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。
+      operationId: upload_school_paper_api_school_exams__exam_id__paper_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: query
+        name: filename
+        required: true
+        schema:
+          maxLength: 255
+          minLength: 1
+          pattern: ^[^/\\\x00-\x1f\x7f]+$
+          title: Filename
+          type: string
+      - in: query
+        name: expected_sha256
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Expected Sha256
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/pdf:
+            schema:
+              format: binary
+              type: string
+          image/jpeg:
+            schema:
+              format: binary
+              type: string
+          image/png:
+            schema:
+              format: binary
+              type: string
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Upload School Paper
   /api/subjects:
     get:
       operationId: subjects_api_subjects_get

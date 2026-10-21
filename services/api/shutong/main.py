@@ -2,17 +2,20 @@
 from __future__ import annotations
 import os
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, Query
+from hashlib import sha256
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from .auth import require_owner
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .database import get_db
 from . import models as m
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, GoalIn, Subject
+from . import private_files as files
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -189,6 +192,118 @@ def get_school_exams(subject: Subject, owner: str = Depends(require_owner), db: 
     exams = db.execute(select(m.SchoolExam).where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject).order_by(m.SchoolExam.exam_date.desc())).scalars().all()
     return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user} for e in exams]
 
+@app.post("/api/school-exams/{exam_id}/items", status_code=201)
+def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    labels = [item.question_label for item in payload.items]
+    if len(set(labels)) != len(labels):
+        raise HTTPException(409, detail="SCHOOL_ITEM_LABEL_CONFLICT")
+    records = []
+    for item in payload.items:
+        confirmed = item.scoring_origin == "manual_entry"
+        record = m.SchoolExamItem(school_exam_id=exam.id, question_label=item.question_label,
+                                   knowledge_id=item.knowledge_id, earned_points=item.earned_points,
+                                   max_points=item.max_points, scoring_origin=item.scoring_origin,
+                                   confirmed_by_user=confirmed, confirmed_at=m.now() if confirmed else None)
+        records.append(record)
+        db.add(record)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 跨批同卷同题号被唯一约束拦截；回滚保证无部分写入。
+        db.rollback()
+        raise HTTPException(409, detail="SCHOOL_ITEM_LABEL_CONFLICT")
+    for record in records:
+        db.refresh(record)
+    return {"items": [{"id": r.id, "question_label": r.question_label, "scoring_origin": r.scoring_origin, "confirmed_by_user": r.confirmed_by_user} for r in records],
+            "evidence_created": sum(1 for r in records if r.confirmed_by_user)}
+
+@app.post("/api/school-exams/{exam_id}/items/{item_id}/confirm")
+def confirm_school_exam_item(exam_id: str, item_id: str, payload: SchoolItemConfirmIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """仅 ocr_draft 草稿可人工确认（可修正识别分）；确认后不可变（INV-04，改判须另建记录）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    if item.confirmed_by_user:
+        if payload.earned_points == item.earned_points:
+            raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
+        raise HTTPException(409, detail="SCHOOL_ITEM_IMMUTABLE")
+    if item.scoring_origin != "ocr_draft":
+        # 经 API 不可达（manual_entry 建即确认）：防御绕过应用层、直改库产生的越界行，使其仍需人工裁决。
+        raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
+    if payload.earned_points > item.max_points:
+        raise HTTPException(422, detail="earned_points exceeds max_points")
+    item.earned_points = payload.earned_points
+    item.confirmed_by_user = True
+    item.confirmed_at = m.now()
+    db.commit()
+    return {"id": item.id, "question_label": item.question_label, "earned_points": item.earned_points,
+            "max_points": item.max_points, "scoring_origin": item.scoring_origin, "confirmed_by_user": item.confirmed_by_user}
+
+@app.get("/api/school-exams/{exam_id}")
+def get_school_exam_detail(exam_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """考试详情 + 逐题得分（含确认状态）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    items = db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam.id).order_by(m.SchoolExamItem.question_label)).scalars().all()
+    attachments = db.execute(select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam.id, m.SchoolPaperAttachment.owner_id == owner).order_by(m.SchoolPaperAttachment.created_at, m.SchoolPaperAttachment.id)).scalars().all()
+    return {"id": exam.id, "subject": exam.subject, "title": exam.title, "exam_date": str(exam.exam_date),
+            "earned_points": exam.earned_points, "max_points": exam.max_points, "confirmed_by_user": exam.confirmed_by_user,
+            "items": [{"id": i.id, "question_label": i.question_label, "knowledge_id": i.knowledge_id,
+                       "earned_points": i.earned_points, "max_points": i.max_points,
+                       "scoring_origin": i.scoring_origin, "confirmed_by_user": i.confirmed_by_user} for i in items],
+            "attachments": [{"id": a.id, "filename": a.filename, "media_type": a.media_type, "sha256": a.sha256,
+                             "byte_size": a.byte_size, "created_at": a.created_at} for a in attachments]}
+
+def save_school_paper(db, exam_id, owner, filename, media_type, data, expected_sha256):
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    files.validate_file(data, media_type)
+    digest = sha256(data).hexdigest()
+    if expected_sha256 is not None and expected_sha256 != digest:
+        raise HTTPException(422, detail="UPLOAD_HASH_MISMATCH")
+    key = None
+    try:
+        key = files.write_blob(data)
+        attachment = m.SchoolPaperAttachment(school_exam_id=exam.id, owner_id=owner, filename=filename,
+                                            media_type=media_type, sha256=digest, byte_size=len(data), storage_key=key)
+        db.add(attachment)
+        db.commit()
+    except (OSError, SQLAlchemyError):
+        db.rollback()
+        if key is not None:
+            files.blob_path(key).unlink(missing_ok=True)
+        raise HTTPException(503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
+    db.refresh(attachment)
+    return {"id": attachment.id, "filename": attachment.filename, "media_type": attachment.media_type,
+            "sha256": attachment.sha256, "byte_size": attachment.byte_size, "created_at": attachment.created_at}
+
+@app.post("/api/school-exams/{exam_id}/paper", status_code=201,
+          openapi_extra={"requestBody": {"required": True, "content": {
+              media: {"schema": {"type": "string", "format": "binary"}} for media in files.MEDIA_TYPES}}})
+async def upload_school_paper(exam_id: str, request: Request,
+                              filename: str = Query(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f\x7f]+$"),
+                              expected_sha256: str | None = Query(default=None, pattern="^[0-9a-f]{64}$"),
+                              owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。"""
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type not in files.MEDIA_TYPES:
+        raise HTTPException(415, detail="UNSUPPORTED_FILE_TYPE")
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > files.MAX_BYTES:
+            raise HTTPException(413, detail="INVALID_FILE_SIZE")
+        data.extend(chunk)
+    return await run_in_threadpool(save_school_paper, db, exam_id, owner, filename, media_type, bytes(data), expected_sha256)
+
 @app.post("/api/goals", status_code=201)
 def set_goal(payload: GoalIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
     next_version = (db.scalar(select(func.max(m.Goal.version)).where(m.Goal.learner_id == owner, m.Goal.subject == payload.subject)) or 0) + 1
@@ -204,6 +319,10 @@ def get_evidence(db: Session, learner_id: str, subject: str):
         if a.earned_points is None or a.scoring_origin != "reviewed_answer_key" or len(q.knowledge_ids) != 1:
             continue
         result.append(Evidence(source_event_id=a.id, question_version_id=q.id, knowledge_id=q.knowledge_ids[0], earned_points=a.earned_points, max_points=a.max_points, independent=not a.hints_used, is_first_exposure=ex.is_unseen_at_exposure))
+    # 已人工确认的校卷逐题得分并入证据（合成键按 item 独立计数）；总分行永不折算（INV-05）。
+    school_rows = db.execute(select(m.SchoolExamItem, m.SchoolExam).where(m.SchoolExam.id == m.SchoolExamItem.school_exam_id, m.SchoolExam.learner_id == learner_id, m.SchoolExam.subject == subject, m.SchoolExamItem.confirmed_by_user.is_(True), m.SchoolExamItem.max_points > 0)).all()
+    for item, exam in school_rows:
+        result.append(Evidence(source_event_id=item.id, question_version_id=f"school-item:{item.id}", knowledge_id=item.knowledge_id, earned_points=item.earned_points, max_points=item.max_points, independent=True, is_first_exposure=True))
     return result
 
 @app.get("/api/guidance/profile")

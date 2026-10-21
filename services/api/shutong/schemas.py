@@ -107,6 +107,31 @@ class SchoolExamIn(BaseModel):
             raise ValueError("earned_points exceeds max_points")
         return self
 
+class SchoolExamItemIn(BaseModel):
+    question_label: str = Field(min_length=1, max_length=160)
+    knowledge_id: str = Field(min_length=1, max_length=100)
+    earned_points: float = Field(ge=0)
+    max_points: float = Field(gt=0, le=100)
+    scoring_origin: Literal["manual_entry", "ocr_draft"]
+    @model_validator(mode="after")
+    def check_points(self):
+        if self.earned_points > self.max_points:
+            raise ValueError("earned_points exceeds max_points")
+        return self
+
+class SchoolExamItemsIn(BaseModel):
+    items: list[SchoolExamItemIn] = Field(min_length=1, max_length=100)
+
+class SchoolItemConfirmIn(BaseModel):
+    confirmed_by_human: bool = Field(strict=True, description="必须为 true，表示人工核对 OCR 草稿分数")
+    earned_points: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed_by_human:
+            raise ValueError("human confirmation required")
+        return self
+
 class GoalIn(BaseModel):
     subject: Subject
     target_points: float = Field(ge=0)
