@@ -49,3 +49,20 @@
 - `school_paper_attachments`：校卷原件复用 ST-003 私有存储（魔数/页数/像素/10MiB 校验、0600 独占写、sha256）。**不存在任何读取校卷附件字节的端点**；存储键不进任何 HTTP 响应；校卷附件不与 `source_documents` 关联，无法被内容台账、题目草稿/发布或练习引用（AC-SEC-01）。
 
 证据装配：已确认 item 以合成键 `school-item:{id}` 并入 `get_evidence`（与练习评测条目互为不同观测，`summarize` 按 item 独立去重）；ST-005 复测装配不含校卷条目。总分行（`SchoolExam.earned_points/max_points`）永不折算考点证据（INV-05）。回退仅用于隔离开发库（删两表）。验证证据见 [ST-006 验证记录](../quality/st-006-school-papers.md)。
+
+
+## ST-007 四科题型与评分来源
+
+`question_versions` 新增 `group_context`（题组/阅读共享文段，按版本自包含——改文段即修订新版本，不建 Group 表）与 `media_attachment_id`（听力题音频引用）。**后者不带数据库级外键**：`source_attachments` 属 0002 表，内联外键会使全新 PostgreSQL 库在 `0001` 建表即失败（SQLite 容忍悬空 REFERENCES 掩蔽该问题，2026-10-22 docker 实测捕获）；引用合法性由三个题目创建路径的应用层校验强制保证（存在/同源/owner → 422 `MEDIA_ATTACHMENT_INVALID`）。音频仅扩展 `MEDIA_TYPES`（mp3/mp4 魔数校验）并复用既有 owner 鉴权下载路由，**不新增任何字节端点**；解析分支直通 `needs_manual_input`，不引入转写。
+
+判分矩阵（评分来源恒可追溯，INV-04）：
+
+| kind | 判分 | `scoring_origin` |
+|---|---|---|
+| single_choice | strip 后全等 | `reviewed_answer_key` |
+| short_answer | 归一化全等：`norm(s) = " ".join(s.split()).casefold()` | `reviewed_answer_key` |
+| subjective | 提交不判分（earned=None） | `ungraded_subjective` |
+
+归一化规则**对含意差敏感**：`'  X=-1  '` 与 `'x=-1'` 判同；`'x = - 1'`（值内含空格）与 `'x=-1'` 判异——答案键由人工审核，录入时须按此规则书写；带单位/含意空白的题型应以选项题或主观题承载。
+
+主观自评为**独立来源记录**（`self_assessments`，迁移 0005）：作答行不可变（INV-03/09）；`GET .../attempts/{id}/reference` 仅对已作答的 subjective 题开放参考答案；`POST .../self-assessment` 一次自评（attempt 唯一约束 + 并发竞争按落库事实裁决 409），`scoring_origin="self_assessment"` 恒不改作答行。自评**不进客观证据**（`get_evidence` 不读 self_assessments；profile/plan/validation 语义不变）——自评进入画像须另立 ADR。评分来源审计：`GET /api/practice/attempts?subject=` 列出每条作答的 origin、kind 与自评关联。回退仅隔离开发库。验证证据见 [ST-007 验证记录](../quality/st-007-question-kinds.md)。

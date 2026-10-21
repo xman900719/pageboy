@@ -15,7 +15,7 @@ from .ingestion import router as ingestion_router, require_import_integrity
 from .database import get_db
 from . import models as m
 from . import private_files as files
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SchoolExamIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -45,6 +45,10 @@ def add_question(payload: QuestionIn, owner: str = Depends(require_owner), db: S
     src = db.get(m.SourceDocument, payload.source_document_id)
     if src is None:
         raise HTTPException(404, detail="source not found")
+    if payload.media_attachment_id is not None:
+        attachment = db.get(m.SourceAttachment, payload.media_attachment_id)
+        if attachment is None or attachment.source_document_id != payload.source_document_id or attachment.owner_id != owner:
+            raise HTTPException(422, detail="MEDIA_ATTACHMENT_INVALID")
     v = create_question_draft(db, src, payload)
     db.commit(); db.refresh(v)
     return {"id": v.id, "question_id": v.question_id, "status": v.status}
@@ -62,6 +66,11 @@ def revise_question(version_id: str, payload: QuestionIn, owner: str = Depends(r
     question = db.get(m.Question, original.question_id)
     if payload.source_document_id != question.source_document_id:
         raise HTTPException(409, detail="revision cannot change source")
+    if payload.media_attachment_id is not None:
+        # 修订创建新版本，媒体引用同样须"存在/同源/属 owner"（§1 创建即校验；Gate 整改补齐）。
+        media = db.get(m.SourceAttachment, payload.media_attachment_id)
+        if media is None or media.source_document_id != payload.source_document_id or media.owner_id != owner:
+            raise HTTPException(422, detail="MEDIA_ATTACHMENT_INVALID")
     next_version = db.scalar(select(func.max(m.QuestionVersion.version)).where(m.QuestionVersion.question_id == question.id)) + 1
     revised = m.QuestionVersion(question_id=question.id, version=next_version, **payload.model_dump(exclude={"source_document_id"}))
     db.add(revised)
@@ -139,7 +148,7 @@ def next_item(subject: Subject, purpose: str = Query(default="training", pattern
             db.add(exp)
             db.commit()  # 复练曝光不受部分唯一索引约束；若仍失败则如实抛出，不吞错。
         db.refresh(exp)
-        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind, "options": v.options, "max_points": v.max_points, "subject": subject, "knowledge_ids": v.knowledge_ids}
+        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind, "group_context": v.group_context, "media_attachment_id": v.media_attachment_id, "options": v.options, "max_points": v.max_points, "subject": subject, "knowledge_ids": v.knowledge_ids}
     raise HTTPException(404, detail="NO_ELIGIBLE_QUESTION")
 
 @app.post("/api/practice/attempts", status_code=201)
@@ -156,9 +165,13 @@ def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: 
     if exp is None or exp.learner_id != owner:
         raise HTTPException(404, detail="exposure not found")
     v = db.get(m.QuestionVersion, exp.question_version_id)
-    # Simple objective grading only; subjective scoring remains unverified.
+    # 客观判分：single_choice 精确比对；short_answer 归一化比对；subjective 不判分，自评走独立来源记录。
     if v.kind == "single_choice":
         earned = v.max_points if payload.answer.strip() == v.correct_answer.strip() else 0.0
+        origin = "reviewed_answer_key"
+    elif v.kind == "short_answer":
+        normalize = lambda value: " ".join(value.split()).casefold()
+        earned = v.max_points if normalize(payload.answer) == normalize(v.correct_answer) else 0.0
         origin = "reviewed_answer_key"
     else:
         earned = None
@@ -180,6 +193,67 @@ def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: 
         raise
     db.refresh(attempt)
     return {"id": attempt.id, "status": "recorded", "earned_points": earned, "max_points": v.max_points, "scoring_origin": origin, "evaluation_valid_unseen": exp.purpose == "evaluation" and exp.is_unseen_at_exposure and not payload.hints_used}
+
+@app.get("/api/practice/attempts/{attempt_id}/reference")
+def attempt_reference(attempt_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """主观题参考答案：作答先行才可对答案（以 attempt 存在为门）；非主观不适用。"""
+    attempt = db.get(m.AnswerAttempt, attempt_id)
+    if attempt is None or attempt.learner_id != owner:
+        raise HTTPException(404, detail="attempt not found")
+    version = db.get(m.QuestionVersion, attempt.question_version_id)
+    if version.kind != "subjective":
+        raise HTTPException(409, detail="REFERENCE_NOT_APPLICABLE")
+    return {"reference_answer": version.correct_answer, "max_points": version.max_points}
+
+@app.post("/api/practice/attempts/{attempt_id}/self-assessment", status_code=201)
+def record_self_assessment(attempt_id: str, payload: SelfAssessmentIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """主观自评为独立来源记录：不改写作答行，一次自评不可更新（INV-04），不进客观证据。"""
+    attempt = db.get(m.AnswerAttempt, attempt_id)
+    if attempt is None or attempt.learner_id != owner:
+        raise HTTPException(404, detail="attempt not found")
+    version = db.get(m.QuestionVersion, attempt.question_version_id)
+    if version.kind != "subjective":
+        raise HTTPException(409, detail="SELF_ASSESSMENT_NOT_APPLICABLE")
+    if payload.self_earned_points > attempt.max_points:
+        raise HTTPException(422, detail="self_earned_points exceeds max_points")
+    if db.scalar(select(m.SelfAssessment).where(m.SelfAssessment.attempt_id == attempt.id)) is not None:
+        raise HTTPException(409, detail="SELF_ASSESSMENT_ALREADY_RECORDED")
+    record = m.SelfAssessment(attempt_id=attempt.id, learner_id=owner, self_earned_points=payload.self_earned_points,
+                              max_points=attempt.max_points, scoring_origin="self_assessment")
+    db.add(record)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发重复自评被 attempt 唯一索引拦截；按落库事实裁决返回 409，不产生未处理 500（Gate MINOR#1）。
+        db.rollback()
+        if db.scalar(select(m.SelfAssessment).where(m.SelfAssessment.attempt_id == attempt.id)) is not None:
+            raise HTTPException(409, detail="SELF_ASSESSMENT_ALREADY_RECORDED")
+        raise
+    db.refresh(record)
+    return {"id": record.id, "attempt_id": record.attempt_id, "self_earned_points": record.self_earned_points,
+            "max_points": record.max_points, "scoring_origin": record.scoring_origin}
+
+@app.get("/api/practice/attempts")
+def list_attempts(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """评分来源溯源列表：作答行 origin 与自评记录并列可审计；自评不进 get_evidence/profile。"""
+    rows = db.execute(select(m.AnswerAttempt, m.QuestionVersion, m.Exposure)
+                      .join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id)
+                      .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
+                      .join(m.Exposure, m.Exposure.id == m.AnswerAttempt.exposure_id)
+                      .where(m.AnswerAttempt.learner_id == owner, m.Question.subject == subject)
+                      .order_by(m.AnswerAttempt.created_at.desc(), m.AnswerAttempt.id.desc())).all()
+    assessments = {}
+    if rows:
+        records = db.scalars(select(m.SelfAssessment).where(m.SelfAssessment.attempt_id.in_([row[0].id for row in rows]))).all()
+        assessments = {record.attempt_id: record for record in records}
+    return [{"id": attempt.id, "question_version_id": attempt.question_version_id, "purpose": exposure.purpose,
+             "kind": version.kind, "answer": attempt.answer, "earned_points": attempt.earned_points,
+             "max_points": attempt.max_points, "scoring_origin": attempt.scoring_origin, "hints_used": attempt.hints_used,
+             "self_assessment": ({"id": record.id, "self_earned_points": record.self_earned_points,
+                                  "max_points": record.max_points, "scoring_origin": record.scoring_origin}
+                                 if (record := assessments.get(attempt.id)) is not None else None),
+             "created_at": attempt.created_at}
+            for attempt, version, exposure in rows]
 
 @app.post("/api/school-exams", status_code=201)
 def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):

@@ -32,6 +32,8 @@ components:
           - application/pdf
           - image/png
           - image/jpeg
+          - audio/mpeg
+          - audio/mp4
           title: Media Type
           type: string
         parsed_at:
@@ -167,11 +169,18 @@ components:
           minLength: 1
           title: Correct Answer
           type: string
+        group_context:
+          anyOf:
+          - maxLength: 20000
+            type: string
+          - type: 'null'
+          title: Group Context
         kind:
           default: single_choice
           enum:
           - single_choice
           - short_answer
+          - subjective
           title: Kind
           type: string
         knowledge_ids:
@@ -185,6 +194,11 @@ components:
           maximum: 100.0
           title: Max Points
           type: number
+        media_attachment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Attachment Id
         options:
           items:
             type: string
@@ -328,6 +342,16 @@ components:
       - confirmed_by_human
       - earned_points
       title: SchoolItemConfirmIn
+      type: object
+    SelfAssessmentIn:
+      properties:
+        self_earned_points:
+          minimum: 0.0
+          title: Self Earned Points
+          type: number
+      required:
+      - self_earned_points
+      title: SelfAssessmentIn
       type: object
     SourceDetailOut:
       properties:
@@ -915,6 +939,14 @@ paths:
             schema:
               format: binary
               type: string
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+          audio/mpeg:
+            schema:
+              format: binary
+              type: string
           image/jpeg:
             schema:
               format: binary
@@ -1121,6 +1153,42 @@ paths:
           description: Validation Error
       summary: Validation
   /api/practice/attempts:
+    get:
+      description: 评分来源溯源列表：作答行 origin 与自评记录并列可审计；自评不进 get_evidence/profile。
+      operationId: list_attempts_api_practice_attempts_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Attempts
     post:
       operationId: submit_attempt_api_practice_attempts_post
       parameters:
@@ -1151,6 +1219,76 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Submit Attempt
+  /api/practice/attempts/{attempt_id}/reference:
+    get:
+      description: 主观题参考答案：作答先行才可对答案（以 attempt 存在为门）；非主观不适用。
+      operationId: attempt_reference_api_practice_attempts__attempt_id__reference_get
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Attempt Reference
+  /api/practice/attempts/{attempt_id}/self-assessment:
+    post:
+      description: 主观自评为独立来源记录：不改写作答行，一次自评不可更新（INV-04），不进客观证据。
+      operationId: record_self_assessment_api_practice_attempts__attempt_id__self_assessment_post
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfAssessmentIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Record Self Assessment
   /api/practice/next:
     get:
       description: A returned question is immediately recorded as exposed. Evaluation
@@ -1425,6 +1563,14 @@ paths:
       requestBody:
         content:
           application/pdf:
+            schema:
+              format: binary
+              type: string
+          audio/mp4:
+            schema:
+              format: binary
+              type: string
+          audio/mpeg:
             schema:
               format: binary
               type: string

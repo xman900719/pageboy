@@ -45,6 +45,12 @@ class QuestionVersion(Base):
     reviewed_by_human: Mapped[bool] = mapped_column(Boolean, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # ST-007：题组/阅读共享文段按版本自包含；听力题音频引用须为同一来源的原件附件。
+    group_context: Mapped[str | None] = mapped_column(Text)
+    # 不带数据库级外键：source_attachments 属 0002 表，内联 FK 会使全新 PostgreSQL 库
+    # 在 0001 create_all 即失败（SQLite 容忍悬空 REFERENCES，PG 在建表时校验——2026-10-22 实测）。
+    # 引用合法性由全部三个创建路径的应用层校验保证（存在/同源/owner → 422 MEDIA_ATTACHMENT_INVALID）。
+    media_attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 class Exposure(Base):
     __tablename__ = "exposures"
@@ -71,6 +77,18 @@ class AnswerAttempt(Base):
     max_points: Mapped[float] = mapped_column(Float)
     scoring_origin: Mapped[str] = mapped_column(String(32))
     hints_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class SelfAssessment(Base):
+    __tablename__ = "self_assessments"
+    __table_args__ = (Index("uq_self_assessment_attempt", "attempt_id", unique=True),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("answer_attempts.id"))
+    learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    # 主观自评为独立来源记录（INV-04）：一次自评不可更新，且不进客观证据（get_evidence/profile）。
+    self_earned_points: Mapped[float] = mapped_column(Float)
+    max_points: Mapped[float] = mapped_column(Float)
+    scoring_origin: Mapped[str] = mapped_column(String(32), default="self_assessment")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class SchoolExam(Base):

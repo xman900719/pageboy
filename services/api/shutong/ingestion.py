@@ -134,7 +134,11 @@ def parse_attachment(attachment_id: str, owner: str = Depends(require_owner), db
     data = files.load_blob(attachment)
     if attachment.status == "confirmed":
         raise HTTPException(409, detail="IMPORT_ALREADY_CONFIRMED")
-    text, version = files.parse_text(data, attachment.media_type)
+    if attachment.media_type.startswith("audio/"):
+        # 音频不跑 pdftotext/tesseract（无转写）：直接转人工录入，走既有 confirm-import（ST-007 §2）。
+        text, version = None, None
+    else:
+        text, version = files.parse_text(data, attachment.media_type)
     result = db.execute(update(m.SourceAttachment).where(m.SourceAttachment.id == attachment.id,
                         m.SourceAttachment.status != "confirmed").values(extracted_text=text, parser_version=version,
                         parsed_at=m.now(), status="parsed" if text else "needs_manual_input"))
@@ -161,6 +165,10 @@ def confirm_import(attachment_id: str, payload: ImportConfirmationIn, owner: str
     source = source_or_404(db, attachment.source_document_id)
     try:
         for question in payload.questions:
+            if question.media_attachment_id is not None:
+                media = db.get(m.SourceAttachment, question.media_attachment_id)
+                if media is None or media.source_document_id != attachment.source_document_id or media.owner_id != owner:
+                    raise HTTPException(422, detail="MEDIA_ATTACHMENT_INVALID")
             version = create_question_draft(db, source, question)
             db.add(m.ImportedQuestion(question_version_id=version.id, attachment_id=attachment.id))
         db.commit()

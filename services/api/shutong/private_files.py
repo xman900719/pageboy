@@ -16,7 +16,7 @@ MAX_BYTES = 10 * 1024 * 1024
 MAX_PAGES = 20
 MAX_PIXELS = 20_000_000
 MAX_TEXT_BYTES = 200_000
-MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg")
+MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4")
 
 
 def private_root():
@@ -57,6 +57,14 @@ def validate_file(data, media_type):
         pages = re.search(r"^Pages:\s+(\d+)", info, re.MULTILINE)
         if not pages or not 1 <= int(pages[1]) <= MAX_PAGES or re.search(r"^Encrypted:\s+yes", info, re.MULTILINE):
             raise HTTPException(422, detail="UNSUPPORTED_PDF")
+    elif media_type in ("audio/mpeg", "audio/mp4"):
+        # 仅魔数校验（mp3：ID3 或 0xFF Ex/Fx 帧头；mp4/m4a：偏移 4 处 ftyp），不引入时长/码率解析。
+        if media_type == "audio/mpeg":
+            valid = data.startswith(b"ID3") or (len(data) > 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0)
+        else:
+            valid = len(data) > 12 and data[4:8] == b"ftyp"
+        if not valid:
+            raise HTTPException(422, detail="FILE_TYPE_MISMATCH")
     else:
         try:
             with warnings.catch_warnings():

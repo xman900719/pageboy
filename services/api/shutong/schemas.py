@@ -16,15 +16,19 @@ class SourceIn(BaseModel):
 class QuestionIn(BaseModel):
     source_document_id: str
     stem: str = Field(min_length=1)
-    kind: Literal["single_choice", "short_answer"] = "single_choice"
+    kind: Literal["single_choice", "short_answer", "subjective"] = "single_choice"
     options: list[str] = Field(default_factory=list)
     correct_answer: str = Field(min_length=1)
     knowledge_ids: list[str] = Field(min_length=1)
     max_points: float = Field(gt=0, le=100)
+    group_context: str | None = Field(default=None, max_length=20000)
+    media_attachment_id: str | None = None
     @model_validator(mode="after")
     def validate_options(self):
         if self.kind == "single_choice" and len(self.options) < 2:
             raise ValueError("single_choice needs at least 2 options")
+        if self.kind == "subjective" and self.options:
+            raise ValueError("subjective must not carry options")
         return self
 
 class QuestionRevisionOut(BaseModel):
@@ -65,7 +69,7 @@ class AttachmentOut(BaseModel):
     id: str
     source_document_id: str
     filename: str
-    media_type: Literal["application/pdf", "image/png", "image/jpeg"]
+    media_type: Literal["application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4"]
     sha256: str = Field(pattern="^[0-9a-f]{64}$")
     byte_size: int = Field(gt=0)
     status: Literal["uploaded", "parsed", "needs_manual_input", "confirmed"]
@@ -93,6 +97,9 @@ class AttemptIn(BaseModel):
     exposure_id: str
     answer: str
     hints_used: bool = False
+
+class SelfAssessmentIn(BaseModel):
+    self_earned_points: float = Field(ge=0)
 
 class SchoolExamIn(BaseModel):
     subject: Subject
