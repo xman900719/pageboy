@@ -18,3 +18,5 @@
 每次备份必须关联 DB 一致性快照、私有附件与 SHA-256 清单、应用迁移版本。`infra/backup.sh` 当前**仅导出 PostgreSQL 并写入 restic**，尚未实现附件协调/真实调度、异常告警和保留期管理；因此对具有附件的真实运行**不满足本策略**。增加附件之后必须先扩展备份脚本并实测，再存储真实长期学习数据。
 
 逻辑 `pg_dump` 无法提供 WAL/PITR 秒级恢复，不能宣称有 PITR。成功备份不等于成功恢复；每月至少隔离完整恢复一次，每季度做跨主机重建演练；演练保存时间、快照ID、校验结果，不能假填。
+
+> **2026-10-22 事实记录（不改变上表目标数字，状态仍为 PROPOSED / UNVERIFIED）**：`infra/backup.sh` 已按本策略要求扩展为 DB+附件联合备份模板（附件 `tar.gz`、双文件 `SHA256SUMS`、含 `migration_revision` 的 `manifest.txt`；设 `BACKUP_OUTPUT_DIR` 时进入本地演练模式并跳过 restic），新增隔离恢复模板 `infra/restore.sh` 与本地隔离恢复演练 `scripts/smoke_joint_restore.py`（上段"当前仅导出 PostgreSQL"的描述自本日起由该联合模板取代）。本地演练只证明脚本在本机可完成"备份→摧毁→恢复→冒烟"闭环，**不构成 AC-OPS-01**：异地/另一故障域备份、restic 保留策略、密钥隔离与真实 RPO/RTO 均未验证。

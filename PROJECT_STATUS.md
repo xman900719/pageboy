@@ -65,3 +65,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 ## ST-009 收口验证（2026-10-22）
 
 Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单同步、overview 审计确认、契约三次增量再生成全部一致；CI 新增 `pg-migration`（全新 PG 0001→head→downgrade 0004→head→check——ST-007 缺陷类的永久护栏，SQLite 无法拦截）与 `web-e2e` 两个作业（命令经本地等价环境逐字验证；**远端未运行不标通过**）；新增 axe-core 三视图 WCAG A/AA 扫描并修复 31 个 color-contrast serious 节点（designer 会话，仅 style.css 8 行颜色值）；ST-002 修订并发 docker 回归 6/6、ST-004 练习并发回归 19/19（跨全部五次迁移）。终验：Playwright 7/7、后端 110 passed/25 skipped、make verify、zensical --strict 全绿。**开发计划 ST-001~ST-009 全部本地验收完成**；剩余 ST-OPS-01/02 受外部环境与授权门禁约束（AC-OPS-01/02 仍未演练，真实长期数据落库前必须完成）。详见 [ST-009 验证记录](docs/quality/st-009-closure.md)。
+
+## ST-OPS-01 本地基础工作（2026-10-22，边界如实）
+
+按备份策略权威文档要求，`infra/backup.sh` 已扩展为 **DB+附件联合备份模板**（附件 tar.gz、双文件 SHA256SUMS、含 migration_revision 的 manifest；`BACKUP_OUTPUT_DIR` 进入本地演练模式跳过 restic——restic 本地未装）；新增隔离恢复模板 `infra/restore.sh`（SHA 校验、拒绝非 pageboy 库名/非空附件目录、pg_restore、迁移版本比对告警）与本地端到端演练 `scripts/smoke_joint_restore.py`（compose 全新双实例：种子→联合备份→摧毁→恢复→冒烟，行数/迁移版本/附件 sha 字节一致、练习可服务；orchestrator 亲跑 + lane 两轮共三次通过，清理幂等）。**这不构成 AC-OPS-01**：异地/另一故障域备份、restic 生产路径与保留策略、密钥隔离、真实 RPO/RTO 均未验证，策略状态保持 PROPOSED/UNVERIFIED。剩余 ST-OPS-01 异地部分与 ST-OPS-02 需 VPS/备份仓库/运行环境与明确授权。

@@ -29,6 +29,7 @@
 - ST-007：本地验收完成，四科题型与评分来源可追溯通过计划行范围验证——kind 判分矩阵（短答归一化/主观自评独立来源表不进客观证据）、题组 group_context、听力音频复用内容附件管线（无新字节路由）、attempts 溯源列表（14 项新测试 + Gate 整改 2 项）；PG16 迁移腿捕获并修复关键缺陷（内联 FK 使全新 PG 0001 失败——SQLite 掩蔽）；ST-004 并发脚本全量回归通过；[验证记录](docs/quality/st-007-question-kinds.md)。富文本渲染/前端旅程属 ST-008；音频转写不做；远端 CI 未运行。下一项 ST-008。
 - ST-008：本地验收完成，精简学习首页/复练/阶段诊断/缺证据解释通过 Playwright J1–J4 用户旅程（4/4，chromium 10.9s；双 webServer 临时 SQLite + 同源代理；种子全部虚构测试数据）；零后端改动（110 项护栏不变）；诚实文案红线 grep 零违规；[验证记录](docs/quality/st-008-user-journeys.md)。单浏览器、无性能断言；远端 CI 未运行。下一项 ST-009 收口。
 - ST-009：本地验收完成，Docs as Code/契约核对与 README 同步、CI 新增 pg-migration+web-e2e 护栏（命令本地逐字验证、远端未运行）、axe-core 三视图可访问性扫描与 31 个对比度节点修复、ST-002/004 并发回归全绿；[验证记录](docs/quality/st-009-closure.md)。**开发计划 ST-001~ST-009 全部完成**；剩余 ST-OPS-01/02 待外部环境与授权。
+- ST-OPS-01（本地部分）：联合备份模板（backup.sh 附件协调）+ restore.sh + 本地隔离恢复演练三次通过（行数/迁移版本/附件字节一致）；**不构成 AC-OPS-01**——异地/另一故障域、restic 生产路径、保留/告警、真实 RPO/RTO 未验证（见 PROJECT_STATUS 与 backup-policy 事实记录）；异地部分与 ST-OPS-02 待外部授权。
 
 ## 阶段门禁
 
