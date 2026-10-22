@@ -4,12 +4,12 @@
 
 - FastAPI 私有 API（owner Bearer Token）、SQLite 本地开发适配/PostgreSQL 配置、Alembic 基础迁移。
 - 来源台账、私有 PDF/图片原件与哈希、本地 PDF 文本/图片 OCR 草稿、人工确认、草稿/审核/发布选择题与修订新版本、曝光记录、自动判分、简单幂等答题、总分学校卷记录、Goal 版本、启发式画像和训练计划。
-- React Web/PWA 交互骨架；PWA **只缓存静态壳，不离线缓存学生数据/API**。
+- React Web/PWA 交互骨架与三视图学习 UI（首页/练习复练/阶段诊断，Playwright J1–J4 用户旅程通过）；PWA **只缓存静态壳，不离线缓存学生数据/API**。
 - OpenAPI 快照、JSON Schema 验证及反例、Markdown 图片/链接校验、测试、已验证的 GitHub CI、备份模板。
 
 ## 尚未实现且不得宣称完成
 
-复杂试卷/公式/图表自动解析、真实资料来源法务评审、扫描 PDF 自动 OCR、四科富文本渲染、正式目标蓝图、可比独立验证与成绩效果评价、访问身份管理、外部部署、自动告警、异地完整恢复。练习会话轮换、曝光原子化与作答幂等（ST-004）、数学纵向闭环与独立复测对比（ST-005）、学校私卷逐题人工核对与附件隔离（ST-006）、四科题型与评分来源可追溯（ST-007）已实现并通过验证（均见下文），但小规模验证不代表吞吐达标或效果推断。
+复杂试卷/公式/图表自动解析、真实资料来源法务评审、扫描 PDF 自动 OCR、四科富文本公式渲染引擎、正式目标蓝图、可比独立验证与成绩效果评价、访问身份管理、外部部署、自动告警、异地完整恢复。练习会话轮换、曝光原子化与作答幂等（ST-004）、数学纵向闭环与独立复测对比（ST-005）、学校私卷逐题人工核对与附件隔离（ST-006）、四科题型与评分来源可追溯（ST-007）、学习首页/复练/阶段诊断/缺证据解释用户旅程（ST-008）已实现并通过验证（均见下文），但小规模验证不代表吞吐达标或效果推断。
 
 ## 当前环境验证记录（2026-10-18）
 
@@ -57,3 +57,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 ## ST-007 本地验证（2026-10-22）
 
 四科题型组合与评分来源可追溯已实现：kind 判分矩阵（single_choice 精确 / short_answer 归一化 `casefold+空白折叠` / subjective 提交不判分）；题组/阅读 `group_context`（版本自包含）；听力题 `media_attachment_id` 复用内容附件管线（音频魔数校验、无新增字节端点）；主观自评独立表 `self_assessments`（作答不可变、attempt 唯一、不进客观证据）；`GET /api/practice/attempts` 评分来源审计列表。SQLite 110 passed / 25 skipped / 0 failed；docker PG 0005 迁移腿全净 + ST-004 并发脚本全量回归 EXIT 0。**关键缺陷修复**：初版 media 列内联 FK 引用 0002 表使全新 PG 库 `upgrade 0001` 失败（SQLite 容忍悬空 REFERENCES 掩蔽、docker PG 捕获）——改为无 FK + 三创建路径应用层校验，教训：models 变更必须重跑 PG 迁移腿。oracle 门禁 APPROVE-WITH-CHANGES（MINOR#1 自评并发处理已整改）。富文本渲染属 ST-008；远端 CI、前端构建未验证。详见 [ST-007 验证记录](docs/quality/st-007-question-kinds.md)。下一项 ST-008。
+
+## ST-008 本地验证（2026-10-22）
+
+学习首页/复练/阶段诊断/缺证据解释已实现并通过 Playwright 用户旅程（J1–J4 全绿，chromium，10.9s）：三视图 UI（designer 交付）、题型渲染（题组区块/听力音频授权加载/主观自评链终态）、诚实文案红线零违规（grep 实证）、令牌仅内存、PWA 仍只缓存静态壳。纯前端任务零后端改动（后端 110 项护栏不变）。双 webServer harness（uvicorn:18765 临时 SQLite + vite preview:4173 同源代理；宿主 8000 被无关服务占用，不停外部服务改用 18765）；种子全部虚构测试数据经管理 API 现场注入。oracle 门禁 APPROVE（无 MATERIAL）。远端 CI 未运行；单浏览器无性能断言。详见 [ST-008 验证记录](docs/quality/st-008-user-journeys.md)。下一项 ST-009。

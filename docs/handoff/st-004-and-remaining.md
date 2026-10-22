@@ -4,7 +4,7 @@
 
 > **状态更新（2026-10-19，接手 agent）**：ST-004 已实施并通过本地验收（AC-PRC-01/AC-VAL-01，含隔离 PostgreSQL 迁移往返与 19 项真并发），证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)；本轮仅本地提交未推送。
 > **状态更新（2026-10-21，接手 agent）**：ST-005 已实施并通过本地验收（AC-GAP-01/02/03、AC-VAL-02，compare_validation + /api/guidance/validation、纯度静态锁定、历史回放），证据见 [ST-005 验证记录](../quality/st-005-math-loop.md)；仅本地提交未推送。同日 **ST-006** 已实施并通过本地验收（AC-EVI-01/02、AC-SEC-01，school_exam_items 人工确认门禁 + 校卷附件结构性隔离，迁移 0004），证据见 [ST-006 验证记录](../quality/st-006-school-papers.md)；仅本地提交未推送。
-> **状态更新（2026-10-22，接手 agent）**：**ST-007** 已实施并通过本地验收（四科题型判分矩阵、题组/阅读 group_context、听力音频复用内容附件管线、主观自评独立来源表、attempts 溯源列表，迁移 0005；含关键缺陷修复：media 列内联 FK 曾使全新 PG 库 0001 失败），证据见 [ST-007 验证记录](../quality/st-007-question-kinds.md)；仅本地提交未推送。**接手点已移至 ST-008**。本文件其余内容保留为当时的交接快照，§2/§5 状态表已同步。
+> **状态更新（2026-10-22，接手 agent）**：**ST-007** 已实施并通过本地验收（四科题型判分矩阵、题组/阅读 group_context、听力音频复用内容附件管线、主观自评独立来源表、attempts 溯源列表，迁移 0005；含关键缺陷修复：media 列内联 FK 曾使全新 PG 库 0001 失败），证据见 [ST-007 验证记录](../quality/st-007-question-kinds.md)；仅本地提交未推送。同日 **ST-008** 已实施并通过本地验收（三视图学习 UI + Playwright J1–J4 用户旅程 4/4，纯前端零后端改动），证据见 [ST-008 验证记录](../quality/st-008-user-journeys.md)；仅本地提交未推送。**接手点已移至 ST-009 收口**。本文件其余内容保留为当时的交接快照，§2/§5 状态表已同步。
 
 本文件是接手导航与代码快照，不取代 仓库根目录 `IMPLEMENTATION_PLAN.md`、[验收索引](../quality/acceptance.md)、[领域不变量](../design/data-model.md) 或 OpenAPI 权威契约。历史验证不能替代接手后的基线复跑。
 
@@ -35,6 +35,7 @@
 | ST-005 | 本地验收完成 | [ST-005 记录](../quality/st-005-math-loop.md)，数学纵向闭环、compare_validation 纯函数、guidance 纯度静态锁定、历史回放不可变；OpenAPI 已重新生成校验；远端 CI 未运行 |
 | ST-006 | 本地验收完成 | [ST-006 记录](../quality/st-006-school-papers.md)，学校私卷逐题人工确认门禁（ocr_draft 未确认不产生证据）、总分不折算、校卷附件无字节路由/存储键不外泄；迁移 0004 SQLite+PG16 验证；远端 CI 未运行 |
 | ST-007 | 本地验收完成 | [ST-007 记录](../quality/st-007-question-kinds.md)，四科题型判分矩阵（短答归一化/主观自评独立来源表）、题组 group_context、听力音频复用内容附件、attempts 溯源列表；迁移 0005 PG16 验证（含全新库 0001 关键缺陷修复）；ST-004 并发全量回归；远端 CI 未运行 |
+| ST-008 | 本地验收完成 | [ST-008 记录](../quality/st-008-user-journeys.md)，三视图学习 UI + Playwright J1–J4 用户旅程 4/4（chromium）；诚实文案红线零违规；零后端改动；远端 CI 未运行 |
 | 完整 MVP / 生产就绪 / 灾备 | 未完成 | 后续任务、完整联调与真实异地恢复不得按上述单项结果推定完成 |
 
 制作交接时，已重新执行 `PATH="$PWD/.venv/bin:$PATH" make verify`：API/业务 **56 passed、6 skipped**；文档检查器 **2 passed**；JSON Schema 正反例、24 篇 Markdown、OpenAPI 一致性通过。文档修改后的检查结果见本文件末尾。6 项 skipped 是可选 PostgreSQL 修订并发测试，不是普通门禁已执行的并发证据。
@@ -118,8 +119,8 @@ PATH="$PWD/.venv/bin:$PATH" make verify
 | ST-005（ST-004 后） | 数学目标→证据→画像→差距→计划→独立复测；AC-GAP-01/02/03、AC-VAL-02，含纯函数依赖与历史回放 | 已完成（本地验收，[证据](../quality/st-005-math-loop.md)） |
 | ST-006（ST-005 后） | 学校私卷、逐题人工核对；AC-EVI-01/02、AC-SEC-01，不能复用内容发布权限 | 已完成（本地验收，[证据](../quality/st-006-school-papers.md)） |
 | ST-007（ST-005 后） | 四科题型、公式/图表/阅读/音频/主观自评；评分来源与样例可追溯 | 已完成（本地验收，[证据](../quality/st-007-question-kinds.md)） |
-| ST-008（ST-005 后） | 首页、复练、阶段诊断、缺证据解释；真实用户旅程与 Playwright | **下一项，未完成，当前仅 UI 骨架** |
-| ST-009（持续） | Docs as Code、UX/可访问性、契约与 CI；跟随每项变更同步 | 部分基础检查已有，不得整体标完成 |
+| ST-008（ST-005 后） | 首页、复练、阶段诊断、缺证据解释；真实用户旅程与 Playwright | 已完成（本地验收，[证据](../quality/st-008-user-journeys.md)） |
+| ST-009（持续） | Docs as Code、UX/可访问性、契约与 CI；跟随每项变更同步 | **下一项：收口核对**（各任务已随做随同步，需全面核对+CI 一次总验） |
 | ST-OPS-01（首次真实长期数据前） | 私有部署、异地加密 DB+附件协调备份、独立恢复；AC-OPS-01/02 | 未实施/未演练，必须单独取得外部操作所需授权 |
 | ST-OPS-02（依赖实际运行环境） | 监控、告警、更新回滚与故障模拟 | 未实施/未演练 |
 
