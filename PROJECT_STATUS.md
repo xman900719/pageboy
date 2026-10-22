@@ -61,3 +61,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 ## ST-008 本地验证（2026-10-22）
 
 学习首页/复练/阶段诊断/缺证据解释已实现并通过 Playwright 用户旅程（J1–J4 全绿，chromium，10.9s）：三视图 UI（designer 交付）、题型渲染（题组区块/听力音频授权加载/主观自评链终态）、诚实文案红线零违规（grep 实证）、令牌仅内存、PWA 仍只缓存静态壳。纯前端任务零后端改动（后端 110 项护栏不变）。双 webServer harness（uvicorn:18765 临时 SQLite + vite preview:4173 同源代理；宿主 8000 被无关服务占用，不停外部服务改用 18765）；种子全部虚构测试数据经管理 API 现场注入。oracle 门禁 APPROVE（无 MATERIAL）。远端 CI 未运行；单浏览器无性能断言。详见 [ST-008 验证记录](docs/quality/st-008-user-journeys.md)。下一项 ST-009。
+
+## ST-009 收口验证（2026-10-22）
+
+Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单同步、overview 审计确认、契约三次增量再生成全部一致；CI 新增 `pg-migration`（全新 PG 0001→head→downgrade 0004→head→check——ST-007 缺陷类的永久护栏，SQLite 无法拦截）与 `web-e2e` 两个作业（命令经本地等价环境逐字验证；**远端未运行不标通过**）；新增 axe-core 三视图 WCAG A/AA 扫描并修复 31 个 color-contrast serious 节点（designer 会话，仅 style.css 8 行颜色值）；ST-002 修订并发 docker 回归 6/6、ST-004 练习并发回归 19/19（跨全部五次迁移）。终验：Playwright 7/7、后端 110 passed/25 skipped、make verify、zensical --strict 全绿。**开发计划 ST-001~ST-009 全部本地验收完成**；剩余 ST-OPS-01/02 受外部环境与授权门禁约束（AC-OPS-01/02 仍未演练，真实长期数据落库前必须完成）。详见 [ST-009 验证记录](docs/quality/st-009-closure.md)。
