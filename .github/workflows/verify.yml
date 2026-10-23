@@ -96,3 +96,6 @@ jobs:
         run: cd apps/web && npx playwright install chromium --with-deps
       - name: Run user journeys
         run: cd apps/web && npx playwright test
+        env:
+          # Runner 用系统 Python（API 经 pip -e 安装）；本地默认仓库 .venv。
+          PY_CMD: python
