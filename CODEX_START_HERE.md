@@ -6,7 +6,7 @@
 
 ## 当前接手点
 
-ST-001 已完成当时的本地/远端基线，ST-002~008 均已本地验收；后续由接手 agent 收口后从 **ST-OPS-01**（需外部环境与授权）继续。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前本地提交链；不要从落后的 main 或仅有 ST-001 的副本重新实现。
+ST-001 已完成当时的本地/远端基线，ST-002~009 全部本地验收，且已经 [PR #1](https://github.com/xman900719/pageboy/pull/1) 合并入默认主干 `codex/st-001-ci`（merge commit `964dfea`，合并后主干 CI 四作业全绿）；远端无 `main` 分支，本地 `main` 已同步至合并态。剩余 ST-OPS-01 异地部分与 ST-OPS-02 需外部环境与授权。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前提交链。
 
 ## 启动检查（顺序执行）
 
