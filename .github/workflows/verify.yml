@@ -94,6 +94,9 @@ jobs:
         run: cd apps/web && npm ci --no-audit --no-fund
       - name: Install Playwright chromium
         run: cd apps/web && npx playwright install chromium --with-deps
+      - name: Build front-end
+        # vite preview 服务 dist/；CI 各作业文件系统隔离，必须在本作业内构建。
+        run: cd apps/web && npm run build
       - name: Run user journeys
         run: cd apps/web && npx playwright test
         env:
