@@ -16,3 +16,53 @@
 初始 ORM 表包括 `source_documents`, `questions`, `question_versions`, `exposures`, `answer_attempts`, `school_exams`, `goals`；本包中的骨架存储设计**不代表已经实现所有不变量**。新增表必须来源于对应功能而不是猜测未来形态。
 
 学校私人试卷上传、考点级阅卷核对及关联附件仍待实现，不得用总分创建考点 Evidence。多考点综合题如无明确逐步骤采分点，不将总分重复分配给每个考点。
+
+
+## ST-002 版本行为
+
+修订只新增 `question_versions` 行，沿用 `Question`、来源和学科；`(question_id, version)` 唯一约束保持不变。新版本从草稿重新走审核发布流程，旧发布版和已有 `Exposure`、`AnswerAttempt` 不改写。新练习选择每题最高已发布版本号，曝光是否未见按逻辑题的所有版本查询。此变更不新增表或列，无需数据库迁移；具体接口和流程见 [内容导入与修订](ingestion.md)。
+
+
+## ST-003 原件与审核记录
+
+迁移 `0002` 新增 `source_reviews`（来源评估追加记录）、`source_attachments`（owner、哈希、字节数、私有存储键、解析与确认状态）和 `imported_questions`（题目版本到原件的追溯）。文件正文不入数据库，存储键不进入 HTTP 响应。一个原件可确认多道题；修订新版本复制原件关联，旧记录不变。
+
+`0001` 的建表范围固定为原有七表，防止其动态加载新模型而提前创建 `0002` 的表。升级保留原来源、题目与学习记录；无附件的旧来源维持原发布流程。回退应用须保留新增表及文件，不能对真实导入库直接降级删表；隔离迁移测试不等于灾备演练。
+
+
+## ST-004 练习会话、轮换与曝光/作答约束
+
+练习会话为最小无状态语义：客户端按 `GET /api/practice/next` → 作答 → 再 next 的链式序列推进，服务端每次按轮换规则选出恰好一题并立即落一条 `Exposure`；不建会话表、不新增端点（兼容现有客户端与契约）。轮换规则（确定性）：候选为该科目（含 knowledge_id 过滤）每个逻辑题的最高已发布版本；training 按（该学习者对逻辑题的全版本曝光次数升序, created_at, id）轮换且不跳过已见题（复练合法）；evaluation 仅选曝光次数==0 的逻辑题，无则 404。曝光次数按 `exposures.question_id` 批量聚合。
+
+`exposures` 增加非规范化列 `question_id`（迁移 `0003` 从 `question_versions` 回填）。该列 DDL 可空但 ORM 必填：任何写入者都必须设置它，NULL 行会脱离下方唯一索引的保护。部分唯一索引 `uq_exposure_first_unseen (learner_id, question_id) WHERE is_unseen_at_exposure` 在数据库级保证每学习者每逻辑题至多一次未见首曝认定（跨版本、跨 purpose）。并发抢曝失败者：evaluation 换下一未见候选直至 404，绝不给已见题落 evaluation 曝光；training 重查 seen 后以复练身份重插（`is_unseen_at_exposure=false`）。
+
+`answer_attempts` 增加唯一索引 `uq_attempt_exposure (exposure_id)`：一个曝光至多一条有效作答。作答幂等由唯一约束在提交点裁决——同键同载荷并发重试返回同一持久行（`already_recorded`）；同键异载荷 409 `IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`；同曝光异键 409 `EXPOSURE_ALREADY_SUBMITTED`；均不产生未处理 500。
+
+迁移 `0003` 为条件式（`0001` 按当前 models 建表，新库在 0001 即含新结构），SQLite 侧经 batch 重建增删列以保持外键与 `alembic check` 干净。遗留库若已存在重复未见认定或同曝光双作答（仅旧并发缺陷可产生），索引创建诚实失败、需人工裁决，不自动改写历史；SQLite 下该失败点非原子（列已增、回填未完），需人工重跑或清理。回退仅用于隔离开发库。验证证据见 [ST-004 验证记录](../quality/st-004-practice-session.md)。
+
+
+## ST-006 学校私卷逐题核对与附件隔离
+
+学校私卷不进题库与练习流：`/api/practice/next` 永不服务校卷题目，校卷仅产生证据记录。迁移 `0004` 新增两张表：
+
+- `school_exam_items`：逐题得分，每条恰一个 `knowledge_id`（杜绝多考点总分重复分配）；`(school_exam_id, question_label)` 唯一约束防重复证据；`scoring_origin` 恒记原始来源（`manual_entry` / `ocr_draft`，确认后不改，INV-04）；`confirmed_by_user` + `confirmed_at` 为人工确认门禁——**只有确认条目才进入 `get_evidence`**（AC-EVI-02）。`manual_entry` 建即视为人工确认；`ocr_draft` 须经 `POST .../items/{id}/confirm`（必须 `confirmed_by_human=true`，可修正识别分，确认后不可变——同分重复确认 409 `SCHOOL_ITEM_ALREADY_CONFIRMED`，异分改判 409 `SCHOOL_ITEM_IMMUTABLE`）。
+- `school_paper_attachments`：校卷原件复用 ST-003 私有存储（魔数/页数/像素/10MiB 校验、0600 独占写、sha256）。**不存在任何读取校卷附件字节的端点**；存储键不进任何 HTTP 响应；校卷附件不与 `source_documents` 关联，无法被内容台账、题目草稿/发布或练习引用（AC-SEC-01）。
+
+证据装配：已确认 item 以合成键 `school-item:{id}` 并入 `get_evidence`（与练习评测条目互为不同观测，`summarize` 按 item 独立去重）；ST-005 复测装配不含校卷条目。总分行（`SchoolExam.earned_points/max_points`）永不折算考点证据（INV-05）。回退仅用于隔离开发库（删两表）。验证证据见 [ST-006 验证记录](../quality/st-006-school-papers.md)。
+
+
+## ST-007 四科题型与评分来源
+
+`question_versions` 新增 `group_context`（题组/阅读共享文段，按版本自包含——改文段即修订新版本，不建 Group 表）与 `media_attachment_id`（听力题音频引用）。**后者不带数据库级外键**：`source_attachments` 属 0002 表，内联外键会使全新 PostgreSQL 库在 `0001` 建表即失败（SQLite 容忍悬空 REFERENCES 掩蔽该问题，2026-10-22 docker 实测捕获）；引用合法性由三个题目创建路径的应用层校验强制保证（存在/同源/owner → 422 `MEDIA_ATTACHMENT_INVALID`）。音频仅扩展 `MEDIA_TYPES`（mp3/mp4 魔数校验）并复用既有 owner 鉴权下载路由，**不新增任何字节端点**；解析分支直通 `needs_manual_input`，不引入转写。
+
+判分矩阵（评分来源恒可追溯，INV-04）：
+
+| kind | 判分 | `scoring_origin` |
+|---|---|---|
+| single_choice | strip 后全等 | `reviewed_answer_key` |
+| short_answer | 归一化全等：`norm(s) = " ".join(s.split()).casefold()` | `reviewed_answer_key` |
+| subjective | 提交不判分（earned=None） | `ungraded_subjective` |
+
+归一化规则**对含意差敏感**：`'  X=-1  '` 与 `'x=-1'` 判同；`'x = - 1'`（值内含空格）与 `'x=-1'` 判异——答案键由人工审核，录入时须按此规则书写；带单位/含意空白的题型应以选项题或主观题承载。
+
+主观自评为**独立来源记录**（`self_assessments`，迁移 0005）：作答行不可变（INV-03/09）；`GET .../attempts/{id}/reference` 仅对已作答的 subjective 题开放参考答案；`POST .../self-assessment` 一次自评（attempt 唯一约束 + 并发竞争按落库事实裁决 409），`scoring_origin="self_assessment"` 恒不改作答行。自评**不进客观证据**（`get_evidence` 不读 self_assessments；profile/plan/validation 语义不变）——自评进入画像须另立 ADR。评分来源审计：`GET /api/practice/attempts?subject=` 列出每条作答的 origin、kind 与自评关联。回退仅隔离开发库。验证证据见 [ST-007 验证记录](../quality/st-007-question-kinds.md)。

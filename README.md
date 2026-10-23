@@ -13,6 +13,8 @@
 ## 本地开发（SQLite，无 Docker）
 
 ```bash
+# Debian/Ubuntu：本地 PDF/图片解析依赖
+sudo apt-get install poppler-utils tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng
 cd services/api
 python3 -m venv .venv
 source .venv/bin/activate
@@ -47,15 +49,16 @@ python scripts/validate_contracts.py
 python scripts/check_docs.py
 python scripts/check_openapi.py
 cd apps/web && npm run build
+cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + preview:4173）
 ```
 
-其中前端构建需先 `npm install`；完整文档站点还需 `pip install zensical && zensical build --strict`。本地 Zensical 严格构建与 Web 构建已验证，详见 [ST-001 验证记录](docs/quality/st-001-baseline.md)；远端 CI 与真实恢复演练仍未验证。
+其中前端构建需先 `npm install`；旅程首跑需 `npx playwright install chromium`；宿主 8000 被占用时经 `API_PROXY_TARGET` 覆盖代理目标。完整文档站点还需 `pip install zensical && zensical build --strict`。本地全部门禁（含隔离 PostgreSQL 迁移与真并发）已随 ST-004~008 验证，详见各 [验证记录](docs/quality/acceptance.md)；远端 CI 于 2026-10-23 在 `codex/st-003-private-ingestion` 分支[实际运行通过](https://github.com/xman900719/pageboy/actions/runs/39898363746)（含 pg-migration/web-e2e 护栏）。
 
 ## 初始功能 / 暂未完成
 
-**已经提供的基础行为**：私有 Token 鉴权；来源登记；人工审核后发布选择题；版本引用；曝光记录；客观题判分；幂等作答；学校考试总分录入；科目目标版本；知识点表现和简单规则计划；基本移动端 Web；PWA 静态缓存。
+**已提供的行为（均见 docs/quality/ 各验证记录）**：私有 Token 鉴权；来源台账与人工审核发布；私有 PDF/PNG/JPEG/音频上传、哈希与导入确认；已发布题修订新版本（历史不可变）；**练习会话与确定性题目轮换；曝光原子化与并发安全**（每逻辑题至多一次未见首曝）；作答幂等（同键重试同结果）；**数学纵向闭环与独立复测可观察对比**（不足即"证据不足"，绝不宣称涨分）；**学校私卷逐题人工确认**（OCR 草稿须人工核对，总分不折算考点证据）；**四科题型**（单选/短答归一化判分/主观自评独立来源）与题组、听力音频；评分来源可追溯列表；三视图学习 UI（首页/练习/阶段诊断，Playwright 用户旅程通过）；学校考试总分录入；科目目标版本；知识点画像与规则计划；基本移动端 Web；PWA 静态缓存（不缓存学生数据）。
 
-**仍需 Codex 按计划实现**：完整试卷导入和图文解析、附件私有存储与上传、人工审核 UI、已发布试题新版本流程、稳定题目轮换、题组与解答题评分、学校卷题目级确认、完整目标蓝图、真实测试题池管理、离线体验策略、异地恢复实测、四科全覆盖、对学习效果的校准。不存在真实中考分数预测能力。
+**仍待实现/校准**：复杂试卷/公式/图表自动解析、扫描 PDF 自动 OCR、人工审核 UI、富文本公式渲染引擎、完整目标蓝图、真实测试题池管理、完整 PWA 离线体验策略、异地恢复实测（ST-OPS）、对学习效果的校准。不存在真实中考分数预测能力；所有"可观察对比"均为小样本记录，不代表能力或涨分结论。
 
 ## 重要安全限制
 
@@ -63,3 +66,6 @@ cd apps/web && npm run build
 - 真实运行前在 `infra/.env` 设置强令牌与随机数据库口令；仅通过 VPN/私有网络访问。
 - 学校试卷未有题目级核对成绩时，不能生成知识点级能力证据。
 - 计划阈值是**未校准的产品启发式**，不可以宣称预测中考分数。
+
+
+ST-003 原件默认保存在启动目录的 `private-data/attachments`；可用 `SHUTONG_PRIVATE_DIR` 指向受保护的持久目录，禁止放入 Web 静态目录。容器使用 `/var/lib/shutong/attachments` 和 Compose `private_files` 卷。导入 API、限制、迁移与可执行测试见 [ST-003 记录](docs/quality/st-003-private-ingestion.md)。备份脚本仍仅覆盖数据库，首次真实长期使用前须完成 [联合备份和隔离恢复](docs/operations/backup-policy.md)。

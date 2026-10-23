@@ -18,7 +18,18 @@
 
 ## 执行记录
 
-- ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。下一项开发任务为 ST-002。
+- ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。后续开发从 ST-002 开始。
+
+- ST-002：本地验收已完成，AC-CNT-02 正反例及 PostgreSQL 真实并发验证通过（6 轮 × 8 请求、独立连接）；[验证记录](docs/quality/st-002-question-revisions.md)。本轮仅本地提交，远端 CI 未运行。后续 ST-003 见下条。
+
+- ST-003：本地验收完成，来源台账、私有原件/哈希、PDF 文本/图片 OCR 草稿及人工确认通过 AC-CNT-01/03 范围测试；[验证记录](docs/quality/st-003-private-ingestion.md)。学校私卷、扫描 PDF 自动 OCR、审核 UI 和联合备份不在本项完成范围；远端 CI 未运行。下一项 ST-004。
+- ST-004：本地验收完成，练习会话/轮换、曝光原子化（部分唯一索引跨版本防重复未见首曝）、作答幂等约束化通过 AC-PRC-01/AC-VAL-01 范围验证——隔离 PostgreSQL 16.15 迁移往返 + 19 项真并发（8 请求/8 独立连接/轮，零 500）；[验证记录](docs/quality/st-004-practice-session.md)。吞吐压测、远端 CI、前端用户旅程不在本项范围。下一项 ST-005。
+- ST-005：本地验收完成，数学纵向闭环通过 AC-GAP-01/02/03、AC-VAL-02 范围验证——compare_validation 纯函数 + /api/guidance/validation；纯度 AST 静态锁定、历史回放不可变、纵向闭环正反例（12 项新测试）；OpenAPI 重新生成校验；[验证记录](docs/quality/st-005-math-loop.md)。效果推断/跨时间保持/题型难度匹配不在本项范围；远端 CI 未运行。下一项 ST-006。
+- ST-006：本地验收完成，学校私卷通过 AC-EVI-01/02、AC-SEC-01 范围验证——school_exam_items 人工确认门禁 + school_paper_attachments 结构性隔离（17 项新测试 + Gate 整改 1 项）；SQLite 往返 + PG16 一次性迁移腿；OpenAPI 重新生成校验；[验证记录](docs/quality/st-006-school-papers.md)。OCR 分数表解析、附件浏览端点不在本项范围；远端 CI 未运行。下一项 ST-007。
+- ST-007：本地验收完成，四科题型与评分来源可追溯通过计划行范围验证——kind 判分矩阵（短答归一化/主观自评独立来源表不进客观证据）、题组 group_context、听力音频复用内容附件管线（无新字节路由）、attempts 溯源列表（14 项新测试 + Gate 整改 2 项）；PG16 迁移腿捕获并修复关键缺陷（内联 FK 使全新 PG 0001 失败——SQLite 掩蔽）；ST-004 并发脚本全量回归通过；[验证记录](docs/quality/st-007-question-kinds.md)。富文本渲染/前端旅程属 ST-008；音频转写不做；远端 CI 未运行。下一项 ST-008。
+- ST-008：本地验收完成，精简学习首页/复练/阶段诊断/缺证据解释通过 Playwright J1–J4 用户旅程（4/4，chromium 10.9s；双 webServer 临时 SQLite + 同源代理；种子全部虚构测试数据）；零后端改动（110 项护栏不变）；诚实文案红线 grep 零违规；[验证记录](docs/quality/st-008-user-journeys.md)。单浏览器、无性能断言；远端 CI 未运行。下一项 ST-009 收口。
+- ST-009：本地验收完成，Docs as Code/契约核对与 README 同步、CI 新增 pg-migration+web-e2e 护栏（命令本地逐字验证、远端未运行）、axe-core 三视图可访问性扫描与 31 个对比度节点修复、ST-002/004 并发回归全绿；[验证记录](docs/quality/st-009-closure.md)。**开发计划 ST-001~ST-009 全部完成**；剩余 ST-OPS-01/02 待外部环境与授权。
+- ST-OPS-01（本地部分）：联合备份模板（backup.sh 附件协调）+ restore.sh + 本地隔离恢复演练三次通过（行数/迁移版本/附件字节一致）；**不构成 AC-OPS-01**——异地/另一故障域、restic 生产路径、保留/告警、真实 RPO/RTO 未验证（见 PROJECT_STATUS 与 backup-policy 事实记录）；异地部分与 ST-OPS-02 待外部授权。
 
 ## 阶段门禁
 

@@ -25,3 +25,6 @@ secrets/
 *.tsbuildinfo
 site/
 .cache/
+.slim/deepwork/
+apps/web/test-results/
+apps/web/playwright-report/

@@ -1,0 +1,124 @@
+"""私有原件校验、完整性检查和本地文本解析；不负责发布或判分。"""
+from hashlib import sha256
+from io import BytesIO
+import os
+from pathlib import Path
+import re
+import subprocess
+from tempfile import TemporaryDirectory
+from uuid import uuid4
+import warnings
+
+from fastapi import HTTPException
+from PIL import Image, UnidentifiedImageError
+
+MAX_BYTES = 10 * 1024 * 1024
+MAX_PAGES = 20
+MAX_PIXELS = 20_000_000
+MAX_TEXT_BYTES = 200_000
+MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4")
+
+
+def private_root():
+    return Path(os.getenv("SHUTONG_PRIVATE_DIR", "private-data/attachments")).resolve()
+
+
+def blob_path(key):
+    if not re.fullmatch(r"[0-9a-f]{32}", key):
+        raise HTTPException(409, detail="INVALID_STORAGE_KEY")
+    return private_root() / key
+
+
+def run_tool(arguments, **kwargs):
+    try:
+        result = subprocess.run(arguments, capture_output=True, timeout=20, **kwargs)
+    except FileNotFoundError:
+        raise HTTPException(503, detail="LOCAL_PARSER_NOT_INSTALLED")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(422, detail="DOCUMENT_PROCESSING_TIMEOUT")
+    if result.returncode:
+        raise HTTPException(422, detail="DOCUMENT_PROCESSING_FAILED")
+    return result
+
+
+def validate_file(data, media_type):
+    if media_type not in MEDIA_TYPES:
+        raise HTTPException(415, detail="UNSUPPORTED_FILE_TYPE")
+    if not data or len(data) > MAX_BYTES:
+        raise HTTPException(413 if data else 422, detail="INVALID_FILE_SIZE")
+    if media_type == "application/pdf":
+        if not data.startswith(b"%PDF-"):
+            raise HTTPException(422, detail="FILE_TYPE_MISMATCH")
+        with TemporaryDirectory(prefix="pageboy-pdf-") as directory:
+            path = Path(directory) / "input.pdf"
+            path.write_bytes(data)
+            result = run_tool(["pdfinfo", str(path)], env={**os.environ, "LC_ALL": "C"})
+        info = result.stdout.decode("utf-8", errors="replace")
+        pages = re.search(r"^Pages:\s+(\d+)", info, re.MULTILINE)
+        if not pages or not 1 <= int(pages[1]) <= MAX_PAGES or re.search(r"^Encrypted:\s+yes", info, re.MULTILINE):
+            raise HTTPException(422, detail="UNSUPPORTED_PDF")
+    elif media_type in ("audio/mpeg", "audio/mp4"):
+        # 仅魔数校验（mp3：ID3 或 0xFF Ex/Fx 帧头；mp4/m4a：偏移 4 处 ftyp），不引入时长/码率解析。
+        if media_type == "audio/mpeg":
+            valid = data.startswith(b"ID3") or (len(data) > 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0)
+        else:
+            valid = len(data) > 12 and data[4:8] == b"ftyp"
+        if not valid:
+            raise HTTPException(422, detail="FILE_TYPE_MISMATCH")
+    else:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(BytesIO(data)) as image:
+                    expected = "PNG" if media_type == "image/png" else "JPEG"
+                    if image.format != expected or image.width * image.height > MAX_PIXELS:
+                        raise ValueError("invalid image")
+                    image.load()
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+            raise HTTPException(422, detail="INVALID_IMAGE")
+
+
+def write_blob(data):
+    root = private_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    key = uuid4().hex
+    path = blob_path(key)
+    created = False
+    try:
+        with open(path, "xb", opener=lambda path, flags: os.open(path, flags, 0o600)) as file:
+            created = True
+            file.write(data)
+    except OSError:
+        if created:
+            path.unlink(missing_ok=True)
+        raise
+    return key
+
+
+def load_blob(attachment):
+    try:
+        with blob_path(attachment.storage_key).open("rb") as file:
+            data = file.read(MAX_BYTES + 1)
+    except FileNotFoundError:
+        raise HTTPException(409, detail="ATTACHMENT_FILE_MISSING")
+    if len(data) != attachment.byte_size or sha256(data).hexdigest() != attachment.sha256:
+        raise HTTPException(409, detail="ATTACHMENT_HASH_MISMATCH")
+    return data
+
+
+def parse_text(data, media_type):
+    with TemporaryDirectory(prefix="pageboy-parse-") as directory:
+        path = Path(directory) / ("input.pdf" if media_type == "application/pdf" else "input.image")
+        path.write_bytes(data)
+        output = Path(directory) / "output.txt"
+        if media_type == "application/pdf":
+            run_tool(["pdftotext", "-layout", "-enc", "UTF-8", str(path), str(output)])
+            version = run_tool(["pdftotext", "-v"]).stderr.decode().splitlines()[0]
+        else:
+            run_tool(["tesseract", str(path), str(output.with_suffix("")), "-l", "chi_sim+eng"])
+            version = run_tool(["tesseract", "--version"]).stdout.decode().splitlines()[0]
+        with output.open("rb") as file:
+            text = file.read(MAX_TEXT_BYTES + 1)
+        if len(text) > MAX_TEXT_BYTES:
+            raise HTTPException(422, detail="EXTRACTED_TEXT_TOO_LARGE")
+        return text.decode("utf-8").strip(), version
