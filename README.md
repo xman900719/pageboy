@@ -52,7 +52,7 @@ cd apps/web && npm run build
 cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + preview:4173）
 ```
 
-其中前端构建需先 `npm install`；旅程首跑需 `npx playwright install chromium`；宿主 8000 被占用时经 `API_PROXY_TARGET` 覆盖代理目标。完整文档站点还需 `pip install zensical && zensical build --strict`。本地全部门禁（含隔离 PostgreSQL 迁移与真并发）已随 ST-004~008 验证，详见各 [验证记录](docs/quality/acceptance.md)；ST-001 远端 CI 已验证，本轮新增 CI 作业与后续变更的远端 CI 未运行。
+其中前端构建需先 `npm install`；旅程首跑需 `npx playwright install chromium`；宿主 8000 被占用时经 `API_PROXY_TARGET` 覆盖代理目标。完整文档站点还需 `pip install zensical && zensical build --strict`。本地全部门禁（含隔离 PostgreSQL 迁移与真并发）已随 ST-004~008 验证，详见各 [验证记录](docs/quality/acceptance.md)；远端 CI 于 2026-10-23 在 `codex/st-003-private-ingestion` 分支[实际运行通过](https://github.com/xman900719/pageboy/actions/runs/39898363746)（含 pg-migration/web-e2e 护栏）。
 
 ## 初始功能 / 暂未完成
 
