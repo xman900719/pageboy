@@ -1,0 +1,18 @@
+# 宿主 Caddy 入口（本机模式，监听 8180——8080 被本机 root 常驻 nginx 占用，2026-10-24 实测）：
+#   静态 Web + API/健康反代到宿主 127.0.0.1:18000。
+# 与 Caddyfile（容器模板，反代 api:8000）语义一致，仅目标不同——本机 caddy 无镜像，以二进制运行：
+#   infra/.local/caddy run --config infra/Caddyfile.local --pidfile infra/.local/caddy.pid
+# TLS 在 Cloudflare 终结（Tunnel → Access 门禁 → 本端口明文回环，不出宿主）；SPA 路由回退。
+:8180 {
+	handle /api/* {
+		reverse_proxy 127.0.0.1:18000
+	}
+	handle /health/* {
+		reverse_proxy 127.0.0.1:18000
+	}
+	handle {
+		root * ../apps/web/dist
+		try_files {path} /index.html
+		file_server
+	}
+}

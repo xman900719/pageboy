@@ -28,3 +28,4 @@ site/
 .slim/deepwork/
 apps/web/test-results/
 apps/web/playwright-report/
+infra/.local/

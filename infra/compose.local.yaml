@@ -1,0 +1,25 @@
+# 本机（无 VPS）ST-OPS-01 部署 override——与 compose.web.yaml（VPS/容器模板）互斥使用：
+#   本机：docker compose --env-file .env -f compose.yaml -f compose.local.yaml up -d --build
+#   VPS ：docker compose --env-file .env -f compose.yaml -f compose.web.yaml up -d --build
+# 差异缘由（2026-10-24 实况，如实）：
+#   1. api 端口 8000 被本机无关常驻服务（aegis）占用 → 宿主发布改 127.0.0.1:18000（容器内 8000 不变）。
+#   2. db 镜像钉 postgres:16（本机缓存；16-alpine 需拉取，而宿主 docker registry 代理故障）。
+#   3. caddy 镜像无法拉取 → Web 入口以宿主二进制运行（infra/.local/caddy + Caddyfile.local，监听 8080），
+#      故本文件不含 web 服务，api 反代指向 127.0.0.1:18000。
+#   4. cloudflared 使用本机缓存镜像 + host 网络：隧道入站 service=http://localhost:8080 直达宿主 caddy。
+services:
+  db:
+    image: postgres:16
+  api:
+    ports: !override
+      - "127.0.0.1:18000:8000"
+    volumes:
+      # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
+      - ./private-data/attachments:/var/lib/shutong/attachments
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate run --token ${SHUTONG_TUNNEL_TOKEN}
+    depends_on:
+      - api
