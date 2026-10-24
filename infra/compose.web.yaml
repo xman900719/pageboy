@@ -1,0 +1,24 @@
+# ST-OPS-01 Cloudflare 入口层：Caddy 单入口同源服务 Web 静态 + API/健康反代。
+# 用法（生产 VPS）：
+#   cd apps/web && npm ci && npm run build        # 先产出 dist（挂载给 Caddy）
+#   cd ../../infra
+#   docker compose --env-file .env -f compose.yaml -f compose.web.yaml up -d --build
+# 访问链路（三层鉴权缺一不可，见 README 安全限制）：
+#   Cloudflare Tunnel (shutong.你的域名) → Access 门禁 → 127.0.0.1:8080(Caddy)
+#   → api:8000（容器网络）+ /srv/web 静态。零入站端口：cloudflared 只出站。
+# 注意：api 服务仍发布 127.0.0.1:8000 仅供宿主调试；外部一律走 Caddy:8080。
+services:
+  api:
+    # 附件改宿主 bind mount：backup.sh 需在宿主直接 tar 附件目录（named volume 宿主不可见）。
+    volumes:
+      - ./private-data/attachments:/var/lib/shutong/attachments
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # 仅回环；由 cloudflared 经 Public Hostname 指向 http://127.0.0.1:8080
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../apps/web/dist:/srv/web:ro
+    depends_on:
+      - api

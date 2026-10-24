@@ -1,0 +1,13 @@
+[Unit]
+Description=书童 ST-OPS-01：联合备份调度（每 4 小时，对应策略 RPO≤6h 的实施节奏）
+
+[Timer]
+# 每 4 小时整点窗口（0,4,8,12,16,20 点），匹配策略"每 4 小时备份"。
+OnCalendar=*-*-* 00/4:00:00
+# 错过的窗口（关机/停机）恢复后立即补跑，避免 RPO 静默超限。
+Persistent=true
+# 相对锚点随机化 0-5 分钟，避免与其他任务尖峰重合。
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

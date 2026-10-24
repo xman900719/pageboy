@@ -1,0 +1,17 @@
+# ST-OPS-01 单入口反代：同一来源服务静态 Web 与 API（前端 fetch 全为相对路径，天然同源，无 CORS）。
+# TLS 在 Cloudflare 终结（Tunnel → Access → 本端口明文回环，不出宿主）。
+# SPA 路由回退：任意未命中路径回 index.html。
+:8080 {
+	# API 与健康检查转发到 compose 网络内的 api 服务（容器名 DNS，勿用 127.0.0.1）。
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}
