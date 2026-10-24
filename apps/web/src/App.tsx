@@ -103,6 +103,22 @@ function Gate({ onEnter }: { onEnter: (token: string) => Promise<void> }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [visible, setVisible] = useState(false)
+
+  async function pasteToken() {
+    // 优先走剪贴板 API（HTTPS 站点，点击授权一次即可）；拒绝/不支持时提示手动粘贴兜底。
+    try {
+      const text = (await navigator.clipboard.readText()).trim()
+      if (text === '') {
+        setError('剪贴板为空：请先复制访问令牌，或在输入框长按 / Ctrl+V 粘贴。')
+        return
+      }
+      setValue(text)
+      setError('')
+    } catch {
+      setError('无法读取剪贴板：请在输入框长按 / Ctrl+V 粘贴。')
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -136,14 +152,28 @@ function Gate({ onEnter }: { onEnter: (token: string) => Promise<void> }) {
         <form onSubmit={submit}>
           <label>
             访问令牌
-            <input
-              type="password"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder="SHUTONG_TOKEN"
-              autoComplete="off"
-              autoFocus
-            />
+            <span className="token-row">
+              <input
+                type={visible ? 'text' : 'password'}
+                value={value}
+                onChange={e => setValue(e.target.value)}
+                placeholder="SHUTONG_TOKEN"
+                autoComplete="off"
+                autoFocus
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setVisible(v => !v)}
+                aria-pressed={visible}
+                aria-label={visible ? '隐藏令牌' : '显示令牌'}
+              >
+                {visible ? '隐藏' : '显示'}
+              </button>
+              <button type="button" className="ghost" onClick={pasteToken} disabled={busy} aria-label="粘贴令牌">
+                粘贴
+              </button>
+            </span>
           </label>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="primary" disabled={busy}>

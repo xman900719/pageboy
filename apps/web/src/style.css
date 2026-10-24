@@ -166,6 +166,10 @@ button:active:not(:disabled) { transform: translateY(1px) }
 button:disabled { opacity: 0.55; cursor: default }
 button.ghost { background: transparent; border-color: var(--line); color: var(--primary) }
 button.ghost:hover:not(:disabled) { border-color: var(--primary-line); background: var(--primary-soft) }
+
+/* Gate 令牌行：输入框 + 显示/隐藏与粘贴按钮同排（窄屏可换行）。 */
+.token-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.token-row input { flex: 1 1 200px; margin-bottom: 0 }
 button.small { padding: 5px 11px; font-size: 0.8rem }
 button.ghost.small { background: transparent; color: var(--primary) }
 
