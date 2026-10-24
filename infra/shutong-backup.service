@@ -1,0 +1,13 @@
+[Unit]
+Description=书童 ST-OPS-01：每 4 小时联合备份（DB+附件，见 docs/operations/backup-policy.md）
+Documentation=file:///opt/pageboy/docs/operations/backup-policy.md
+
+[Service]
+Type=oneshot
+# 按实际部署路径调整（runbook 假设 /opt/pageboy）。
+WorkingDirectory=/opt/pageboy/infra
+ExecStart=/bin/bash backup.sh
+# 低优先级，避免与教学时段的请求争抢；日志走 journald（journalctl -u shutong-backup）。
+Nice=10
+# 4 小时窗口内备份应远小于此值；超时视为失败并由 timer 下轮重试。
+TimeoutStartSec=30min

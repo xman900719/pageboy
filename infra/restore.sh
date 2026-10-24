@@ -12,7 +12,8 @@
 # can restore; override with PG_RESTORE_IMAGE if that tag is unavailable locally, e.g. on
 # an air-gapped host) and python3 (stdlib only, for DATABASE_URL parsing).
 # The target database must be reachable over the host network (docker run --network host).
-# Guards: refuses a database whose name does not start with "pageboy"; refuses a non-empty
+# Guards: refuses a database whose name does not start with "pageboy" (--force 仅供灾难恢复向
+# 全新生产库重建时人工确认后使用); refuses a non-empty
 # --attachments-dir so existing files are never overwritten.
 set -euo pipefail
 
@@ -22,7 +23,8 @@ while [[ $# -gt 0 ]]; do
     --backup-dir) backup_dir="$2"; shift 2 ;;
     --database-url) database_url="$2"; shift 2 ;;
     --attachments-dir) attachments_dir="$2"; shift 2 ;;
-    *) echo "unknown argument: $1 (usage: restore.sh --backup-dir DIR --database-url URL --attachments-dir DIR)" >&2; exit 2 ;;
+    --force) force=1; shift ;;
+    *) echo "unknown argument: $1 (usage: restore.sh --backup-dir DIR --database-url URL --attachments-dir DIR [--force])" >&2; exit 2 ;;
   esac
 done
 : "${backup_dir:?--backup-dir required}"
@@ -54,7 +56,11 @@ IFS=$'\t' read -r db_user db_pass db_host db_port db_name <<<"$parsed"
 
 case "$db_name" in
   pageboy*) ;;
-  *) echo "REFUSED: database name '$db_name' does not start with 'pageboy' (destructive-op guard; isolated restores only)" >&2; exit 1 ;;
+  *) if [[ "${force:-0}" -eq 1 ]]; then
+       echo "WARNING (--force)：目标库名 '$db_name' 非隔离演练命名——仅用于灾难恢复时向全新生产库重建；须由人工确认目标为空库。" >&2
+     else
+       echo "REFUSED: database name '$db_name' does not start with 'pageboy' (destructive-op guard; isolated restores only; use --force only for disaster recovery into a fresh production db)" >&2; exit 1
+     fi ;;
 esac
 
 if [[ -f "$backup_dir/attachments.tar.gz" ]]; then

@@ -13,6 +13,11 @@
 #                       The drill sets this to a generated /tmp env so no infra/.env is ever created.
 #   COMPOSE_PROJECT_NAME  honored from ENV_FILE (exported via `set -a; source`) so `compose exec db`
 #                       targets the drill project instead of the default one.
+#   KUMA_PUSH_URL       optional Uptime Kuma push URL: on SUCCESSFUL backup+check+forget, send one
+#                       push so Kuma's timeout (>12min silence) raises the "距上次成功备份>5h" alarm.
+#                       Push failure is a WARNING only — the backup itself stays valid.
+#   RETENTION_ARGS      optional override of the restic forget args (default implements the policy
+#                       numbers in docs/operations/backup-policy.md: 12×4h=48h 内 + 14 日 + 8 周 + 6 月).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
@@ -84,4 +89,12 @@ fi
 # Production path (restic); artifact set now carries attachments alongside the DB snapshot.
 restic backup "$work" --tag shutong-foundation
 restic check
+# Retention per docs/operations/backup-policy.md: 12×4 小时快照=48h 内 + 每日 14 + 每周 8 + 每月 6。
+restic forget --keep-within 48h --keep-daily 14 --keep-weekly 8 --keep-monthly 6 ${RETENTION_ARGS:-} --prune
+restic check
+# AC-OPS-02 告警挂钩：成功才 push，Kuma 侧按静默超时告警；推送失败不判备份失败。
+if [[ -n "${KUMA_PUSH_URL:-}" ]]; then
+  curl -fsS --max-time 10 "${KUMA_PUSH_URL}" >/dev/null \
+    || echo 'WARNING: Kuma push failed (备份本身有效，但告警通道可能感知不到本次成功)' >&2
+fi
 printf 'Backup finished. RESTORE TEST STILL REQUIRED.\n'
