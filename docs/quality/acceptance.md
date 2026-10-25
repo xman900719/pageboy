@@ -20,7 +20,7 @@
 | AC-VAL-02 | 不可比或证据不足不能宣称涨分 | compare_validation+validation 端点：不足即 cannot_compare/CANNOT_COMPARE，相等不宣称 improved，恒 score_prediction None+免责声明；[ST-005 证据](st-005-math-loop.md) |
 | AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 无任何字节读取路由；存储键不进响应/OpenAPI；与内容台账/题目草稿/发布/练习结构性隔离；[ST-006 证据](st-006-school-papers.md) |
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **达成（2026-10-25）**：Cloudflare R2 异地备份 → 隔离环境完整恢复 DB+附件 → 端到端冒烟全绿（行数全等/附件字节级一致/练习可服务）；[演练记录](st-ops-01-offsite-restore.md) |
-| AC-OPS-02 | 异地备份失败可观察并告警 | **未达成**：备份失败即退出留痕（cron 日志 + restic check），但 >5h 静默的外部告警通道（Kuma/邮件）未接通；待通道选定后补齐 |
+| AC-OPS-02 | 异地备份失败可观察并告警 | **达成（2026-10-25）**：healthchecks.io dead-man's switch——成功 ping（HTTP 200 实测）、>5h 静默即邮件告警（4h 周期+1h 宽限）；第三方基础设施=外部故障域；[演练记录](st-ops-01-offsite-restore.md) |
 
 **验收证据**：具体 API 和纯函数测试位于 `services/api/tests/`；Schema/断链检查位于 `scripts/`；灾备必须附实际人工演练记录。严禁将设计状态 `proposed` 自动改为 `done`。
 

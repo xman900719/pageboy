@@ -16,6 +16,10 @@
 #   KUMA_PUSH_URL       optional Uptime Kuma push URL: on SUCCESSFUL backup+check+forget, send one
 #                       push so Kuma's timeout (>12min silence) raises the "距上次成功备份>5h" alarm.
 #                       Push failure is a WARNING only — the backup itself stays valid.
+#   HEALTHCHECKS_PING_URL optional healthchecks.io ping URL: dead-man's-switch semantics (the
+#                       exact match for AC-OPS-02's ">5h no successful backup → alert"): ping on
+#                       success; silence beyond the check's period+grace (4h+1h=5h) triggers email.
+#                       Push failure is a WARNING only — the backup itself stays valid.
 #   RETENTION_ARGS      optional override of the restic forget args (default implements the policy
 #                       numbers in docs/operations/backup-policy.md: 12×4h=48h 内 + 14 日 + 8 周 + 6 月).
 set -euo pipefail
@@ -96,5 +100,10 @@ restic check
 if [[ -n "${KUMA_PUSH_URL:-}" ]]; then
   curl -fsS --max-time 10 "${KUMA_PUSH_URL}" >/dev/null \
     || echo 'WARNING: Kuma push failed (备份本身有效，但告警通道可能感知不到本次成功)' >&2
+fi
+# healthchecks.io dead-man's switch（AC-OPS-02 首选通道）：成功 ping；>period+grace 静默即邮件告警。
+if [[ -n "${HEALTHCHECKS_PING_URL:-}" ]]; then
+  curl -fsS --max-time 10 "${HEALTHCHECKS_PING_URL}" >/dev/null \
+    || echo 'WARNING: healthchecks.io ping failed (备份本身有效，但 dead-man switch 可能感知不到本次成功)' >&2
 fi
 printf 'Backup finished. RESTORE TEST STILL REQUIRED.\n'

@@ -125,8 +125,8 @@ PATH="$PWD/.venv/bin:$PATH" make verify
 | ST-007（ST-005 后） | 四科题型、公式/图表/阅读/音频/主观自评；评分来源与样例可追溯 | 已完成（本地验收，[证据](../quality/st-007-question-kinds.md)） |
 | ST-008（ST-005 后） | 首页、复练、阶段诊断、缺证据解释；真实用户旅程与 Playwright | 已完成（本地验收，[证据](../quality/st-008-user-journeys.md)） |
 | ST-009（持续） | Docs as Code、UX/可访问性、契约与 CI；跟随每项变更同步 | 已完成（收口核对 + 新增护栏，[证据](../quality/st-009-closure.md)；远端 CI 作业未运行） |
-| ST-OPS-01（P0 并行） | 私有部署、异地加密 DB+附件协调备份、独立恢复；AC-OPS-01/02 | **AC-OPS-01 达成（2026-10-25）**：Cloudflare R2 异地备份→隔离恢复→端到端冒烟全绿（[演练记录](../quality/st-ops-01-offsite-restore.md)）；本机部署经 Tunnel+Access 上线 shutong.xmanspace.asia；**AC-OPS-02（外部告警）未接通**——真实长期数据落库前须补齐 |
-| ST-OPS-02（依赖实际运行环境） | 监控、告警与更新回滚与故障模拟 | 未实施；告警通道选定后与 AC-OPS-02 一并补齐 |
+| ST-OPS-01（P0 并行） | 私有部署、异地加密 DB+附件协调备份、独立恢复；AC-OPS-01/02 | **AC-OPS-01 与 AC-OPS-02 均达成（2026-10-25）**：R2 异地备份→隔离恢复→端到端冒烟全绿 + healthchecks.io 告警接通（[演练记录](../quality/st-ops-01-offsite-restore.md)）；本机部署经 Tunnel+Access 上线 shutong.xmanspace.asia |
+| ST-OPS-02（依赖实际运行环境） | 监控、告警与更新回滚与故障模拟 | 告警已由 healthchecks.io 承载（AC-OPS-02 达成）；更新/回滚演练待实际运行环境就绪后执行 |
 
 默认顺序为 ST-004 → ST-005 → ST-006 → ST-007 → ST-008，ST-009 随任务同步；ST-OPS-01 的真实数据门禁优先于任何真实长期使用，ST-OPS-02 在相应运行环境就绪后执行。任务范围和验收 ID 始终以实施计划/验收索引为准；需要变更时同步权威文档，不在 handoff 中另建第二套任务清单。
 
