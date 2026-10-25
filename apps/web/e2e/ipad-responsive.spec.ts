@@ -12,6 +12,7 @@
  * - 竖屏 810px 落在 720 断点与 980 上限之间：.home-grid 保持 grid（断点未触发），
  *   三视图均无横向溢出；
  * - 横屏 1080px：.page 被 max-width:980px 收束（border-box，rect 宽即 980）；
+ * - R3 矩阵：gen 11 / Mini / Pro 11 竖横六向，视口与 iPad UA 生效、首页无溢出；
  * - 仿真生效：iPad UA、触摸事件、deviceScaleRatio 如描述符。
  */
 import { test, expect, devices, type Page } from '@playwright/test'
@@ -87,5 +88,29 @@ test('R2 横屏 1080×810：.page 被 980px 上限收束，无横向溢出', asy
     await expectNoHorizontalOverflow(page)
   } finally {
     await ctx.close()
+  }
+})
+
+/* ---------- R3 设备描述符矩阵 ---------- */
+
+test('R3 描述符矩阵：gen 11 / Mini / Pro 11 竖横各向视口与 UA 生效，首页无横向溢出', async ({ browser }) => {
+  // gen 7 由 R1/R2 覆盖；此处把其余三个 iPad 描述符纳入门禁（原为通道外冒烟）。
+  const matrix = [
+    'iPad (gen 11)', 'iPad (gen 11) landscape',
+    'iPad Mini', 'iPad Mini landscape',
+    'iPad Pro 11', 'iPad Pro 11 landscape',
+  ]
+  for (const name of matrix) {
+    const desc = devices[name]
+    const ctx = await browser.newContext({ ...desc })
+    const page = await ctx.newPage()
+    try {
+      await enterSpace(page)
+      expect(await page.evaluate(() => innerWidth), `${name} 视口应生效`).toBe(desc.viewport.width)
+      expect(await page.evaluate(() => navigator.userAgent), `${name} 应为 iPad UA`).toContain('iPad')
+      await expectNoHorizontalOverflow(page)
+    } finally {
+      await ctx.close()
+    }
   }
 })

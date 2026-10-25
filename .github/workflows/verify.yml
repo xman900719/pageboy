@@ -102,3 +102,28 @@ jobs:
         env:
           # Runner 用系统 Python（API 经 pip -e 安装）；本地默认仓库 .venv。
           PY_CMD: python
+  web-e2e-webkit:
+    # ST-010 iPad（WebKit 仿真）通道：devices['iPad (gen 7)'] 全套 J1–J4/a11y/R1–R3。
+    # 与 web-e2e 相同的双 webServer 自管端口；--with-deps 由 Runner 免密 sudo 装系统库。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install API dependencies
+        run: python -m pip install -e './services/api[test]'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install front-end
+        run: cd apps/web && npm ci --no-audit --no-fund
+      - name: Install Playwright webkit
+        run: cd apps/web && npx playwright install webkit --with-deps
+      - name: Build front-end
+        # vite preview 服务 dist/；CI 各作业文件系统隔离，必须在本作业内构建。
+        run: cd apps/web && npm run build
+      - name: Run iPad (WebKit) lane
+        run: cd apps/web && npm run test:e2e:ipad
+        env:
+          PY_CMD: python
