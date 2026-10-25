@@ -5,6 +5,7 @@ import { Notice, type NoticeData, type NoticeTone } from './components/Notice'
 import { HomeView } from './views/HomeView'
 import { PracticeView } from './views/PracticeView'
 import { DiagnosisView } from './views/DiagnosisView'
+import { AdminView } from './views/AdminView'
 
 export default function App() {
   const [token, setToken] = useState('')
@@ -33,6 +34,7 @@ export default function App() {
       {view === 'home' && <HomeView client={client} subject={subject} notify={notify} goView={setView} />}
       {view === 'practice' && <PracticeView client={client} subject={subject} notify={notify} />}
       {view === 'diagnosis' && <DiagnosisView client={client} subject={subject} notify={notify} goHome={() => setView('home')} />}
+      {view === 'admin' && <AdminView client={client} subject={subject} notify={notify} />}
     </main>
   ) : (
     <Gate onEnter={enter} />

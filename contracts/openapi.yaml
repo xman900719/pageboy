@@ -242,6 +242,80 @@ components:
       - status
       title: QuestionRevisionOut
       type: object
+    QuestionVersionOut:
+      description: 审核台只读回显：某题源下全部版本（含草稿）的内容与状态，仅 owner 授权可见。
+      properties:
+        correct_answer:
+          title: Correct Answer
+          type: string
+        group_context:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Group Context
+        id:
+          title: Id
+          type: string
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_ids:
+          items:
+            type: string
+          title: Knowledge Ids
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        media_attachment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Attachment Id
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        question_id:
+          title: Question Id
+          type: string
+        reviewed_by_human:
+          title: Reviewed By Human
+          type: boolean
+        status:
+          enum:
+          - draft
+          - reviewed
+          - published
+          title: Status
+          type: string
+        stem:
+          title: Stem
+          type: string
+        version:
+          title: Version
+          type: integer
+      required:
+      - id
+      - question_id
+      - version
+      - status
+      - reviewed_by_human
+      - stem
+      - kind
+      - options
+      - correct_answer
+      - knowledge_ids
+      - max_points
+      - group_context
+      - media_attachment_id
+      title: QuestionVersionOut
+      type: object
     SchoolExamIn:
       properties:
         confirmed_by_user:
@@ -970,6 +1044,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Upload Attachment
+      tags:
+      - private content ingestion
+  /api/admin/sources/{source_id}/questions:
+    get:
+      description: '审核台只读列表：按题源回读全部版本（含草稿）的内容与状态，供人工审核 UI 回显。
+
+        不新增字节读取路由；存储键不进响应（QuestionVersionOut 无此字段）。'
+      operationId: list_source_question_versions_api_admin_sources__source_id__questions_get
+      parameters:
+      - in: path
+        name: source_id
+        required: true
+        schema:
+          title: Source Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/QuestionVersionOut'
+                title: Response List Source Question Versions Api Admin Sources  Source
+                  Id  Questions Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Source Question Versions
       tags:
       - private content ingestion
   /api/admin/sources/{source_id}/review:

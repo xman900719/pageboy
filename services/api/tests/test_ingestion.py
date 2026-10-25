@@ -332,3 +332,68 @@ def test_storage_collision_does_not_delete_existing_file(client, auth, source, t
     assert existing.read_bytes() == b'existing synthetic test data'
     with database() as db:
         assert db.scalars(select(m.SourceAttachment)).all() == []
+
+
+def test_source_question_versions_list_lifecycle(client, auth, source):
+    # 审核台只读列表：未授权 401、未知来源 404、新来源为空。
+    assert client.get(f'/api/admin/sources/{source}/questions').status_code == 401
+    assert client.get('/api/admin/sources/none/questions', headers=auth).status_code == 404
+    listing = client.get(f'/api/admin/sources/{source}/questions', headers=auth)
+    assert listing.status_code == 200 and listing.json() == []
+
+    # 直接创建的草稿：审核所需字段逐项可回读，reviewed_by_human 如实为 False。
+    created = client.post('/api/admin/questions', headers=auth,
+                          json={**question_body(source), 'group_context': '虚构测试数据：共享阅读材料'})
+    assert created.status_code == 201
+    direct = created.json()['id']
+    rows = client.get(f'/api/admin/sources/{source}/questions', headers=auth).json()
+    assert len(rows) == 1
+    item = rows[0]
+    assert item['id'] == direct and item['question_id'] and item['version'] == 1
+    assert item['status'] == 'draft' and item['reviewed_by_human'] is False
+    assert item['stem'] == '虚构测试数据：1+1=?'
+    assert item['kind'] == 'single_choice' and item['options'] == ['A. 1', 'B. 2']
+    assert item['correct_answer'] == 'B' and item['knowledge_ids'] == ['math.arithmetic']
+    assert item['max_points'] == 2 and item['group_context'] == '虚构测试数据：共享阅读材料'
+    assert item['media_attachment_id'] is None
+
+    # 附件导入路径产生的草稿同样可见（与直接创建的并列，序按 question_id+version）。
+    attachment = upload(client, auth, source).json()['id']
+    assert client.post(f'/api/admin/attachments/{attachment}/parse', headers=auth).status_code == 200
+    confirmed = client.post(f'/api/admin/attachments/{attachment}/confirm', headers=auth,
+                            json={'confirmed_by_human': True, 'questions': [question_body(source)]})
+    assert confirmed.status_code == 201
+    imported = confirmed.json()['question_version_ids'][0]
+    rows = client.get(f'/api/admin/sources/{source}/questions', headers=auth).json()
+    assert {row['id'] for row in rows} == {direct, imported}
+
+    # 审核 → 发布后列表如实反映状态；未审核草稿保持 draft。
+    assert client.post(f'/api/admin/questions/{imported}/review', headers=auth).status_code == 200
+    assert review_source(client, auth, source).status_code == 201
+    assert client.post(f'/api/admin/questions/{imported}/publish', headers=auth).status_code == 200
+    by_id = {row['id']: row for row in client.get(f'/api/admin/sources/{source}/questions', headers=auth).json()}
+    assert by_id[direct]['status'] == 'draft' and by_id[direct]['reviewed_by_human'] is False
+    assert by_id[imported]['status'] == 'published' and by_id[imported]['reviewed_by_human'] is True
+
+
+def test_source_question_versions_list_isolation_and_revisions(client, auth, source):
+    # 隔离：另一题源的版本不泄入本源列表。
+    other = client.post('/api/admin/sources', headers=auth,
+                         json={'title': '虚构测试数据：隔离题源', 'subject': 'math'}).json()['id']
+    assert client.post('/api/admin/questions', json=question_body(other), headers=auth).status_code == 201
+    assert client.get(f'/api/admin/sources/{source}/questions', headers=auth).json() == []
+    other_rows = client.get(f'/api/admin/sources/{other}/questions', headers=auth).json()
+    assert len(other_rows) == 1
+
+    # 已发布题的修订生成 v2 草稿：与 v1 published 并列可见，状态分层如实。
+    version = other_rows[0]['id']
+    assert client.post(f'/api/admin/questions/{version}/review', headers=auth).status_code == 200
+    assert review_source(client, auth, other).status_code == 201
+    assert client.post(f'/api/admin/questions/{version}/publish', headers=auth).status_code == 200
+    revised = client.post(f'/api/admin/questions/{version}/revisions', headers=auth,
+                          json={**question_body(other), 'stem': '虚构测试数据：修订题干'})
+    assert revised.status_code == 201
+    rows = client.get(f'/api/admin/sources/{other}/questions', headers=auth).json()
+    same_question = sorted((row['version'], row['status']) for row in rows
+                           if row['question_id'] == revised.json()['question_id'])
+    assert same_question == [(1, 'published'), (2, 'draft')]

@@ -288,3 +288,89 @@ test('J4 校卷总分：录入成功、明示「总分不产生考点证据」�
 
   await expectHonestLanguage(page)
 })
+
+/* ---------- J5 审核台：录入真题全闭环 ---------- */
+
+test('J5 审核台：题源登记→来源人工审核→附件解析→确认导入→草稿审核→发布（人工门禁全程如实）', async ({ page }) => {
+  await enterSpace(page)
+  await navTab(page, /审核台/).click()
+
+  const ledger = page.getByRole('region', { name: '题源台账' })
+  const review = page.getByRole('region', { name: '来源人工审核' })
+  const attachments = page.getByRole('region', { name: '附件与解析' })
+  const versions = page.getByRole('region', { name: '题目草稿与发布' })
+
+  // ① 新建题源：登记后台账出现新行并选中（新建后 chip 为「未审核」）。
+  await ledger.getByLabel('题源标题').fill('虚构测试数据：J5 审核台旅程题源')
+  await ledger.getByLabel('版权状态').selectOption('personal_use_reviewed')
+  await ledger.getByRole('button', { name: '新建题源' }).click()
+  await expect(page.getByRole('status')).toContainText('题源已登记')
+  const newRow = ledger.locator('li.source-item', { hasText: 'J5 审核台旅程题源' })
+  await expect(newRow).toContainText('未审核')
+  await expect(review.getByRole('heading', { name: '来源人工审核' })).toBeVisible()
+
+  // ② 来源人工审核：未勾选确认时按钮禁用（人工门禁反例）；勾选后提交，题源变已审核。
+  await review.getByLabel('考试年份（1990–2100）').fill('2026')
+  await review.getByLabel('来源链接（必须 https）').fill('https://example.org/synthetic-j5.mp3')
+  await review.getByLabel('获取日期').fill('2026-10-26')
+  await review.getByLabel('版权状态').selectOption('personal_use_reviewed')
+  await review.getByLabel('版权依据（1–2000 字，必填）').fill('虚构测试数据：合成音频，人工确认无版权限制')
+  await review.getByLabel('适用性说明（1–2000 字，必填）').fill('虚构测试数据：适用于 J5 审核台旅程验收')
+  await expect(review.getByRole('button', { name: '提交人工审核' })).toBeDisabled()
+  await review.getByLabel(/我已人工核查来源与版权/).check()
+  await review.getByRole('button', { name: '提交人工审核' }).click()
+  await expect(page.getByRole('status')).toContainText('题源标记为已审核')
+  await expect(newRow.locator('.chip.good')).toContainText('已人工审核')
+
+  // ③ 上传合成音频（运行时构造，无真实内容）：来源如实复位为「未审核」并警示。
+  const mp3 = Buffer.alloc(507)
+  mp3.set(Buffer.from('ID3'), 0)
+  mp3[3] = 0x03
+  await attachments.getByLabel(/选择原始附件/).setInputFiles({
+    name: '虚构测试数据-j5.mp3',
+    mimeType: 'audio/mpeg',
+    buffer: mp3,
+  })
+  await attachments.getByRole('button', { name: '上传附件' }).click()
+  await expect(page.getByRole('status')).toContainText('附件已上传')
+  await expect(page.getByRole('status')).toContainText('题源回到「未审核」状态')
+  await expect(newRow.locator('.chip.wait')).toContainText('未审核')
+
+  // ④ 解析（音频无转写 → 需人工录入）→ 逐题录入 → 显式勾选 → 确认导入。
+  await attachments.getByRole('button', { name: '解析' }).click()
+  await expect(page.getByRole('status')).toContainText('请逐题人工录入')
+  await attachments.getByRole('button', { name: '逐题录入并确认导入' }).click()
+  const entryForm = attachments.locator('.confirm-import')
+  await entryForm.getByLabel('题干').fill('虚构测试数据：J5 审核台听力题——听录音选出提到的词。')
+  await entryForm.getByLabel('选项 A 内容').fill('甲')
+  await entryForm.getByLabel('选项 B 内容').fill('乙')
+  await entryForm.getByLabel('正确选项').selectOption({ label: 'A · 甲' })
+  await entryForm.getByLabel('知识点 ID（至少 1 个，逗号或空格分隔）').fill('math.listen')
+  await entryForm.getByRole('button', { name: '加入待导入列表' }).click()
+  await expect(entryForm.getByText('已录入 1 题')).toBeVisible()
+  await expect(entryForm.getByRole('button', { name: '确认导入 1 题' })).toBeDisabled()
+  await entryForm.getByLabel(/我已逐题人工核对/).check()
+  await entryForm.getByRole('button', { name: '确认导入 1 题' }).click()
+  await expect(page.getByRole('status')).toContainText('已确认导入 1 题，草稿待人工审核')
+  await expect(attachments.getByText('已导入 1 题，等待在下方逐题人工审核。')).toBeVisible()
+
+  // ⑤ 草稿出现（含媒体附件标记）→ 人工审核通过 → 来源未审核时发布禁用并说明原因（如实门禁反例）。
+  const draftRow = versions.locator('li.version-row', { hasText: 'J5 审核台听力题' })
+  await expect(draftRow.locator('.badge.qstatus-draft')).toBeVisible()
+  await expect(draftRow).toContainText('含媒体附件')
+  await draftRow.getByRole('button', { name: '人工审核通过' }).click()
+  await expect(page.getByRole('status')).toContainText('已标记为人工审核')
+  await expect(draftRow.locator('.badge.qstatus-reviewed')).toBeVisible()
+  await expect(draftRow.getByRole('button', { name: '发布' })).toBeDisabled()
+  await expect(draftRow).toContainText('题源未通过人工审核（或版权未核实），发布暂不可用')
+
+  // ⑥ 重新完成来源人工审核 → 发布可用 → 发布成功进入取题池。
+  await review.getByRole('button', { name: '提交人工审核' }).click()
+  await expect(page.getByRole('status')).toContainText('题源标记为已审核')
+  await draftRow.getByRole('button', { name: '发布' }).click()
+  await expect(page.getByRole('status')).toContainText('题目已发布，现在会进入练习与诊断的取题池。')
+  await expect(draftRow.locator('.badge.qstatus-published')).toBeVisible()
+  await expect(newRow.locator('.chip.good')).toContainText('已人工审核')
+
+  await expectHonestLanguage(page)
+})

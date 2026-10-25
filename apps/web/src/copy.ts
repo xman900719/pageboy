@@ -1,12 +1,13 @@
 /* All user-facing labels & honest-language copy in one place (red-line discipline). */
-import type { GapType, Kind } from './api'
+import type { AttachmentStatus, GapType, Kind, QuestionVersionStatus, RightsStatus } from './api'
 
-export type ViewId = 'home' | 'practice' | 'diagnosis'
+export type ViewId = 'home' | 'practice' | 'diagnosis' | 'admin'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'home', label: '首页', hint: '目标与知识点状态' },
   { id: 'practice', label: '练习', hint: '复练与轮换取题' },
   { id: 'diagnosis', label: '阶段诊断', hint: '未见题独立验证' },
+  { id: 'admin', label: '审核台', hint: '题源 · 附件 · 人工发布' },
 ]
 
 export const GAP_LABELS: Record<GapType, string> = {
@@ -61,6 +62,36 @@ export const EXAM_NOTE = '学校卷只录入总分：总分不产生考点证据
 export const GOAL_NOTE = '目标只用于生成未校准的规划阈值，不作分数预测。'
 export const HOME_EMPTY_PLAN = '暂无已发布知识点：请先在管理端导入、审核并发布题目。'
 
+/* ---------- 题库审核台（ST-011） ---------- */
+
+export const RIGHTS_STATUS_LABELS: Record<RightsStatus, string> = {
+  unknown: '版权状态未核实',
+  personal_use_reviewed: '个人使用已核查',
+  licensed: '已获授权',
+}
+
+export const ATTACHMENT_STATUS_LABELS: Record<AttachmentStatus, string> = {
+  uploaded: '待解析',
+  parsed: '已解析',
+  needs_manual_input: '需人工录入',
+  confirmed: '已确认导入',
+}
+
+export const QUESTION_STATUS_LABELS: Record<QuestionVersionStatus, string> = {
+  draft: '待人工审核',
+  reviewed: '已人工审核',
+  published: '已发布',
+}
+
+export const ADMIN_PIPELINE_NOTE =
+  '题目录入全程由人工完成：① 新建题源 → ② 上传原始附件 → ③ 对照附件逐题录入 → ④ 逐题人工审核 → ⑤ 发布。只有已发布的题目才会进入练习与诊断取题池。'
+
+export const REUPLOAD_RESET_NOTE = '上传附件会让题源回到「未审核」状态：需重新完成来源人工审核，否则该题源的题目无法发布。'
+
+export const REVIEW_CHECK_LABEL = '我已人工核查来源与版权 / 适用性'
+
+export const CONFIRM_CHECK_LABEL = '我已逐题人工核对题干、选项、答案与知识点'
+
 /* Formatting helpers */
 
 export function pct(value: number | null | undefined): string {
@@ -71,6 +102,12 @@ export function pct(value: number | null | undefined): string {
 
 export function fmtPoints(value: number): string {
   return String(Number(value.toFixed(2)))
+}
+
+export function fmtBytes(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MiB`
+  if (size >= 1024) return `${Math.round(size / 1024)} KiB`
+  return `${size} B`
 }
 
 export function shortTime(iso: string): string {

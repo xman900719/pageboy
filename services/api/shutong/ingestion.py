@@ -12,7 +12,7 @@ from .auth import require_owner
 from .content import create_question_draft
 from .database import get_db
 from . import private_files as files
-from .schemas import AttachmentOut, ImportConfirmationIn, SourceDetailOut, SourceReviewIn, SourceReviewRecordOut
+from .schemas import AttachmentOut, ImportConfirmationIn, QuestionVersionOut, SourceDetailOut, SourceReviewIn, SourceReviewRecordOut
 
 router = APIRouter(prefix="/api/admin", tags=["private content ingestion"])
 
@@ -57,6 +57,18 @@ def source_details(source_id: str, owner: str = Depends(require_owner), db: Sess
 def source_ledger(owner: str = Depends(require_owner), db: Session = Depends(get_db)):
     sources = db.scalars(select(m.SourceDocument).order_by(m.SourceDocument.created_at, m.SourceDocument.id)).all()
     return [source_details(source.id, owner, db) for source in sources]
+
+
+@router.get("/sources/{source_id}/questions", response_model=list[QuestionVersionOut])
+def list_source_question_versions(source_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """审核台只读列表：按题源回读全部版本（含草稿）的内容与状态，供人工审核 UI 回显。
+    不新增字节读取路由；存储键不进响应（QuestionVersionOut 无此字段）。"""
+    source_or_404(db, source_id)
+    rows = db.execute(select(m.QuestionVersion)
+                       .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
+                       .where(m.Question.source_document_id == source_id)
+                       .order_by(m.QuestionVersion.question_id, m.QuestionVersion.version)).scalars().all()
+    return rows
 
 
 @router.post("/sources/{source_id}/review", status_code=201, response_model=SourceReviewRecordOut)

@@ -360,6 +360,81 @@ input[type='date'] { color-scheme: light }
 .exam-title { font-weight: 600 }
 .exam-list .chip { margin-left: auto }
 
+/* ---------- Admin review desk (ST-011) ---------- */
+
+.admin-form { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 14px }
+.admin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px }
+.admin-grid .wide { grid-column: 1 / -1 }
+.field-label { display: block; font-size: 0.84rem; font-weight: 600; margin-bottom: 4px }
+.mono-input { font-family: var(--font-mono); font-size: 0.8rem }
+
+.source-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px }
+.source-item {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 6px 10px; background: #fbfcfe;
+}
+.source-item.selected { border-color: var(--primary-line); background: var(--primary-soft) }
+.source-item .chip { margin-left: auto }
+.source-pick {
+  flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  background: none; border: 1px solid transparent; color: var(--ink); padding: 6px 8px; border-radius: var(--radius-s);
+}
+.source-pick:hover:not(:disabled) { background: none; border-color: var(--primary-line) }
+.source-pick .source-title { font-weight: 600; overflow-wrap: anywhere }
+
+/* 显式人工勾选框：纪律色（teal）区块，未勾选不能提交对应表单。 */
+.confirm-box {
+  display: flex; gap: 10px; align-items: flex-start;
+  border: 1px solid var(--teal-line); background: var(--teal-soft); border-radius: var(--radius-s);
+  padding: 10px 12px; margin: 4px 0 12px;
+}
+.confirm-box input[type='checkbox'] { width: 1.05rem; height: 1.05rem; margin: 3px 0 0; flex: none; accent-color: var(--teal) }
+.confirm-box label { margin: 0; font-size: 0.84rem; font-weight: 600; color: #23536b; line-height: 1.55 }
+
+.option-rows { display: grid; gap: 8px; margin: 6px 0 8px }
+.option-row { display: flex; gap: 8px; align-items: center }
+.option-row .option-key { flex: none }
+.option-row input { flex: 1; margin: 0 }
+
+.attachment-upload { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 14px }
+.attachment-upload button { margin-top: 4px }
+.attachment-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px }
+.attachment-row {
+  border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 10px 12px;
+  background: #fbfcfe; display: grid; gap: 8px;
+}
+.attachment-main { display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; font-size: 0.88rem }
+.attachment-main b { color: var(--ink); overflow-wrap: anywhere }
+.attachment-meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-3); overflow-wrap: anywhere }
+.attachment-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+
+details.parsed-text { border: 1px dashed var(--line); border-radius: var(--radius-s); padding: 8px 12px; background: #f8fafd }
+details.parsed-text summary { cursor: pointer; font-size: 0.78rem; font-weight: 600; color: var(--ink-2) }
+details.parsed-text blockquote {
+  margin: 8px 0 0; font-size: 0.82rem; line-height: 1.7; color: var(--ink-2);
+  white-space: pre-wrap; max-height: 240px; overflow: auto;
+}
+
+.confirm-import { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 10px }
+.confirm-import-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0 10px }
+.entry-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; font-size: 0.82rem }
+.entry-row {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: #fbfcfe; border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 6px 10px;
+}
+.entry-stem { color: var(--ink-2); min-width: 0; flex: 1 1 160px; overflow-wrap: anywhere }
+
+.version-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px }
+.version-row { border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 10px 12px; background: #fbfcfe; display: grid; gap: 6px }
+.version-head { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; font-size: 0.78rem }
+.version-stem { margin: 0; font-size: 0.92rem; line-height: 1.65; color: var(--ink) }
+.version-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
+.version-foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.version-blocked { font-size: 0.76rem; color: var(--amber); line-height: 1.5 }
+.badge.qstatus-draft { background: var(--amber-soft); color: var(--amber); border-color: var(--amber-line) }
+.badge.qstatus-reviewed { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-line) }
+.badge.qstatus-published { background: var(--green-soft); color: var(--green); border-color: var(--green-line) }
+
 /* ---------- Token gate ---------- */
 
 .gate { display: grid; place-items: center; min-height: 82vh }
@@ -395,6 +470,7 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
   .view-tab { flex: 1; min-width: 96px }
   .subject-row { margin-left: 0; width: 100% }
   .goal-fields, .exam-form .goal-fields { grid-template-columns: 1fr }
+  .admin-grid { grid-template-columns: 1fr }
   .controls { align-items: stretch; flex-direction: column }
   .inline-select { justify-content: space-between }
 }

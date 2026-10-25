@@ -80,6 +80,23 @@ class AttachmentOut(BaseModel):
     created_at: datetime
     question_version_ids: list[str]
 
+class QuestionVersionOut(BaseModel):
+    """审核台只读回显：某题源下全部版本（含草稿）的内容与状态，仅 owner 授权可见。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    question_id: str
+    version: int
+    status: Literal["draft", "reviewed", "published"]
+    reviewed_by_human: bool
+    stem: str
+    kind: Literal["single_choice", "short_answer", "subjective"]
+    options: list[str]
+    correct_answer: str
+    knowledge_ids: list[str]
+    max_points: float
+    group_context: str | None
+    media_attachment_id: str | None
+
 class SourceReviewRecordOut(BaseModel):
     id: str
     metadata: SourceReviewIn

@@ -123,3 +123,21 @@ test('A3 阶段诊断：独立验证纪律、判决与校卷总分面板的 WCAG
 
   await scanAndReport(page, 'diagnosis')
 })
+
+test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', async ({ page }) => {
+  await enterSpace(page)
+  await navTab(page, /审核台/).click()
+
+  // 种子含两个已发布题源：台账非空，默认选中第一个，四个区块完整渲染后扫描。
+  // 本扫描只读：不创建题源、不上传、不提交审核（state 边界与 a11y 文件头一致）。
+  const ledger = page.getByRole('region', { name: '题源台账' })
+  await expect(ledger.locator('li.source-item').first()).toBeVisible()
+  await expect(page.getByRole('region', { name: '来源人工审核' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '附件与解析' })).toBeVisible()
+  const versions = page.getByRole('region', { name: '题目草稿与发布' })
+  await expect(versions).toBeVisible()
+  // 选中题源的题目已全部发布：至少一行「已发布」徽章证明只读列表真实挂载。
+  await expect(versions.locator('.badge.qstatus-published').first()).toBeVisible()
+
+  await scanAndReport(page, 'admin')
+})

@@ -49,7 +49,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 
 /* ---------- R1 竖屏 ---------- */
 
-test('R1 竖屏 810×1080：三视图无横向溢出，720 断点未触发，触摸与 iPad UA 生效', async ({ page }) => {
+test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触摸与 iPad UA 生效', async ({ page }) => {
   await enterSpace(page)
 
   // 仿真生效：iPad UA、触摸事件、810px 视口（720 < 810 < 980）。
@@ -70,6 +70,11 @@ test('R1 竖屏 810×1080：三视图无横向溢出，720 断点未触发，触
   // 阶段诊断视图：仅静态加载（绝不领取未见题，避免写入基线记录）。
   await navTab(page, /阶段诊断/).click()
   await expect(page.getByText('独立验证纪律')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  // 审核台视图：台账与工作区卡片只读加载后度量（不创建/上传/提交）。
+  await navTab(page, /审核台/).click()
+  await expect(page.getByRole('region', { name: '题源台账' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

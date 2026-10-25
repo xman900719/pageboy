@@ -134,6 +134,90 @@ export interface SchoolExamResult {
   knowledge_evidence_created: boolean
 }
 
+/* ---------- 题库审核台（ST-011）：题源 → 附件 → 逐题确认 → 审核 → 发布 ---------- */
+
+export type RightsStatus = 'unknown' | 'personal_use_reviewed' | 'licensed'
+export type AttachmentStatus = 'uploaded' | 'parsed' | 'needs_manual_input' | 'confirmed'
+export type QuestionVersionStatus = 'draft' | 'reviewed' | 'published'
+
+export interface SourceMeta {
+  title: string
+  subject: Subject
+  exam_year: number | null
+  source_url: string | null
+  rights_status: RightsStatus
+  verified: boolean
+}
+
+export interface SourceReviewMeta {
+  exam_year: number
+  source_url: string
+  acquired_at: string
+  rights_status: RightsStatus
+  rights_basis: string
+  applicable: boolean
+  applicability_note: string
+  reviewed_by_human: boolean
+}
+
+export interface SourceReviewRecord {
+  id: string
+  metadata: SourceReviewMeta
+  reviewed_by: string
+  created_at: string
+}
+
+export interface AttachmentOut {
+  id: string
+  source_document_id: string
+  filename: string
+  media_type: 'application/pdf' | 'image/png' | 'image/jpeg' | 'audio/mpeg' | 'audio/mp4'
+  sha256: string
+  byte_size: number
+  status: AttachmentStatus
+  extracted_text: string | null
+  parser_version: string | null
+  parsed_at: string | null
+  confirmed_at: string | null
+  created_at: string
+  question_version_ids: string[]
+}
+
+export interface SourceDetail {
+  id: string
+  source: SourceMeta
+  reviews: SourceReviewRecord[]
+  attachments: AttachmentOut[]
+}
+
+export interface QuestionVersion {
+  id: string
+  question_id: string
+  version: number
+  status: QuestionVersionStatus
+  reviewed_by_human: boolean
+  stem: string
+  kind: Kind
+  options: string[]
+  correct_answer: string
+  knowledge_ids: string[]
+  max_points: number
+  group_context: string | null
+  media_attachment_id: string | null
+}
+
+export interface QuestionDraftInput {
+  source_document_id: string
+  stem: string
+  kind: Kind
+  options: string[]
+  correct_answer: string
+  knowledge_ids: string[]
+  max_points: number
+  group_context?: string | null
+  media_attachment_id?: string | null
+}
+
 export interface Client {
   verify(): Promise<unknown>
   nextItem(subject: Subject, purpose: Purpose, knowledgeId?: string): Promise<NextItem>
@@ -155,17 +239,24 @@ export interface Client {
     confirmedByUser: boolean
   }): Promise<SchoolExamResult>
   fetchAttachment(attachmentId: string): Promise<Blob>
+  /* 题库审核台（ST-011）。 */
+  adminSources(): Promise<SourceDetail[]>
+  addSource(input: { title: string; subject: Subject; rightsStatus: RightsStatus }): Promise<{ id: string; status: string }>
+  reviewSource(sourceId: string, review: SourceReviewMeta): Promise<unknown>
+  uploadAttachment(sourceId: string, file: File): Promise<AttachmentOut>
+  parseAttachment(attachmentId: string): Promise<AttachmentOut>
+  confirmImport(attachmentId: string, questions: QuestionDraftInput[]): Promise<AttachmentOut>
+  sourceQuestions(sourceId: string): Promise<QuestionVersion[]>
+  reviewQuestion(versionId: string): Promise<unknown>
+  publishQuestion(versionId: string): Promise<unknown>
 }
 
 export function createClient(token: string): Client {
-  const call = async <T>(path: string, method = 'GET', body?: unknown): Promise<T> => {
+  // 统一请求与错误解析：detail 字符串原样保留（409 等业务码由 describeError 如实呈现）。
+  const request = async (path: string, init: RequestInit = {}): Promise<unknown> => {
     const res = await fetch(path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, ...(init.headers as Record<string, string>) },
     })
     const text = await res.text()
     let payload: unknown = null
@@ -181,8 +272,13 @@ export function createClient(token: string): Client {
           : `HTTP ${res.status}`
       throw new ApiError(res.status, detail)
     }
-    return payload as T
+    return payload
   }
+  const call = async <T>(path: string, method = 'GET', body?: unknown): Promise<T> =>
+    request(path, {
+      method,
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    }) as Promise<T>
 
   return {
     verify: () => call<unknown>('/api/subjects'),
@@ -219,6 +315,26 @@ export function createClient(token: string): Client {
       if (!res.ok) throw new ApiError(res.status, 'ATTACHMENT_UNAVAILABLE')
       return await res.blob()
     },
+    adminSources: () => call<SourceDetail[]>('/api/admin/sources'),
+    addSource: ({ title, subject, rightsStatus }) =>
+      call<{ id: string; status: string }>('/api/admin/sources', 'POST', { title, subject, rights_status: rightsStatus }),
+    reviewSource: (sourceId, review) => call<unknown>(`/api/admin/sources/${encodeURIComponent(sourceId)}/review`, 'POST', review),
+    // 附件上传走原始二进制请求体（Content-Type 限五种媒体类型，≤10MiB 由 UI 预检）。
+    uploadAttachment: (sourceId, file) =>
+      request(`/api/admin/sources/${encodeURIComponent(sourceId)}/attachments?filename=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      }) as Promise<AttachmentOut>,
+    parseAttachment: attachmentId => call<AttachmentOut>(`/api/admin/attachments/${encodeURIComponent(attachmentId)}/parse`, 'POST'),
+    confirmImport: (attachmentId, questions) =>
+      call<AttachmentOut>(`/api/admin/attachments/${encodeURIComponent(attachmentId)}/confirm`, 'POST', {
+        confirmed_by_human: true,
+        questions,
+      }),
+    sourceQuestions: sourceId => call<QuestionVersion[]>(`/api/admin/sources/${encodeURIComponent(sourceId)}/questions`),
+    reviewQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/review`, 'POST'),
+    publishQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/publish`, 'POST'),
   }
 }
 
@@ -231,6 +347,18 @@ const API_CODE_TEXT: Record<string, string> = {
   EXPOSURE_ALREADY_SUBMITTED: '这道题已经提交过作答。',
   IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD: '提交冲突，请重试。',
   REFERENCE_NOT_APPLICABLE: '该题型没有参考答案。',
+  /* 题库审核台（原文码缺映射时直接显示 code）。 */
+  UPLOAD_HASH_MISMATCH: '附件校验失败：上传内容的哈希与预期不一致，请重新上传。',
+  UNSUPPORTED_FILE_TYPE: '不支持的附件类型：仅接受 PDF / PNG / JPG / MP3 / M4A。',
+  INVALID_FILE_SIZE: '附件大小不符合要求（上限 10 MiB）。',
+  ATTACHMENT_STORAGE_UNAVAILABLE: '附件存储暂不可用，请稍后重试。',
+  IMPORT_ALREADY_CONFIRMED: '该附件已确认导入过，不能再次解析或导入。',
+  IMPORT_SOURCE_MISMATCH: '附件与题目来源不匹配，请检查录入内容。',
+  IMPORT_NOT_READY_OR_ALREADY_CONFIRMED: '该附件尚未解析（或已确认导入），不能确认导入。',
+  MEDIA_ATTACHMENT_INVALID: '媒体附件无效：须与题目同属一个来源且已上传。',
+  IMPORT_TRANSACTION_FAILED: '导入保存失败，请重试。',
+  IMPORTED_QUESTION_CONFIRMATION_REQUIRED: '导入的题目缺少确认记录，请先在附件区完成逐题确认导入。',
+  QUESTION_NOT_APPROVED_FOR_PRIVATE_PUBLICATION: '来源尚未通过人工审核（或版权状态未核实）：请先完成来源人工审核，再发布题目。',
 }
 
 export function describeError(error: unknown): string {
