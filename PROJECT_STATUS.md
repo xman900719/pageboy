@@ -72,4 +72,4 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
 
 ## ST-OPS-01 异地闭环达成（2026-10-25）
 
-**AC-OPS-01 达成**：用户约束"仅本地主机"下选定 **Cloudflare R2 为另一故障域**——首次真实备份（restic 生产路径 33s，快照 `ce87871b`）→ 从 R2 隔离恢复（拉回 7s + restore.sh 1s，SHA/迁移 0005 全过）→ 端到端冒烟 3s 全绿（六表行数与生产全等、附件 DB↔磁盘↔下载字节级一致、练习可服务）。调度：用户级 crontab 每 4 小时（增量去重已验证，仓库 2 快照）。本机适配如实记录：api 容器以宿主 uid 运行解决 bind 写入/宿主 tar；演练库就绪探测改宿主 TCP（避开镜像 init 假阳性）。**AC-OPS-02 未达成**（外部告警通道未接，备份失败仅留痕不叫醒人）；真实长期数据落库前需补齐并做一次真实数据备份恢复核对。详见 [ST-OPS-01 演练记录](docs/quality/st-ops-01-offsite-restore.md)。
+**AC-OPS-01 与 AC-OPS-02 均达成**：R2 异地备份→隔离恢复→端到端冒烟全绿（33s 备份/7s 拉回/1s 恢复/3s 冒烟）；healthchecks.io dead-man's switch 告警接通（ping 200 实测、4h+1h=5h 静默告警）；用户级 crontab 每 4 小时调度已生效。
