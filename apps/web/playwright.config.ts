@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test'
+import { defineConfig, devices } from '@playwright/test'
 
 /**
  * ST-008 F1 用户旅程验收：uvicorn API（临时 SQLite）+ vite preview 双服务。
@@ -12,6 +12,14 @@ const pyCmd = process.env.PY_CMD ?? '../../.venv/bin/python'
 const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
 const dbFile = `${tmpRoot}/st008-e2e.sqlite3`
 const attachmentsDir = `${tmpRoot}/st008-e2e-attachments`
+/**
+ * ST-010 iPad 仿真通道：`npm run test:e2e:ipad`（E2E_DEVICE=ipad）时整套测试改在
+ * WebKit（Safari 同源引擎）+ iPad (gen 7) 描述符（810×1080、触摸、isMobile）下运行。
+ * iPad 是一次独立的 playwright 调用 → webServer 命令重建全新种子库，
+ * J1 的「全新库」断言与 chromium 通道互不影响；默认通道行为完全不变。
+ * 描述符的 defaultBrowserType=webkit，browserName 显式写出以免隐式依赖。
+ */
+const ipad = process.env.E2E_DEVICE === 'ipad'
 
 export default defineConfig({
   testDir: './e2e',
@@ -19,7 +27,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],
-  use: { baseURL: 'http://127.0.0.1:4173' },
+  use: {
+    baseURL: 'http://127.0.0.1:4173',
+    ...(ipad ? { ...devices['iPad (gen 7)'], browserName: 'webkit' as const } : {}),
+  },
   globalSetup: './e2e/global-setup.ts',
   // 1.64 的字段名是 webServer（单数），数组值即多服务。
   webServer: [

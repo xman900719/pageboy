@@ -13,6 +13,7 @@
 | ST-007 | P1 | 四科题型组合：题组、公式、图表、阅读、音频/主观自评 | 四科样例和评分来源可追溯 |
 | ST-008 | P1 | 精简学习首页、复练、阶段诊断、缺证据解释 | 关键用户旅程 Playwright 通过 |
 | ST-009 | P1 | 完整 Docs as Code + UX/可访问性、站点构建、自动化更新契约 | 全部链接/契约/CI 检查通过 |
+| ST-010 | P2 | iPad（WebKit 仿真）e2e 通道：既有 J1–J4/a11y 全套在 iPad (gen 7) 描述符下重放 + 720–980px 响应式断言 | iPad 通道 9/9、chromium 回归 7 passed + 2 skipped |
 | ST-OPS-01 | P0并行 | VPS/Tailscale/HTTPS、异地备份仓库与密钥隔离 | AC-OPS-01/02，现场恢复证明 |
 | ST-OPS-02 | P1 | 主机监控、告警与更新回滚流程 | 模拟备份失败和错误镜像能恢复 |
 
@@ -30,6 +31,7 @@
 - ST-008：本地验收完成，精简学习首页/复练/阶段诊断/缺证据解释通过 Playwright J1–J4 用户旅程（4/4，chromium 10.9s；双 webServer 临时 SQLite + 同源代理；种子全部虚构测试数据）；零后端改动（110 项护栏不变）；诚实文案红线 grep 零违规；[验证记录](docs/quality/st-008-user-journeys.md)。单浏览器、无性能断言；远端 CI 未运行。下一项 ST-009 收口。
 - ST-009：本地验收完成，Docs as Code/契约核对与 README 同步、CI 新增 pg-migration+web-e2e 护栏（命令本地逐字验证、远端未运行）、axe-core 三视图可访问性扫描与 31 个对比度节点修复、ST-002/004 并发回归全绿；[验证记录](docs/quality/st-009-closure.md)。**开发计划 ST-001~ST-009 全部完成**；剩余 ST-OPS-01/02 待外部环境与授权。
 - ST-OPS-01（本地部分）：联合备份模板（backup.sh 附件协调）+ restore.sh + 本地隔离恢复演练三次通过（行数/迁移版本/附件字节一致）；**不构成 AC-OPS-01**——异地/另一故障域、restic 生产路径、保留/告警、真实 RPO/RTO 未验证（见 PROJECT_STATUS 与 backup-policy 事实记录）；异地部分与 ST-OPS-02 待外部授权。
+- ST-010：本地验收完成，iPad（WebKit 仿真）e2e 通道——`E2E_DEVICE=ipad`（`npm run test:e2e:ipad`）经 devices['iPad (gen 7)']（810×1080、hasTouch、isMobile）整套切换到 WebKit：J1–J4 用户旅程、a11y 三视图扫描与新增 R1/R2 响应式断言全绿（9/9，22.5s）；chromium 通道回归 7 passed + 2 skipped（R1/R2 按设计仅 iPad 通道运行）。R1 竖屏 810px 落 720–980 区间且 .home-grid 保持 grid（断点未触发）、三视图零横向溢出；R2 横屏 .page 被 max-width 980px 精确收束。零后端/零前端 src 变更（测试基建）；WebKit 系统库经 install-deps 补装闭环；[验证记录](docs/quality/st-010-ipad-emulation.md)。iPad 通道未纳入远端 CI。
 
 ## 阶段门禁
 
