@@ -37,6 +37,7 @@
 
 ## 远端 CI 实测
 
-（推送后回填：run 链接与作业结果。）
+- 推送 `86d5e3c`（codex/st-003-private-ingestion）触发 [run 40178219352](https://github.com/xman900719/pageboy/actions/runs/40178219352)（2026-10-25）：**五作业全绿**——api-and-docs 58s、web-build 17s、pg-migration 48s、web-e2e 1m16s、**web-e2e-webkit 2m42s**；后者作业日志实证 iPad 通道 **10 passed（1.4m）**（R1 2.6s / R2 1.2s / R3 11.8s 全绿），`npx playwright install webkit --with-deps` 在 Runner 一次通过，无需本机的免 root 方案。
+- 既有告警（不构成失败，未处理）：actions/checkout@v4、setup-node@v4、setup-python@v5 的 Node 20 弃用提示（Runner 强制 Node 24 运行）；ubuntu-latest 已于 2026-10-19 起迁移 Ubuntu 26，与本机发行版一致。
 
 下一项任务：无排期任务（ST-OPS-02 仍待外部环境）。
