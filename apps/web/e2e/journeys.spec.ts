@@ -374,3 +374,41 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
 
   await expectHonestLanguage(page)
 })
+
+/* ---------- J6 本机记住令牌（PWA 冷启动免输入） ---------- */
+
+test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令牌如实拦截', async ({ page }) => {
+  // 勾选「在本机记住令牌」进入：令牌写入本机存储（显式选配，默认仅内存）。
+  await page.goto('/')
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel(/在本机记住令牌/).check()
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBe(TOKEN)
+
+  // 冷启动（模拟 PWA 从主屏幕图标重开）：免输入直达首页，令牌门不出现。
+  await page.reload()
+  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  await expect(page.getByLabel('访问令牌')).toHaveCount(0)
+  await expect(page.getByRole('status')).toContainText('已用本机记住的令牌自动进入')
+  await expect(page.getByRole('region', { name: '目标与学习计划' })).toBeVisible()
+
+  // 退出 = 完整登出：本机存储一并清除，回到令牌门。
+  await page.getByRole('button', { name: '退出' }).click()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  // 反例：本机残留失效令牌 → verify 失败即如实清除，绝不放行。
+  await page.evaluate(t => localStorage.setItem('shutong.token', t), 'stale-token')
+  await page.reload()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  // 清除后令牌门照常可用：显式取消勾选进入 → 不落任何存储（既有偏好可随时撤销）。
+  // 注意：勾选框按「上次选择」预勾（存储残留过令牌即视为偏好记住），故必须显式取消。
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel(/在本机记住令牌/).uncheck()
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+})

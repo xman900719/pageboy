@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createClient, describeError, SUBJECTS, SUBJECT_LABELS, type Subject } from './api'
 import { VIEWS, type ViewId } from './copy'
 import { Notice, type NoticeData, type NoticeTone } from './components/Notice'
@@ -6,6 +6,11 @@ import { HomeView } from './views/HomeView'
 import { PracticeView } from './views/PracticeView'
 import { DiagnosisView } from './views/DiagnosisView'
 import { AdminView } from './views/AdminView'
+
+/** 本机记住的令牌（ST-012）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
+ *  值不出设备、不经网络传给任何第三方（verify 只是带 Authorization 的本服务请求）；
+ *  退出即清除；令牌失效时自动清除并回到令牌门。默认行为不变：仅页面内存。 */
+const TOKEN_STORE_KEY = 'shutong.token'
 
 export default function App() {
   const [token, setToken] = useState('')
@@ -17,14 +22,42 @@ export default function App() {
   const notify = useCallback((text: string, tone: NoticeTone = 'info') => setNotice({ text, tone }), [])
   const clearNotice = useCallback(() => setNotice(null), [])
 
-  async function enter(nextToken: string) {
+  // 冷启动（PWA/主屏幕图标重开）：本机记住的令牌经 verify 后自动进入；已手动进入则不打扰。
+  const tokenRef = useRef(token)
+  useEffect(() => {
+    tokenRef.current = token
+  }, [token])
+  useEffect(() => {
+    const saved = localStorage.getItem(TOKEN_STORE_KEY)
+    if (saved === null || saved === '') return
+    let cancelled = false
+    createClient(saved)
+      .verify()
+      .then(() => {
+        if (cancelled || tokenRef.current !== '') return
+        notify('已用本机记住的令牌自动进入。', 'success')
+        setToken(saved)
+      })
+      .catch(() => {
+        // 令牌已失效（如服务端轮换）：如实清除，不留在本机。
+        localStorage.removeItem(TOKEN_STORE_KEY)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [notify])
+
+  async function enter(nextToken: string, remember: boolean) {
     const candidate = createClient(nextToken)
     await candidate.verify() // throws on invalid token; nothing is kept on failure
+    if (remember) localStorage.setItem(TOKEN_STORE_KEY, nextToken)
+    else localStorage.removeItem(TOKEN_STORE_KEY)
     setToken(nextToken)
     notify('已进入私有学习空间。', 'success')
   }
 
   function signOut() {
+    localStorage.removeItem(TOKEN_STORE_KEY) // 退出 = 完整登出：本机记住的令牌一并清除
     setToken('')
     setNotice(null)
   }
@@ -100,12 +133,14 @@ export default function App() {
   )
 }
 
-/** Token gate: the token lives in page memory only; it is verified before entry. */
-function Gate({ onEnter }: { onEnter: (token: string) => Promise<void> }) {
+/** Token gate: verified before entry; the token stays in page memory unless the
+ *  user explicitly opts into 「在本机记住令牌」 (ST-012, private-device convenience). */
+function Gate({ onEnter }: { onEnter: (token: string, remember: boolean) => Promise<void> }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [visible, setVisible] = useState(false)
+  const [remember, setRemember] = useState(() => localStorage.getItem(TOKEN_STORE_KEY) !== null)
 
   async function pasteToken() {
     // 优先走剪贴板 API（HTTPS 站点，点击授权一次即可）；拒绝/不支持时提示手动粘贴兜底。
@@ -131,7 +166,7 @@ function Gate({ onEnter }: { onEnter: (token: string) => Promise<void> }) {
     setBusy(true)
     setError('')
     try {
-      await onEnter(value.trim())
+      await onEnter(value.trim(), remember)
     } catch (e) {
       setError(describeError(e))
     } finally {
@@ -177,13 +212,22 @@ function Gate({ onEnter }: { onEnter: (token: string) => Promise<void> }) {
               </button>
             </span>
           </label>
+          <div className="confirm-box gate-remember">
+            <input
+              id="gate-remember"
+              type="checkbox"
+              checked={remember}
+              onChange={e => setRemember(e.target.checked)}
+            />
+            <label htmlFor="gate-remember">在本机记住令牌（私有设备：冷启动免输入；退出即清除）</label>
+          </div>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="primary" disabled={busy}>
             {busy ? '验证中…' : '进入'}
           </button>
         </form>
         <ul className="gate-notes">
-          <li>令牌只保留在当前页面内存里：刷新或关闭页面后需重新输入，不会写入任何存储。</li>
+          <li>令牌默认只保留在当前页面内存；仅当你显式勾选「在本机记住令牌」后才写入本机存储（仅限个人私有设备，不会经网络传给第三方），退出即清除。</li>
           <li>私有单人工具：练习记录、学校试卷与个人信息不会被公开传播。</li>
           <li>只有管理员人工审核发布的题目才会出现；当前演示数据均为虚构测试数据。</li>
         </ul>

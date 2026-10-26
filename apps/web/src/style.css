@@ -442,6 +442,7 @@ details.parsed-text blockquote {
 .gate-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px }
 .gate-notes { margin: 18px 0 0; padding: 14px 0 0 18px; border-top: 1px dashed var(--line); color: var(--ink-3); font-size: 0.8rem; line-height: 1.7 }
 .gate-notes li { margin-bottom: 6px }
+.gate-remember { margin: 14px 0 4px }
 .gate form button { width: 100%; margin-top: 4px }
 
 /* ---------- Toast ---------- */
