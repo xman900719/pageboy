@@ -25,8 +25,12 @@
 ## 限制与未验证
 
 - PDF/图片「解析文本」区块的 UI 呈现未入 J5（本地 API 测试已覆盖解析行为；如需 UI 级验证须先给 web-e2e CI 作业装 poppler）。
-- 远端 CI 未运行（本轮仅本地提交，推送待授权）。
 - `HOME_EMPTY_PLAN` 中「管理端」措辞与实际功能名（审核台）不完全一致（designer 指出，超 ST-011 范围，遗留备查）。
 - 草稿内容（含参考答案）经新端点仅对 owner 令牌可见，与既有私有红线一致；无公开路由。
+
+## 远端 CI 实测
+
+- 推送 `ca0300b`（codex/st-003-private-ingestion）触发 [run 40248302508](https://github.com/xman900719/pageboy/actions/runs/40248302508)（2026-10-26）：**五作业全绿**——api-and-docs 1m31s、web-build 16s、pg-migration 1m9s、web-e2e 1m23s、**web-e2e-webkit 13m58s**（J5/A4 首次远端运行）。
+- 作业日志实证：chromium 通道 **9 passed + 3 skipped（25.6s）**、iPad/WebKit 通道 **12 passed（1.8m）**——J5 审核闭环与 A4 扫描在 Runner（Ubuntu 26）一次通过；webkit 作业总时长主要在 `npx playwright install webkit --with-deps` 冷装（apt + 下载），测试本体 1.8m，与既有 Node 20 弃用告警无关。
 
 下一项任务：无排期任务（ST-OPS-02 仍待外部环境）。
