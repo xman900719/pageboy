@@ -25,6 +25,11 @@
 
 - iPadOS 安装仍需用户在 Safari 手动「添加到主屏幕」一次（平台机制，无法从 Linux 远程完成）；PWA 不具备原生推送/后台刷新等能力。
 - 真实 iPad 端到端（Access 登录 → 添加 → 冷启动自动进入）待用户设备实测；隧道 Public Hostname 指向（8080 vs 8180）遗留问题见 ST-OPS 记录，502 时一行修正。
-- 远端 CI 待推送后运行。
+
+## 远端 CI 实测与运维注记
+
+- 推送 `7de7584`+`2959bf6` 触发 [run 40425018843](https://github.com/xman900719/pageboy/actions/runs/40425018843)（2026-10-27）：**五作业全绿**——api-and-docs 1m18s、web-build 12s、pg-migration 44s、web-e2e 1m21s、web-e2e-webkit 3m6s；webkit 作业日志实证 **13 passed（1.9m）**，J6 在远端 WebKit 通道首跑即绿（chromium 通道随套件通过）。
+- 网络实况（如实）：本机 → GitHub SSH 22 端口数据通道当日中断（交互认证正常、传输挂起），推送改走 `ssh.github.com:443` 一次成功后已把 `origin` 永久切换至该端点。
+- 运维注记：宿主 Caddy 此前以会话后台任务托管，主机重启即失联（已两次实际发生）——现改为 **systemd user unit**（`~/.config/systemd/user/shutong-caddy.service`，`Restart=on-failure`）并启用 linger，跨会话/跨重启常驻；重启后实测 `:8180` 健康检查 200、`/icon-180.png` 200、公网 302（Access 门禁）均正常。
 
 下一项任务：无排期任务（ST-OPS-02 仍待外部环境）。
