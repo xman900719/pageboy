@@ -63,3 +63,11 @@ SYNTHETIC TEST DATA PAGE 2'
 ## 远端 CI 证据（2026-10-29 补记）
 
 推送链 `ee22ec0..8d42bf0` 的 [run 40808468517](https://github.com/xman900719/pageboy/actions/runs/40808468517) 五作业全绿；api-and-docs 作业在 ubuntu-latest 安装 poppler-utils + tesseract chi_sim/eng 后运行全量 pytest（127 passed/25 skipped），即扫描 PDF OCR 摄取测试已在**另一干净环境**通过。
+
+## UI 旅程证据（J8，2026-10-29 补记）
+
+新增 `apps/web/e2e/ingest-scanned.spec.ts`（chromium 与 iPad/WebKit 双引擎同一套）：运行时用 Pillow 生成两页**图像型 PDF**（仅合成 ASCII 文字）→ 审核台上传 → 「解析」→ 断言附件状态为「已解析」且解析文本含 `—— 第 N 页（OCR 草稿）——` 页码标记与 OCR 识别出的 `SCAN PAGE 1/2` → 逐题人工录入（题干含 `$$…$$` 公式）+ 显式人工核对 → 确认导入 → 草稿人工审核 → 上传导致的来源复位经重新人工审核后发布 → 练习按该知识点取题，公式渲染为 KaTeX 且客观判分链照常。这覆盖 owner 的真实导入闭环（扫描件 → OCR 草稿 → 人工誑写 → 发布 → 取题）。
+
+- 实测：chromium `npx playwright test` **16 passed / 3 skipped**（J8 3.8s）；iPad/WebKit `npm run test:e2e:ipad` **19 passed**（J8 同绿）。
+- CI 配套：web-e2e 与 web-e2e-webkit 两个作业增加 poppler-utils + tesseract 安装步骤（J8 依赖本地解析器；此前只有 api-and-docs 安装）。
+- 边界不变：OCR 只是草稿；真实中文扫描件准确率仍未评估。

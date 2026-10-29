@@ -60,3 +60,11 @@
 
 **剩余事项（需 owner）**：真机 iPad 核对清单已交付（[docs/operations/ipad-field-checklist.md](../operations/ipad-field-checklist.md)）——11 项检查（基础循环/公式渲染/PWA 与横竖屏/断网文案），等待 owner 执行结果回填后 ST-016 才能标完整。
 
+## 阶段 3b · J8 扫描件摄取 UI 旅程（2026-10-29 完成）
+
+**结果**：ST-014 的 UI 旅程证据补齐——运行时 Pillow 合成两页图像型 PDF → 审核台上传 → OCR 解析草稿（页码标记+识别文本断言）→ 逐题人工誑写（含公式）→ 确认导入 → 审核 → 发布 → 练习渲染并判分。这正是 owner 的真实导入闭环。
+
+**验证证据**：chromium **16 passed / 3 skipped**（J8 3.8s）；iPad/WebKit **19 passed**；CI 两作业增设本地解析器安装步骤后推送复验（见下一条提交的 CI 运行）。
+
+**剩余事项**：owner 的 iPad 真机核对（清单已交付）；真实中文扫描件 OCR 准确率评估（产品问题）。
+
