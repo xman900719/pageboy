@@ -6,7 +6,7 @@
 
 ## 当前接手点
 
-ST-001 已完成当时的本地/远端基线，ST-002~009 全部本地验收，且已经 [PR #1](https://github.com/xman900719/pageboy/pull/1) 合并入默认主干 `codex/st-001-ci`（merge commit `964dfea`，合并后主干 CI 四作业全绿）；远端无 `main` 分支，本地 `main` 已同步至合并态。剩余 ST-OPS-01 异地部分与 ST-OPS-02 需外部环境与授权。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前提交链。
+ST-001~ST-012 已完成（本地+远端 CI），ST-013（题干公式渲染）、ST-014（扫描 PDF OCR 摄取）、ST-015（题库体检）、ST-017（标签化部署/回滚，含 ST-OPS-02 的更新回滚部分）已完成本地验证；生产栈运行 `shutong-api:drill-a`（当前 HEAD 构建）。自规划长任务的阶段汇总见 [阶段日志](docs/handoff/stage-reports.md)。剩余：ST-016 线上核验与真机 iPad 清单（需 owner 执行）、真实数据积累后的效果评估。远端默认主干为 `codex/st-001-ci`；当前开发分支 `codex/st-003-private-ingestion`。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前提交链。
 
 ## 启动检查（顺序执行）
 

@@ -16,11 +16,19 @@
 | ST-010 | P2 | iPad（WebKit 仿真）e2e 通道：既有 J1–J4/a11y 全套在 iPad 描述符下重放 + 720–980px 响应式断言 + gen 11/Mini/Pro 11 矩阵 | iPad 通道 10/10、chromium 回归 7 passed + 3 skipped |
 | ST-011 | P1 | 人工审核 UI（审核台：题源台账→来源审核→附件→确认导入→草稿审核→发布）+ 草稿只读端点 | UI 旅程 J5 双引擎通过；AC-CNT-01/03 补充 UI 证据 |
 | ST-012 | P2 | iPad PWA 应用化：主屏幕 PNG 图标 + 令牌门选配「在本机记住令牌」（默认仅内存红线保留，所有者授权修订） | J6 双引擎通过（冷启动免输入/退出清除/失效拦截正反例） |
-| ST-OPS-01 | P0并行 | VPS/Tailscale/HTTPS、异地备份仓库与密钥隔离 | AC-OPS-01/02，现场恢复证明 |
+| ST-013 | P1 | 题干富文本与公式渲染：`$…$`/`$$…$$` LaTeX 片段在教学 UI 与审核台安全渲染（转义优先、无原始 HTML 通道） | 渲染纯函数单测正反例 + 公式题 e2e 双引擎断言（chromium/iPad-WebKit） |
+| ST-014 | P1 | 扫描 PDF 自动 OCR 摄取：无文本层 PDF 走 pdftoppm→tesseract 逐页草稿，parser_version 如实记录双工具 | 图像型 PDF 摄取正例 + 文本 PDF 不降级反例；本地 e2e 摄取测试 |
+| ST-015 | P2 | 题库体检（纯函数 + 只读端点 + 首页卡片）：按知识点发布量/未见题存量/曝光覆盖如实报告，不制造分数 | 空池/单题/充足三态正反例；端点契约与 OpenAPI 再生成校验 |
+| ST-016 | P1 | 生产栈现场校验：线上 URL（Tunnel+Access 后）响应、构建产物一致性、PWA 静态壳在 iPad/WebKit 注册与缓存 | curl 实测记录 + WebKit e2e 断言；真实 iPad 人工核对清单交付 |
 | ST-OPS-02 | P1 | 主机监控、告警与更新回滚流程 | 模拟备份失败和错误镜像能恢复 |
 
 ## 执行记录
 
+- ST-013：本地验收完成（2026-10-29），题干富文本与公式渲染——KaTeX `$…$`/`$$…$$` 安全渲染（纯函数切分 + 文本转义 + 仅 KaTeX HTML 注入），单测 9/9、chromium 13 passed/3 skipped、iPad/WebKit 16 passed；附生产线文案缺陷修复（api.ts 网络失败误报"本地服务"）；[验证记录](docs/quality/st-013-formula-rendering.md)。零后端/契约变更。远端 CI 待推送后验证。
+- ST-014：本地验收完成（2026-10-29），扫描 PDF 自动 OCR 摄取——无文本层 PDF 走 pdftoppm→tesseract 逐页草稿（页码标记、双工具版本如实记录、混合版式为已知限制），摄取测试 42 passed、全量 127 passed/25 skipped；[验证记录](docs/quality/st-014-scanned-pdf-ocr.md)。无 Schema/迁移/契约变更。
+- ST-015：本地验收完成（2026-10-29），题库体检——`pool_health` 纯函数 + `GET /api/guidance/pool-health` + 首页「题库体检」卡片（J7/J7b 双引擎，chromium 15p/3s、iPad 18p）；OpenAPI 再生成校验；[验证记录](docs/quality/st-015-pool-health.md)。
+- ST-017（ST-OPS-02 的更新/回滚部分）：本机生产栈实测完成（2026-10-29）——标签化部署/回滚脚本 + `/health/live` 构建身份，drill-a/drill-b 部署与回滚、legacy 内容探针、数据一致性核对全绿；schema 降级回滚设计上排除；[演练记录](docs/quality/st-017-deploy-rollback-drill.md)。
+- ST-016：进行中——线上 URL 门禁核验与真机 iPad 清单交付（见 [阶段日志](docs/handoff/stage-reports.md)）。
 - ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。后续开发从 ST-002 开始。
 
 - ST-002：本地验收已完成，AC-CNT-02 正反例及 PostgreSQL 真实并发验证通过（6 轮 × 8 请求、独立连接）；[验证记录](docs/quality/st-002-question-revisions.md)。本轮仅本地提交，远端 CI 未运行。后续 ST-003 见下条。
