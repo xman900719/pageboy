@@ -1194,6 +1194,45 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Plan
+  /api/guidance/pool-health:
+    get:
+      description: '题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
+
+        查询形状刻意与 next_item 一致（最新发布版子查询），不引入第二套选题口径。'
+      operationId: pool_health_endpoint_api_guidance_pool_health_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Pool Health Endpoint
   /api/guidance/profile:
     get:
       operationId: profile_api_guidance_profile_get

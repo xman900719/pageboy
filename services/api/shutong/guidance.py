@@ -83,6 +83,29 @@ def compare_validation(baseline: list[Evidence], retest: list[Evidence]) -> dict
             "knowledge": knowledge, "disclaimer": "小样本可观察对比；不是中考分数预测、不等值不同考试、不可比范围不宣称涨分。"}
 
 
+def pool_health(entries: list[dict]) -> dict:
+    """题池体检：只如实计数已发布题与曝光记录；不制造分数、不推断重要性。
+
+    entries: [{"question_id": str, "knowledge_id": str, "seen": bool}]，一题多知识点各计一行；
+    题目总数按 question_id 去重（一题只算一题），知识点行按行计数。
+    """
+    per_kid: dict[str, list[dict]] = defaultdict(list)
+    for entry in entries:
+        per_kid[entry["knowledge_id"]].append(entry)
+    knowledge = [
+        {"knowledge_id": kid, "published": len(rows),
+         "unseen_for_evaluation": sum(1 for row in rows if not row["seen"]),
+         "exposed": sum(1 for row in rows if row["seen"])}
+        for kid, rows in sorted(per_kid.items())
+    ]
+    questions_published = len({entry["question_id"] for entry in entries})
+    questions_unseen = len({entry["question_id"] for entry in entries if not entry["seen"]})
+    return {"model_version": MODEL_VERSION, "knowledge": knowledge,
+            "questions_published": questions_published, "questions_unseen_for_evaluation": questions_unseen,
+            "evaluation_available": questions_unseen > 0,
+            "disclaimer": "只计数已发布题目与曝光记录；某知识点题少不等于不重要，可能只是尚未导入。数字不构成分数或能力结论。"}
+
+
 def make_plan(profile: list[dict], target_points: float, max_points: float, minutes_per_day: int, known_knowledge_ids: list[str]) -> dict:
     threshold = provisional_threshold(target_points, max_points)
     by_kid = {item["knowledge_id"]: item for item in profile}

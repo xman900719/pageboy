@@ -16,7 +16,7 @@ from .database import get_db
 from . import models as m
 from . import private_files as files
 from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject
-from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, MIN_DISTINCT_ITEMS
+from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
@@ -24,7 +24,8 @@ app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in os.getenv("
 
 @app.get("/health/live")
 def live():
-    return {"status": "alive"}
+    # app_revision 供部署/回滚演练核对“哪个构建在服务”（ST-017）；未设置时如实报 dev。
+    return {"status": "alive", "app_revision": os.getenv("SHUTONG_APP_REVISION", "dev")}
 
 @app.get("/health/ready")
 def ready(db: Session = Depends(get_db)):
@@ -413,6 +414,17 @@ def plan(subject: Subject, owner: str = Depends(require_owner), db: Session = De
     known_ids = sorted({kid for item in knowledge for kid in item})
     result = make_plan(summarize(get_evidence(db, owner, subject)), goal.target_points, goal.max_points, goal.minutes_per_day, known_ids)
     return {"subject": subject, "goal_version": goal.version, **result}
+
+@app.get("/api/guidance/pool-health")
+def pool_health_endpoint(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
+    查询形状刻意与 next_item 一致（最新发布版子查询），不引入第二套选题口径。"""
+    latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
+    versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published")).scalars().all()
+    counts = dict(db.execute(select(m.Exposure.question_id, func.count()).where(m.Exposure.learner_id == owner).group_by(m.Exposure.question_id)).all())
+    entries = [{"question_id": v.question_id, "knowledge_id": kid, "seen": counts.get(v.question_id, 0) > 0}
+               for v in versions for kid in (v.knowledge_ids or [])]
+    return {"subject": subject, **pool_health(entries)}
 
 @app.get("/api/guidance/validation")
 def validation(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):

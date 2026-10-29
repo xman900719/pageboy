@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError, describeError, type ApiClient, type Plan, type ProfileEntry, type Subject, type Validation } from '../api'
+import { ApiError, describeError, type ApiClient, type Plan, type PoolHealth, type ProfileEntry, type Subject, type Validation } from '../api'
 import { GOAL_NOTE, pct, type ViewId } from '../copy'
 import { Note } from '../components/Note'
 import { PlanStepList } from '../components/PlanStepList'
+import { PoolHealthCard } from '../components/PoolHealthCard'
 import { ValidationPanel } from '../components/ValidationPanel'
 
 type Notify = (text: string, tone?: 'info' | 'success' | 'caution' | 'error') => void
@@ -13,6 +14,7 @@ export function HomeView({ client, subject, notify, goView }: { client: ApiClien
   const [planState, setPlanState] = useState<PlanState>({ status: 'loading', plan: null, errorText: '' })
   const [profiles, setProfiles] = useState<Record<string, ProfileEntry>>({})
   const [validation, setValidation] = useState<Validation | null>(null)
+  const [poolHealth, setPoolHealth] = useState<PoolHealth | null>(null)
   const [loading, setLoading] = useState(true)
   const [goalOpen, setGoalOpen] = useState(false)
   const [target, setTarget] = useState(subject === 'physics' ? 70 : 90)
@@ -23,7 +25,7 @@ export function HomeView({ client, subject, notify, goView }: { client: ApiClien
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    const [planRes, profileRes, validationRes] = await Promise.allSettled([client.plan(subject), client.profile(subject), client.validation(subject)])
+    const [planRes, profileRes, validationRes, poolRes] = await Promise.allSettled([client.plan(subject), client.profile(subject), client.validation(subject), client.poolHealth(subject)])
     if (planRes.status === 'fulfilled') {
       setPlanState({ status: 'ok', plan: planRes.value, errorText: '' })
     } else {
@@ -34,6 +36,7 @@ export function HomeView({ client, subject, notify, goView }: { client: ApiClien
       setProfiles(Object.fromEntries(profileRes.value.knowledge.map(entry => [entry.knowledge_id, entry])))
     }
     if (validationRes.status === 'fulfilled') setValidation(validationRes.value)
+    if (poolRes.status === 'fulfilled') setPoolHealth(poolRes.value)
     setLoading(false)
   }, [client, subject])
 
@@ -134,6 +137,17 @@ export function HomeView({ client, subject, notify, goView }: { client: ApiClien
             <ValidationPanel validation={validation} />
           ) : (
             <p className="muted">{loading ? '加载中…' : '阶段对比加载失败。'}</p>
+          )}
+        </section>
+
+        <section className="card" aria-label="题库体检">
+          <div className="card-head">
+            <h2>题库体检</h2>
+          </div>
+          {poolHealth ? (
+            <PoolHealthCard data={poolHealth} />
+          ) : (
+            <p className="muted">{loading ? '加载中…' : '题库体检加载失败。'}</p>
           )}
         </section>
 
