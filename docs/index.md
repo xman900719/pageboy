@@ -3,6 +3,7 @@
 当前规范版本 **V1.6 foundation**。这是渐进实现计划，而不是完成证明。
 
 - [产品边界](product/overview.md)
+- [每日使用流程](product/daily-usage.md)
 - [架构与职责](design/architecture.md)
 - [数据权威与不变量](design/data-model.md)
 - [真题导入和审核](design/ingestion.md)
