@@ -46,7 +46,17 @@
 
 **剩余事项**：真实 iPad 设备核对（ST-016，需 owner 执行）；真实试卷 OCR 准确率与中文扫描耗时评估（产品问题）；下一次 R2 备份恢复周期观察。
 
-## 阶段 3 · ST-016 生产栈现场校验与真机清单（进行中）
+## 阶段 3 · ST-016 生产栈现场校验（2026-10-29 部分完成）
 
-（回填：线上 URL 核验结果、真机 iPad 核对清单交付、owner 执行结果）
+**结果**：本地生产栈经 caddy:8180（与隧道同路径）实测新功能在线：`/api/guidance/pool-health?subject=math` 返回真实生产数据（math.demo.basic 已发布 5、未见 3、已曝光 2）；`/health/live` 报告 `app_revision=drill-a`；manifest/图标/root 200；公网入口 https://shutong.xmanspace.asia 仍 302 → Cloudflare Access（门禁红线保持）。推送链远端 CI [run 40808468517](https://github.com/xman900719/pageboy/actions/runs/40808468517) 五作业全绿（含 iPad/WebKit 作业与 vitest）。
+
+**范围**：只读核验 + 文档；无代码变更（除 CI 证据补记提交 `6a093eb`）。
+
+**验证证据（实测）**：
+- `curl https://shutong.xmanspace.asia/` → 302 → cloudflareaccess 登录页（root/icon/sw 同）。
+- 本机生产栈（caddy → api，Bearer 来自 infra/.env）：pool-health、subjects、health/live、manifest、icon-180.png 全部 200 且内容正确。
+- 远端 CI：api-and-docs / pg-migration / web-build / web-e2e / web-e2e-webkit 五作业 success。
+- 阶段提交链：`c429910`(ST-013) → `0656cb4`(ST-014) → `94316ee`(ST-015) → `34eeccc`(ST-017) → `8d42bf0`(docs) → `6a093eb`(CI 证据)，已全部推送。
+
+**剩余事项（需 owner）**：真机 iPad 核对清单已交付（[docs/operations/ipad-field-checklist.md](../operations/ipad-field-checklist.md)）——11 项检查（基础循环/公式渲染/PWA 与横竖屏/断网文案），等待 owner 执行结果回填后 ST-016 才能标完整。
 
