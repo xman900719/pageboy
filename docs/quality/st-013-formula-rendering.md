@@ -40,6 +40,10 @@
 - 后端护栏未在本任务复跑（零后端改动；仅前端文件变更，见下）。
 - 远端 CI 未运行；不涵盖 ST-OPS 部署/灾备。
 
+## 远端 CI 证据（2026-10-29 补记）
+
+推送 `ee22ec0..8d42bf0`（含本任务）后 [run 40808468517](https://github.com/xman900719/pageboy/actions/runs/40808468517) **五作业全绿**：api-and-docs（全量 pytest 127 passed/25 skipped + 契约/文档/OpenAPI + zensical --strict）、pg-migration（全新 PG 0001↔head 往返）、web-build、web-e2e（chromium + 新增 vitest 步骤）、web-e2e-webkit（iPad/WebKit 18 passed，formulas 3/3 远端首跑）。
+
 ## 变更文件（全部在工作树，未提交）
 
 - 改：`apps/web/package.json`、`apps/web/package-lock.json`、`apps/web/src/components/QuestionCard.tsx`、`apps/web/src/components/admin/QuestionVersionsCard.tsx`、`apps/web/src/style.css`、`apps/web/src/api.ts`（范围外已授权文案小修，见上）

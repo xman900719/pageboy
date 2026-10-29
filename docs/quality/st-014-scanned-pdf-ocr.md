@@ -1,6 +1,6 @@
 # ST-014 扫描 PDF 自动 OCR 摄取验证记录
 
-日期：2026-10-29。范围：`services/api/shutong/private_files.py` 的 PDF 解析路径。仅本地工作树改动，未提交、未推送、未运行远端 CI。所有样例均为测试运行时生成的**虚构测试数据**；没有真实原卷、学生数据或密钥进入 Git。
+日期：2026-10-29。范围：`services/api/shutong/private_files.py` 的 PDF 解析路径。工作树改动已于 2026-10-29 推送（`0656cb4` 所在推送链，远端 CI 五作业全绿，见文末补记）。所有样例均为测试运行时生成的**虚构测试数据**；没有真实原卷、学生数据或密钥进入 Git。
 
 ## 实现与边界
 
@@ -59,3 +59,7 @@ SYNTHETIC TEST DATA PAGE 2'
 `python scripts/check_openapi.py`：PASS（实际 API == 已提交 OpenAPI 契约，无漂移）。`python scripts/validate_contracts.py`：PASS。全量 API 测试 `127 passed, 25 skipped`；skipped 为既有 PostgreSQL 并发类用例，本任务未涉及。仍有一条既有 Starlette/httpx 弃用警告，不影响结果。
 
 下一项：真实中文扫描件 OCR 准确率与耗时评估（产品/数据评估，非本任务范围）。
+
+## 远端 CI 证据（2026-10-29 补记）
+
+推送链 `ee22ec0..8d42bf0` 的 [run 40808468517](https://github.com/xman900719/pageboy/actions/runs/40808468517) 五作业全绿；api-and-docs 作业在 ubuntu-latest 安装 poppler-utils + tesseract chi_sim/eng 后运行全量 pytest（127 passed/25 skipped），即扫描 PDF OCR 摄取测试已在**另一干净环境**通过。

@@ -21,4 +21,7 @@
 - 计数为"当前事实快照"：e2e 只断言形状与集合，精确计数由后端单测锁定（J1–J6 会消耗曝光，顺序相关不可断数值）。
 - 「题少≠不重要」只是免责口径；不引入知识点 taxonomy、难度或统计推断（YAGNI）。
 - 无真实 iPad 设备：UI 断言同样只经 WebKit 仿真通道 + 本机生产栈。
-- 远端 CI 未运行（提交推送后由 CI 门禁裁决）。
+
+## 远端 CI 证据（2026-10-29 补记）
+
+推送链 `ee22ec0..8d42bf0` 的 [run 40808468517](https://github.com/xman900719/pageboy/actions/runs/40808468517) 五作业全绿（api-and-docs / pg-migration / web-build / web-e2e / web-e2e-webkit），J7/J7b 与 formulas 三例在远端 iPad/WebKit 作业同步通过。
