@@ -51,12 +51,17 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
 }
 
 test.beforeAll(async () => {
-  const source = (await call<{ id: string }>('/api/admin/sources', 'POST', {
-    title: SOURCE_TITLE,
-    subject: 'math',
-    rights_status: 'licensed',
-    verified: true,
-  })).id
+  // 幂等：worker 超时重启会重跑 beforeAll，按标题复用题源避免重复种子。
+  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources')
+  const reused = existing.find(item => item.source.title === SOURCE_TITLE)
+  const source = reused
+    ? reused.id
+    : (await call<{ id: string }>('/api/admin/sources', 'POST', {
+        title: SOURCE_TITLE,
+        subject: 'math',
+        rights_status: 'licensed',
+        verified: true,
+      })).id
   await call(`/api/admin/sources/${source}/review`, 'POST', {
     exam_year: 2026,
     source_url: 'https://example.org/synthetic-j8-scan.pdf',

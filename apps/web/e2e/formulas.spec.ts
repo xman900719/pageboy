@@ -44,14 +44,20 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
 }
 
 async function seed(): Promise<void> {
-  const source = (
-    await call<{ id: string }>('/api/admin/sources', 'POST', {
-      title: SOURCE_TITLE,
-      subject: 'math',
-      rights_status: 'licensed',
-      verified: true,
-    })
-  ).id
+  // 幂等：Playwright 在用例超时后会重启 worker 并重跑 beforeAll（2026-10-29 实证），
+  // 按标题复用已存在的题源，避免重复种子把台账选择器挤成 strict 冲突。
+  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources')
+  const reused = existing.find(item => item.source.title === SOURCE_TITLE)
+  const source = reused
+    ? reused.id
+    : (
+        await call<{ id: string }>('/api/admin/sources', 'POST', {
+          title: SOURCE_TITLE,
+          subject: 'math',
+          rights_status: 'licensed',
+          verified: true,
+        })
+      ).id
   await call(`/api/admin/sources/${source}/review`, 'POST', {
     exam_year: 2026,
     source_url: 'https://example.org/synthetic-st013.pdf',
