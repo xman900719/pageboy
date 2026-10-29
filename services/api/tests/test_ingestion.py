@@ -37,6 +37,18 @@ def synthetic_pdf(pages=1, text='SYNTHETIC TEST DATA: 1 + 1 = ?'):
     return data + f'trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode()
 
 
+def scanned_pdf(pages=1, text='SYNTHETIC TEST DATA'):
+    # 图像型 PDF（无文本层，模拟扫描件）：PIL 将位图保存为 PDF，运行时生成、绝不使用真实原卷。
+    images = []
+    for _ in range(pages):
+        image = Image.new('RGB', (1000, 200), 'white')
+        ImageDraw.Draw(image).text((20, 60), text, fill='black', font=ImageFont.load_default(size=48))
+        images.append(image)
+    buffer = BytesIO()
+    images[0].save(buffer, format='PDF', save_all=True, append_images=images[1:])
+    return buffer.getvalue()
+
+
 @pytest.fixture
 def source(client, auth, tmp_path, monkeypatch):
     monkeypatch.setenv('SHUTONG_PRIVATE_DIR', str(tmp_path / 'private'))
@@ -124,6 +136,59 @@ def test_image_ocr_is_only_an_unreviewed_text_draft(client, auth, source, media_
     assert parsed.status_code == 200 and parsed.json()['status'] == 'parsed'
     assert 'SYNTHETIC' in parsed.json()['extracted_text'].upper()
     assert client.get('/api/practice/next?subject=math', headers=auth).status_code == 404
+
+
+def test_pdf_needs_ocr_only_when_extraction_has_no_visible_characters():
+    from shutong.private_files import pdf_needs_ocr
+    assert pdf_needs_ocr('') is True
+    assert pdf_needs_ocr('  \n\t \x0c ') is True
+    assert pdf_needs_ocr('SYNTHETIC TEST DATA') is False
+    assert pdf_needs_ocr('  \x0c\n文本层\n ') is False
+
+
+def test_scanned_pdf_without_text_layer_falls_back_to_ocr(client, auth, source, tmp_path):
+    import subprocess
+    data = scanned_pdf()
+    # 前置断言：该 PDF 确实没有文本层，否则本用例不能证明 OCR 兜底被触发。
+    probe, extracted = tmp_path / 'probe.pdf', tmp_path / 'probe.txt'
+    probe.write_bytes(data)
+    subprocess.run(['pdftotext', '-layout', '-enc', 'UTF-8', str(probe), str(extracted)], check=True)
+    assert extracted.read_text().strip() == ''
+    attached = upload(client, auth, source, data)
+    assert attached.status_code == 201
+    parsed = client.post(f"/api/admin/attachments/{attached.json()['id']}/parse", headers=auth)
+    assert parsed.status_code == 200 and parsed.json()['status'] == 'parsed'
+    body = parsed.json()
+    assert 'SYNTHETIC' in body['extracted_text'].upper()
+    assert '第 1 页（OCR 草稿）' in body['extracted_text']
+    assert 'tesseract' in body['parser_version'] and 'pdftotext' in body['parser_version']
+
+
+def test_scanned_pdf_ocr_marks_pages_in_order(client, auth, source):
+    data = scanned_pdf(pages=2, text='SYNTHETIC MULTI PAGE')
+    attached = upload(client, auth, source, data)
+    assert attached.status_code == 201
+    parsed = client.post(f"/api/admin/attachments/{attached.json()['id']}/parse", headers=auth)
+    assert parsed.status_code == 200
+    text = parsed.json()['extracted_text']
+    assert '第 1 页（OCR 草稿）' in text and '第 2 页（OCR 草稿）' in text
+    assert text.index('第 1 页') < text.index('第 2 页')
+
+
+def test_text_layer_pdf_does_not_enter_ocr_fallback(client, auth, source):
+    # 反例：有文本层的 PDF 必须只走 pdftotext，不得降级 OCR、parser_version 不得出现 tesseract。
+    attached = upload(client, auth, source)
+    assert attached.status_code == 201
+    parsed = client.post(f"/api/admin/attachments/{attached.json()['id']}/parse", headers=auth)
+    assert parsed.status_code == 200
+    assert 'SYNTHETIC TEST DATA' in parsed.json()['extracted_text']
+    assert parsed.json()['parser_version'].startswith('pdftotext')
+    assert 'tesseract' not in parsed.json()['parser_version']
+
+
+def test_scanned_pdf_page_cap_applies_at_upload(client, auth, source, tmp_path):
+    assert upload(client, auth, source, scanned_pdf(pages=21)).status_code == 422
+    assert not list((tmp_path / 'private').glob('*'))
 
 
 def test_empty_extraction_is_explicit_and_allows_manual_confirmation(client, auth, source):

@@ -18,6 +18,11 @@ MAX_PIXELS = 20_000_000
 MAX_TEXT_BYTES = 200_000
 MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4")
 
+PDF_RENDER_DPI = 150
+PDF_RENDER_TIMEOUT = 120
+PDF_OCR_PAGE_TIMEOUT = 60
+OCR_PAGE_MARKER = "\n\n—— 第 {page} 页（OCR 草稿）——\n"
+
 
 def private_root():
     return Path(os.getenv("SHUTONG_PRIVATE_DIR", "private-data/attachments")).resolve()
@@ -29,9 +34,9 @@ def blob_path(key):
     return private_root() / key
 
 
-def run_tool(arguments, **kwargs):
+def run_tool(arguments, timeout=20, **kwargs):
     try:
-        result = subprocess.run(arguments, capture_output=True, timeout=20, **kwargs)
+        result = subprocess.run(arguments, capture_output=True, timeout=timeout, **kwargs)
     except FileNotFoundError:
         raise HTTPException(503, detail="LOCAL_PARSER_NOT_INSTALLED")
     except subprocess.TimeoutExpired:
@@ -106,6 +111,29 @@ def load_blob(attachment):
     return data
 
 
+def pdf_needs_ocr(text):
+    """纯决策：pdftotext 结果无任何非空白字符即视为无文本层，需 OCR 兜底。
+    仅按整体空白判断，不做逐页/混合版式猜测——含文本层的 PDF 一律不降级 OCR。"""
+    return not text.strip()
+
+
+def ocr_pdf(path, directory):
+    """无文本层 PDF 的兜底：pdftoppm 逐页渲染为 PNG，再逐页 tesseract chi_sim+eng。
+    返回按页序拼接、带页码标记的草稿文本（OCR 结果，非结构化，须人工核对）。"""
+    root = Path(directory)
+    run_tool(["pdftoppm", "-r", str(PDF_RENDER_DPI), "-png", "-l", str(MAX_PAGES), str(path), str(root / "page")],
+             timeout=PDF_RENDER_TIMEOUT)
+    images = sorted(root.glob("page-*.png"), key=lambda item: int(item.stem.rsplit("-", 1)[1]))
+    pages = []
+    for index, image in enumerate(images, 1):
+        target = root / f"ocr-{index}"
+        run_tool(["tesseract", str(image), str(target), "-l", "chi_sim+eng"], timeout=PDF_OCR_PAGE_TIMEOUT)
+        page_text = target.with_suffix(".txt").read_text(encoding="utf-8", errors="replace").strip()
+        if page_text:
+            pages.append(OCR_PAGE_MARKER.format(page=index) + page_text)
+    return "".join(pages).strip()
+
+
 def parse_text(data, media_type):
     with TemporaryDirectory(prefix="pageboy-parse-") as directory:
         path = Path(directory) / ("input.pdf" if media_type == "application/pdf" else "input.image")
@@ -113,12 +141,19 @@ def parse_text(data, media_type):
         output = Path(directory) / "output.txt"
         if media_type == "application/pdf":
             run_tool(["pdftotext", "-layout", "-enc", "UTF-8", str(path), str(output)])
-            version = run_tool(["pdftotext", "-v"]).stderr.decode().splitlines()[0]
+            pdftotext_version = run_tool(["pdftotext", "-v"]).stderr.decode().splitlines()[0]
+            text = output.read_text(encoding="utf-8", errors="replace")
+            if pdf_needs_ocr(text):
+                text = ocr_pdf(path, directory)
+                tesseract_version = run_tool(["tesseract", "--version"]).stdout.decode().splitlines()[0]
+                version = f"{pdftotext_version} + {tesseract_version} (ocr fallback)"
+            else:
+                version = pdftotext_version
         else:
             run_tool(["tesseract", str(path), str(output.with_suffix("")), "-l", "chi_sim+eng"])
+            text = output.read_text(encoding="utf-8", errors="replace")
             version = run_tool(["tesseract", "--version"]).stdout.decode().splitlines()[0]
-        with output.open("rb") as file:
-            text = file.read(MAX_TEXT_BYTES + 1)
-        if len(text) > MAX_TEXT_BYTES:
+        text = text.strip()
+        if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
             raise HTTPException(422, detail="EXTRACTED_TEXT_TOO_LARGE")
-        return text.decode("utf-8").strip(), version
+        return text, version
