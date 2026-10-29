@@ -336,6 +336,11 @@ input[type='date'] { color-scheme: light }
 .self-form button { justify-self: start }
 .question-foot { margin-top: 14px; display: flex; gap: 10px }
 
+/* ST-013 富文本与公式：文本段保留换行；独立公式块可横向滚动，不撑破卡片/页面。 */
+.rt-text { white-space: pre-wrap }
+.rt-math-display { display: block; overflow-x: auto; max-width: 100% }
+.rt-math-display .katex-display { margin: 6px 0 }
+
 /* ---------- Session log & trace table ---------- */
 
 .session-log { list-style: none; display: grid; gap: 6px; margin: 14px 0 0; padding: 0; font-size: 0.8rem }

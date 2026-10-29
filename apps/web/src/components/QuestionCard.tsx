@@ -4,6 +4,7 @@ import { fmtPoints, SCORING_LABELS, SELF_ASSESS_NOTE, splitOption } from '../cop
 import { KindBadge } from './Badges'
 import { AudioPlayer } from './AudioPlayer'
 import { Note } from './Note'
+import { RichText } from '../rich'
 
 type Phase = 'answering' | 'sending' | 'answered'
 
@@ -108,10 +109,14 @@ export function QuestionCard({
       {item.group_context && (
         <figure className="reading">
           <figcaption>阅读材料</figcaption>
-          <blockquote>{item.group_context}</blockquote>
+          <blockquote>
+            <RichText text={item.group_context} />
+          </blockquote>
         </figure>
       )}
-      <p className="stem">{item.stem}</p>
+      <p className="stem">
+        <RichText text={item.stem} />
+      </p>
       {item.media_attachment_id && <AudioPlayer client={client} attachmentId={item.media_attachment_id} />}
 
       {item.kind === 'single_choice' && item.options.length > 0 ? (
@@ -129,7 +134,9 @@ export function QuestionCard({
                 onClick={() => setAnswer(key)}
               >
                 <span className="option-key">{key}</span>
-                <span>{text}</span>
+                <span>
+                  <RichText text={text} />
+                </span>
               </button>
             )
           })}
@@ -189,7 +196,11 @@ export function QuestionCard({
         <div className="self-chain">
           <div className="reference">
             <span className="eyebrow">参考答案</span>
-            {reference ? <p>{reference.reference_answer}</p> : referenceError ? (
+            {reference ? (
+              <p>
+                <RichText text={reference.reference_answer} />
+              </p>
+            ) : referenceError ? (
               <p className="muted">
                 {referenceError}{' '}
                 <button type="button" className="ghost small" onClick={() => result && loadReference(result.id)}>

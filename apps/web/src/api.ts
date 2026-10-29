@@ -99,6 +99,23 @@ export interface Validation {
   disclaimer: string
 }
 
+export interface PoolHealthKnowledge {
+  knowledge_id: string
+  published: number
+  unseen_for_evaluation: number
+  exposed: number
+}
+
+export interface PoolHealth {
+  subject: Subject
+  model_version: string
+  knowledge: PoolHealthKnowledge[]
+  questions_published: number
+  questions_unseen_for_evaluation: number
+  evaluation_available: boolean
+  disclaimer: string
+}
+
 export interface AttemptRow {
   id: string
   question_version_id: string
@@ -228,6 +245,7 @@ export interface Client {
   profile(subject: Subject): Promise<{ knowledge: ProfileEntry[] }>
   plan(subject: Subject): Promise<Plan>
   validation(subject: Subject): Promise<Validation>
+  poolHealth(subject: Subject): Promise<PoolHealth>
   setGoal(input: { subject: Subject; targetPoints: number; maxPoints: number; minutesPerDay: number }): Promise<GoalResult>
   schoolExams(subject: Subject): Promise<SchoolExam[]>
   addSchoolExam(input: {
@@ -298,6 +316,7 @@ export function createClient(token: string): Client {
     profile: subject => call<{ knowledge: ProfileEntry[] }>(`/api/guidance/profile?subject=${subject}`),
     plan: subject => call<Plan>(`/api/guidance/plan?subject=${subject}`),
     validation: subject => call<Validation>(`/api/guidance/validation?subject=${subject}`),
+    poolHealth: subject => call<PoolHealth>(`/api/guidance/pool-health?subject=${subject}`),
     setGoal: ({ subject, targetPoints, maxPoints, minutesPerDay }) =>
       call<GoalResult>('/api/goals', 'POST', { subject, target_points: targetPoints, max_points: maxPoints, minutes_per_day: minutesPerDay }),
     schoolExams: subject => call<SchoolExam[]>(`/api/school-exams?subject=${subject}`),
@@ -366,6 +385,6 @@ export function describeError(error: unknown): string {
     if (error.status === 401) return '访问令牌无效或已过期，请重新输入。'
     return API_CODE_TEXT[error.code] ?? error.code
   }
-  if (error instanceof TypeError) return '无法连接本地服务（默认 :8000），请确认 API 是否在运行。'
+  if (error instanceof TypeError) return '无法连接服务器，请检查网络连接后重试。'
   return String(error)
 }

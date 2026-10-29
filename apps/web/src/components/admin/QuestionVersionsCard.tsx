@@ -3,6 +3,7 @@ import { ApiError, describeError, type ApiClient, type QuestionVersion, type Sou
 import { QUESTION_STATUS_LABELS, excerpt } from '../../copy'
 import { KindBadge } from '../../components/Badges'
 import { Note } from '../../components/Note'
+import { RichText } from '../../rich'
 import type { NoticeTone } from '../../components/Notice'
 
 type Notify = (text: string, tone?: NoticeTone) => void
@@ -103,7 +104,9 @@ export function QuestionVersionsCard({
                   v{v.version} · {v.question_id.slice(0, 8)}… · {v.max_points} 分
                 </span>
               </div>
-              <p className="version-stem">{excerpt(v.stem, 90)}</p>
+              <p className="version-stem">
+                <RichText text={excerpt(v.stem, 90)} />
+              </p>
               <div className="version-meta">
                 {v.knowledge_ids.map(kid => (
                   <code className="kid" key={kid}>
