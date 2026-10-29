@@ -238,6 +238,7 @@ export interface QuestionDraftInput {
 export interface Client {
   verify(): Promise<unknown>
   nextItem(subject: Subject, purpose: Purpose, knowledgeId?: string): Promise<NextItem>
+  resume(subject: Subject): Promise<{ item: NextItem | null }>
   submitAttempt(input: { exposureId: string; answer: string }): Promise<AttemptResult>
   reference(attemptId: string): Promise<ReferenceAnswer>
   selfAssessment(attemptId: string, points: number): Promise<SelfAssessmentResult>
@@ -302,6 +303,7 @@ export function createClient(token: string): Client {
     verify: () => call<unknown>('/api/subjects'),
     nextItem: (subject, purpose, knowledgeId) =>
       call<NextItem>(`/api/practice/next?subject=${subject}&purpose=${purpose}${knowledgeId ? `&knowledge_id=${encodeURIComponent(knowledgeId)}` : ''}`),
+    resume: subject => call<{ item: NextItem | null }>(`/api/practice/resume?subject=${subject}`),
     submitAttempt: ({ exposureId, answer }) =>
       call<AttemptResult>('/api/practice/attempts', 'POST', {
         client_attempt_id: crypto.randomUUID(),

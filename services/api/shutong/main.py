@@ -415,6 +415,28 @@ def plan(subject: Subject, owner: str = Depends(require_owner), db: Session = De
     result = make_plan(summarize(get_evidence(db, owner, subject)), goal.target_points, goal.max_points, goal.minutes_per_day, known_ids)
     return {"subject": subject, "goal_version": goal.version, **result}
 
+@app.get("/api/practice/resume")
+def resume_item(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    """恢复本科目最近一个未作答的**诊断**曝光（iPad 刷新/重开/切后台后会话可续，未见题不空烧）。
+    只读：不新建曝光、不改写历史；该曝光若已作答（或不存在）即返回 item=null。
+    仅限 purpose=evaluation：训练取题无状态成本（轮换本身合规），诊断未见题才是稀缺资源。"""
+    exp = db.execute(select(m.Exposure)
+                     .join(m.QuestionVersion, m.QuestionVersion.id == m.Exposure.question_version_id)
+                     .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
+                     .where(m.Exposure.learner_id == owner, m.Exposure.purpose == "evaluation", m.Question.subject == subject)
+                     .order_by(m.Exposure.shown_at.desc(), m.Exposure.id.desc())).scalars().first()
+    if exp is None:
+        return {"item": None}
+    answered = db.scalar(select(m.AnswerAttempt.id).where(m.AnswerAttempt.exposure_id == exp.id).limit(1)) is not None
+    if answered:
+        return {"item": None}
+    v = db.get(m.QuestionVersion, exp.question_version_id)
+    return {"item": {"exposure_id": exp.id, "question_version_id": v.id, "purpose": exp.purpose,
+                     "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind,
+                     "group_context": v.group_context, "media_attachment_id": v.media_attachment_id,
+                     "options": v.options, "max_points": v.max_points, "subject": subject,
+                     "knowledge_ids": v.knowledge_ids}}
+
 @app.get("/api/guidance/pool-health")
 def pool_health_endpoint(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
     """题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。

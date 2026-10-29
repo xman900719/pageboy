@@ -412,3 +412,50 @@ test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令�
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
 })
+
+/* ---------- J9 会话续答（ST-018）：刷新/重开不空烧未见题 ---------- */
+
+test('J9 会话续答：领取未见题后刷新恢复同一曝光，作答完成后刷新无残留', async ({ page }) => {
+  await enterSpace(page)
+  await navTab(page, /阶段诊断/).click()
+
+  const claimRegion = page.getByRole('region', { name: '领取未见题' })
+  // 初访不应出现续答提示（此前 J1–J6 已把全部未作答曝光消耗完）。
+  await expect(page.getByText('已恢复上次未完成作答的题目')).toHaveCount(0)
+
+  // 领取一道未见题（math.gap 在 J3 消耗后仍余未见题）。
+  await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
+  const card = questionCard(page)
+  await expect(card).toBeVisible()
+  await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+  const claimedStem = await card.locator('p.stem').innerText()
+
+  // 刷新（令牌仅内存 → 重新输入）后进入诊断页：同一曝光被恢复，题干一致，且明示续答。
+  await page.reload()
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await navTab(page, /阶段诊断/).click()
+  await expect(page.getByText('已恢复上次未完成作答的题目')).toBeVisible()
+  await expect(card.locator('p.stem')).toHaveText(claimedStem)
+  await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+  // 已持有曝光时按钮切换为「已领取」态（不可重复领取），证明没有双烧未见题。
+  await expect(claimRegion.getByRole('button', { name: '已领取，请在本页作答' })).toBeDisabled()
+  await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toHaveCount(0)
+
+  // 续答的题正常走判分链（甲为正确选项）。
+  await card.getByRole('radio', { name: /甲/ }).click()
+  await card.getByRole('button', { name: '提交答案' }).click()
+  await expect(card.getByText('本题得分 2 / 2')).toBeVisible()
+  await card.getByRole('button', { name: '完成本题' }).click()
+  await expect(card).toHaveCount(0)
+
+  // 完成后再刷新：无待续会话，可再次领取（未作答曝光不残留、不见题不双烧）。
+  await page.reload()
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await navTab(page, /阶段诊断/).click()
+  await expect(page.getByText('已恢复上次未完成作答的题目')).toHaveCount(0)
+  await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toBeEnabled()
+
+  await expectHonestLanguage(page)
+})

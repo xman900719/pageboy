@@ -34,6 +34,7 @@ export function DiagnosisView({ client, subject, notify, goHome }: { client: Api
   const [planStatus, setPlanStatus] = useState<'loading' | 'goal' | 'error' | 'ok'>('loading')
   const [profiles, setProfiles] = useState<Record<string, ProfileEntry>>({})
   const [refreshed, setRefreshed] = useState(false)
+  const [resumed, setResumed] = useState(false)
   const [exams, setExams] = useState<SchoolExam[] | null>(null)
   const [examTitle, setExamTitle] = useState('学校考试')
   const [examDate, setExamDate] = useState(new Date().toISOString().slice(0, 10))
@@ -69,6 +70,17 @@ export function DiagnosisView({ client, subject, notify, goHome }: { client: Api
     setRefreshed(false)
     setItem(null)
     setResult(null)
+    setResumed(false)
+    // ST-018：刷新/重开/切后台后恢复最近未作答曝光，未见题不因会话丢失而空烧。
+    client
+      .resume(subject)
+      .then(r => {
+        if (r.item !== null) {
+          setItem(r.item)
+          setResumed(true)
+        }
+      })
+      .catch(() => setResumed(false))
     void loadPlan().then(steps => {
       if (steps !== null) setBeforeSteps(steps)
     })
@@ -153,6 +165,7 @@ export function DiagnosisView({ client, subject, notify, goHome }: { client: Api
           {item && <span className="muted">已领取本题，作答后自动刷新计划</span>}
         </div>
         <p className="muted">「未见题」指你从未曝光过的题。提交作答后，下方会自动刷新学习计划与阶段对比，展示知识点状态变化。</p>
+        {resumed && <Note tone="discipline">已恢复上次未完成作答的题目：刷新、重开或切换应用都不会让已领取的未见题作废。</Note>}
         <button type="button" className="primary" onClick={claim} disabled={busy || item !== null}>
           {busy ? '领取中…' : item ? '已领取，请在本页作答' : '领取未见题诊断'}
         </button>
@@ -175,6 +188,7 @@ export function DiagnosisView({ client, subject, notify, goHome }: { client: Api
                 onClick={() => {
                   setItem(null)
                   setResult(null)
+                  setResumed(false)
                 }}
               >
                 完成本题

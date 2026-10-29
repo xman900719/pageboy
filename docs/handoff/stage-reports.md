@@ -60,6 +60,18 @@
 
 **剩余事项（需 owner）**：真机 iPad 核对清单已交付（[docs/operations/ipad-field-checklist.md](../operations/ipad-field-checklist.md)）——11 项检查（基础循环/公式渲染/PWA 与横竖屏/断网文案），等待 owner 执行结果回填后 ST-016 才能标完整。
 
+## 阶段 3c · ST-018 会话续答（2026-10-29 完成，因网络阻塞尚未推送）
+
+**结果**：修复诊断未见题"空烧"缺陷——领取未见题后刷新/重开/切后台，`GET /api/practice/resume`（只读，仅诊断曝光）恢复同一曝光，J9 双引擎验证"同题恢复→判分→完成→无残留"。
+
+**范围**：main.py 只读端点 + DiagnosisView 恢复 + api.ts + 测试 + OpenAPI（+39 行）+ 记录。
+
+**验证证据**：resume 单测 7 passed；全量 API **134 passed / 25 skipped**；chromium **17 passed / 3 skipped**；iPad/WebKit **20 passed**；契约/文档/zensical 全 PASS。
+
+**过程问题（如实）**：首版给训练视图也启用续答 → 练习按钮文案切换导致后续 e2e 用例按文案定位超时（级联失败）；按产品语义收窄为仅诊断曝光，并补 `test_training_exposure_is_not_resumed` 反例。
+
+**剩余事项**：本地提交待推送——GitHub 当前不可达（ssh 443 连接被 198.18.0.1x 拦截关闭，https 亦不通，`git push` 三次重试失败；非仓库权限问题，早前同一 remote 推送成功）。网络恢复后立即推送并核对 CI。
+
 ## 阶段 3b · J8 扫描件摄取 UI 旅程（2026-10-29 完成）
 
 **结果**：ST-014 的 UI 旅程证据补齐——运行时 Pillow 合成两页图像型 PDF → 审核台上传 → OCR 解析草稿（页码标记+识别文本断言）→ 逐题人工誑写（含公式）→ 确认导入 → 审核 → 发布 → 练习渲染并判分。这正是 owner 的真实导入闭环。

@@ -20,10 +20,12 @@
 | ST-014 | P1 | 扫描 PDF 自动 OCR 摄取：无文本层 PDF 走 pdftoppm→tesseract 逐页草稿，parser_version 如实记录双工具 | 图像型 PDF 摄取正例 + 文本 PDF 不降级反例；本地 e2e 摄取测试 |
 | ST-015 | P2 | 题库体检（纯函数 + 只读端点 + 首页卡片）：按知识点发布量/未见题存量/曝光覆盖如实报告，不制造分数 | 空池/单题/充足三态正反例；端点契约与 OpenAPI 再生成校验 |
 | ST-016 | P1 | 生产栈现场校验：线上 URL（Tunnel+Access 后）响应、构建产物一致性、PWA 静态壳在 iPad/WebKit 注册与缓存 | curl 实测记录 + WebKit e2e 断言；真实 iPad 人工核对清单交付 |
+| ST-018 | P1 | 会话续答：刷新/重开恢复最近未作答曝光，避免 iPad 上未见题空烧 | 端点正反例 + J9 双引擎（claim→刷新→同题恢复→答完→刷新→无残留） |
 | ST-OPS-02 | P1 | 主机监控、告警与更新回滚流程 | 模拟备份失败和错误镜像能恢复 |
 
 ## 执行记录
 
+- ST-018：本地验收完成（2026-10-29），会话续答——`GET /api/practice/resume` 只读恢复最近未作答**诊断**曝光（训练不恢复：无状态成本），J9 双引擎（chromium 17p/3s、iPad 20p）；[验证记录](docs/quality/st-018-session-resume.md)。首版误启训练续答导致 e2e 文案级联失败，按产品语义收窄并补反例锁定。
 - ST-013：本地验收完成（2026-10-29），题干富文本与公式渲染——KaTeX `$…$`/`$$…$$` 安全渲染（纯函数切分 + 文本转义 + 仅 KaTeX HTML 注入），单测 9/9、chromium 13 passed/3 skipped、iPad/WebKit 16 passed；附生产线文案缺陷修复（api.ts 网络失败误报"本地服务"）；[验证记录](docs/quality/st-013-formula-rendering.md)。零后端/契约变更。远端 CI 待推送后验证。
 - ST-014：本地验收完成（2026-10-29），扫描 PDF 自动 OCR 摄取——无文本层 PDF 走 pdftoppm→tesseract 逐页草稿（页码标记、双工具版本如实记录、混合版式为已知限制），摄取测试 42 passed、全量 127 passed/25 skipped；[验证记录](docs/quality/st-014-scanned-pdf-ocr.md)。无 Schema/迁移/契约变更。
 - ST-015：本地验收完成（2026-10-29），题库体检——`pool_health` 纯函数 + `GET /api/guidance/pool-health` + 首页「题库体检」卡片（J7/J7b 双引擎，chromium 15p/3s、iPad 18p）；OpenAPI 再生成校验；[验证记录](docs/quality/st-015-pool-health.md)。

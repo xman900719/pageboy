@@ -1497,6 +1497,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Next Item
+  /api/practice/resume:
+    get:
+      description: '恢复本科目最近一个未作答的**诊断**曝光（iPad 刷新/重开/切后台后会话可续，未见题不空烧）。
+
+        只读：不新建曝光、不改写历史；该曝光若已作答（或不存在）即返回 item=null。
+
+        仅限 purpose=evaluation：训练取题无状态成本（轮换本身合规），诊断未见题才是稀缺资源。'
+      operationId: resume_item_api_practice_resume_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Resume Item
   /api/school-exams:
     get:
       operationId: get_school_exams_api_school_exams_get
