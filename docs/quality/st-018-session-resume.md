@@ -25,4 +25,9 @@
 
 - 多个历史未作答诊断曝光只恢复**最近一个**；更早的空烧曝光不会返还（曝光纪律不可逆）。
 - 续答不改变曝光/作答的唯一约束与并发语义（`resume` 零写入）。
-- 真机 iPad 行为仍待 owner 现场核对（清单已交付）；远端 CI 待网络恢复推送后验证。
+- 真机 iPad 行为仍待 owner 现场核对（清单已交付）。
+
+## 远端 CI 与生产部署（2026-10-29）
+
+- 推送后 [run 40841552538](https://github.com/xman900719/pageboy/actions/runs/40841552538)（head `198ad7a`，含 J8 提交）**五作业全绿**：api-and-docs（134 passed/25 skipped）、pg-migration、web-build、web-e2e（chromium 17p/3s，J8/J9 在安装了 poppler+tesseract 的 Runner 上通过）、web-e2e-webkit（iPad 20p）。
+- 本机生产栈已部署 `shutong-api:api-198ad7a`（`/health/live` 报告 `app_revision=api-198ad7a`，smoke 全绿；Web dist 同步重建）。
