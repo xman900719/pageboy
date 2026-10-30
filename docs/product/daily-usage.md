@@ -40,3 +40,4 @@ infra/rollback.sh          # 回滚到上一个可用镜像标签
 
 - **主屏幕 PWA 与 Safari 是两套独立存储**：在 Safari 里勾选"在本机记住令牌"对主屏幕图标启动的应用不生效。日常走主屏幕图标的话，请在 PWA 内勾选一次即可长期免输入。
 - iPad 所在网络若访问不了 Cloudflare Access 登录域（Access 会话过期后重登录会卡住），需要给该网络配上代理或改用可达网络；应用本身只经 Access 门禁后授权（红线不变）。
+- **本机已采用的可用配置（2026-10-30）**：宿主机 Clash Verge 开启「允许局域网连接」后，iPad 的 WiFi 代理指向 `192.168.3.102:7897`，即可正常完成 Access 登录与日常访问（详见 [ST-016 记录](../quality/st-016-production-onsite.md)）。
