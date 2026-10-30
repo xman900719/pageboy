@@ -12,6 +12,7 @@
 - **发现并修复的两个网络级故障（均为宿主网络环境问题，非应用缺陷）**：
   1. **隧道协议**：QUIC(UDP 443) 被宿主机所在网络节流——cloudflared 日志反复 `accept QUIC stream timeout`、约 20s 重连一轮。已切 HTTP/2（`--protocol http2`）并重建容器，连接稳定注册（`lax11/lax13, protocol=http2`）。
   2. **隧道闪断**：HTTP/2 连接仍会因 `TLS handshake with edge ... i/o timeout`（边缘地址经本机代理被间歇性掐断）整体掉光，表现为线上持续 **Error 1033**，而 Access 层 302 正常——普通探测发现不了（302 不经过隧道）。今天实测「重建 cloudflared 容器」可立即恢复；已新增 `infra/tunnel-watchdog.sh` + 用户级 crontab `*/10`：近 15 分钟日志有 edge 连接错误且无任何成功注册 → 自动重建（带 15 分钟冷却），首运行为健康空转。
+   **Watchdog 首场实战（2026-10-30 18:10 CST）**：自动检出并重建 cloudflared 一次；重建后连接稳定注册（lax07/lax13，http2），Access 门禁、api/db、备份链路均未受影响，无人工介入。
 - **iPad 所在网络无法访问 Cloudflare Access 登录域**（cloudflareaccess.com / dash.cloudflare.com）：这是"iPad 打不开/卡在连接 dash.cloudflare.com"的根因。宿主经自身代理（Clash Verge 7897）可达。处置：临时 LAN 转发 `0.0.0.0:7898 → 127.0.0.1:7897`（`/tmp/opencode/lan_proxy_forward.py`，可 `pkill -f lan_proxy_forward` 关闭），iPad WiFi 代理指向 `192.168.3.102:7898` 后登录可达。**Access 门禁未被绕过**（只改网络路径）。持久方案见文末。
 
 ## iPad 真机核对（iPad Pro 12.9"，USB 连接，经 Web Inspector 通道驱动）
