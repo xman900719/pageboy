@@ -35,3 +35,8 @@ infra/rollback.sh          # 回滚到上一个可用镜像标签
 ```
 
 备份每 4 小时自动执行（R2 异地 + healthchecks.io 静默告警）；恢复流程见 [recovery-runbook.md](../operations/recovery-runbook.md)。iPad 真机核对清单见 [ipad-field-checklist.md](../operations/ipad-field-checklist.md)。
+
+## iPad 使用注意（2026-10-30 实测）
+
+- **主屏幕 PWA 与 Safari 是两套独立存储**：在 Safari 里勾选"在本机记住令牌"对主屏幕图标启动的应用不生效。日常走主屏幕图标的话，请在 PWA 内勾选一次即可长期免输入。
+- iPad 所在网络若访问不了 Cloudflare Access 登录域（Access 会话过期后重登录会卡住），需要给该网络配上代理或改用可达网络；应用本身只经 Access 门禁后授权（红线不变）。
