@@ -30,7 +30,7 @@
 - ST-014：本地验收完成（2026-10-29），扫描 PDF 自动 OCR 摄取——无文本层 PDF 走 pdftoppm→tesseract 逐页草稿（页码标记、双工具版本如实记录、混合版式为已知限制），摄取测试 42 passed、全量 127 passed/25 skipped；[验证记录](docs/quality/st-014-scanned-pdf-ocr.md)。无 Schema/迁移/契约变更。
 - ST-015：本地验收完成（2026-10-29），题库体检——`pool_health` 纯函数 + `GET /api/guidance/pool-health` + 首页「题库体检」卡片（J7/J7b 双引擎，chromium 15p/3s、iPad 18p）；OpenAPI 再生成校验；[验证记录](docs/quality/st-015-pool-health.md)。
 - ST-017（ST-OPS-02 的更新/回滚部分）：本机生产栈实测完成（2026-10-29）——标签化部署/回滚脚本 + `/health/live` 构建身份，drill-a/drill-b 部署与回滚、legacy 内容探针、数据一致性核对全绿；schema 降级回滚设计上排除；[演练记录](docs/quality/st-017-deploy-rollback-drill.md)。
-- ST-016：进行中——线上 URL 门禁核验与真机 iPad 清单交付（见 [阶段日志](docs/handoff/stage-reports.md)）。
+- ST-016：验收完成（2026-10-30）——环回栈/线上门禁/真机 iPad 全链核对（首页、题库体检数字、练习判分、阶段诊断与诚实对比、ST-018 续答实测、KaTeX 公式渲染与转义安全、PWA standalone 与记住令牌、断网文案构建级验证）；过程修复隧道 QUIC→HTTP/2、1033 自愈 watchdog、iPad 网络到 Access 登录域的代理通道；[验证记录](docs/quality/st-016-production-onsite.md)。遗留：owner 目视复核横竖屏/分屏、iPad 入网持久方案（三选一，待 owner 决定）。
 - ST-001：已完成。修复前端类型与文档站点链接问题，本地与远端基线均通过；[验证记录](docs/quality/st-001-baseline.md)。AC-DOC-01/02/03 均通过；仅修改 AGENTS.md 的独立提交 `4a5dd6f` 已实际触发 [push CI](https://github.com/xman900719/pageboy/actions/runs/39117777469)，两个作业全部成功。后续开发从 ST-002 开始。
 
 - ST-002：本地验收已完成，AC-CNT-02 正反例及 PostgreSQL 真实并发验证通过（6 轮 × 8 请求、独立连接）；[验证记录](docs/quality/st-002-question-revisions.md)。本轮仅本地提交，远端 CI 未运行。后续 ST-003 见下条。

@@ -26,6 +26,9 @@ services:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     network_mode: host
-    command: tunnel --no-autoupdate run --token ${SHUTONG_TUNNEL_TOKEN}
+    # --protocol http2：2026-10-29 实测 QUIC(UDP 443) 在本机网络被节流/干扰
+    # （cloudflared 日志反复 accept QUIC stream timeout、约 20s 重连一轮，iPad 经公网
+    # 访问时 intermittent 打不开）。改走 HTTP/2(TCP 443) 换取稳定。
+    command: tunnel --protocol http2 --no-autoupdate run --token ${SHUTONG_TUNNEL_TOKEN}
     depends_on:
       - api
