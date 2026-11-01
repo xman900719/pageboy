@@ -7,9 +7,11 @@
 # 不降级 schema、不触碰 db/api/附件；最坏情况是一次 api 之外的无害容器重建。
 set -uo pipefail
 
-LOG=/tmp/opencode/shutong-tunnel-watchdog.log
-STATE=/tmp/opencode/shutong-tunnel-watchdog.state
 INFRA=/media/xc/backup_ext4/code/pageboy/infra
+LOG_DIR="$INFRA/.local/logs"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/shutong-tunnel-watchdog.log"
+STATE="$LOG_DIR/shutong-tunnel-watchdog.state"
 
 stamp() { date -u +%FT%TZ; }
 

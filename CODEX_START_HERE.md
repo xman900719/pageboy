@@ -6,7 +6,7 @@
 
 ## 当前接手点
 
-ST-001~ST-012 已完成（本地+远端 CI），ST-013（题干公式渲染）、ST-014（扫描 PDF OCR 摄取）、ST-015（题库体检）、ST-017（标签化部署/回滚，含 ST-OPS-02 的更新回滚部分）已完成本地验证；生产栈运行 `shutong-api:drill-a`（当前 HEAD 构建）。自规划长任务的阶段汇总见 [阶段日志](docs/handoff/stage-reports.md)。剩余：ST-016 线上核验与真机 iPad 清单（需 owner 执行）、真实数据积累后的效果评估。远端默认主干为 `codex/st-001-ci`；当前开发分支 `codex/st-003-private-ingestion`。先读 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)，确认当前提交链。
+ST-001~ST-018 已全部完成（本地 + 远端五作业 CI 全绿），AC-OPS-01/02（Cloudflare R2 异地加密联合备份、隔离恢复与 healthchecks.io 静默告警）已实测达成；生产栈运行 `shutong-api:api-198ad7a`（对应标签 `v1.6.1`）。自规划长任务的阶段汇总见 [阶段日志](docs/handoff/stage-reports.md)，日常操作见 [日常使用指南](docs/product/daily-usage.md)。当前处于待 owner 导入首套真实试卷的就绪态。远端默认主干为 `codex/st-001-ci`，与开发分支 `codex/st-003-private-ingestion` 保持同步。历史交接背景见 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)。
 
 ## 启动检查（顺序执行）
 
@@ -27,8 +27,17 @@ ST-001~ST-012 已完成（本地+远端 CI），ST-013（题干公式渲染）�
 - **ST-006**：学校私卷逐题人工核对与附件隔离——已完成本地验收，见 [验证记录](docs/quality/st-006-school-papers.md)。
 - **ST-007**：四科题型、公式/图表/阅读/音频/主观自评——已完成本地验收，见 [验证记录](docs/quality/st-007-question-kinds.md)。
 - **ST-008**：精简学习首页、复练、阶段诊断、缺证据解释——已完成本地验收（Playwright J1–J4），见 [验证记录](docs/quality/st-008-user-journeys.md)。
-- **ST-009**：Docs as Code、UX/可访问性、契约与 CI 收口——已完成本地验收，见 [验证记录](docs/quality/st-009-closure.md)。**开发计划全部完成；剩余 ST-OPS-01/02 需外部环境与授权。**
-- **ST-OPS-01**：首次保存真实长期学习数据之前，搭建异地备份并在隔离环境完成真实恢复。
+- **ST-009**：Docs as Code、UX/可访问性、契约与 CI 收口——已完成验收，见 [验证记录](docs/quality/st-009-closure.md)。
+- **ST-010**：iPad（WebKit 仿真）e2e 通道与响应式断言——已完成验收，见 [验证记录](docs/quality/st-010-ipad-emulation.md)。
+- **ST-011**：人工审核 UI（审核台）与草稿只读端点——已完成验收，见 [验证记录](docs/quality/st-011-admin-review-ui.md)。
+- **ST-012**：iPad PWA 应用化与选配本机记住令牌——已完成验收，见 [验证记录](docs/quality/st-012-pwa-remembered-token.md)。
+- **ST-013**：题干富文本与 KaTeX 公式安全渲染——已完成验收，见 [验证记录](docs/quality/st-013-formula-rendering.md)。
+- **ST-014**：扫描 PDF 自动 OCR 摄取（pdftoppm→tesseract）——已完成验收，见 [验证记录](docs/quality/st-014-scanned-pdf-ocr.md)。
+- **ST-015**：题库体检（纯函数 + 只读端点 + 首页卡片）——已完成验收，见 [验证记录](docs/quality/st-015-pool-health.md)。
+- **ST-016**：生产栈现场校验与真机 iPad 全链核对——已完成验收，见 [验证记录](docs/quality/st-016-production-onsite.md)。
+- **ST-017（ST-OPS-02 更新回滚）**：标签化部署/回滚脚本与本机生产栈演练——已完成验收，见 [演练记录](docs/quality/st-017-deploy-rollback-drill.md)。
+- **ST-018**：诊断未见题会话续答（刷新/重开恢复未作答曝光）——已完成验收，见 [验证记录](docs/quality/st-018-session-resume.md)。
+- **ST-OPS-01 / AC-OPS-01~02**：Cloudflare R2 异地联合备份、独立隔离恢复与 healthchecks.io 静默告警——已实测达成，见 [演练记录](docs/quality/st-ops-01-offsite-restore.md)。
 
 ## 面向用户的交付格式
 

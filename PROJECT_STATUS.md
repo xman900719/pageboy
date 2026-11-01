@@ -9,7 +9,7 @@
 
 ## 尚未实现且不得宣称完成
 
-复杂试卷/公式/图表自动结构化、混合版式 PDF 部分 OCR、真实资料来源法务评审、OCR 准确率评估、正式目标蓝图、可比独立验证与成绩效果评价、访问身份管理、外部部署、自动告警、异地完整恢复。练习会话轮换、曝光原子化与作答幂等（ST-004）、数学纵向闭环与独立复测对比（ST-005）、学校私卷逐题人工核对与附件隔离（ST-006）、四科题型与评分来源可追溯（ST-007）、学习首页/复练/阶段诊断/缺证据解释用户旅程（ST-008）、题干公式渲染（ST-013）、扫描 PDF OCR 摄取（ST-014）、题库体检（ST-015）、标签化部署/回滚（ST-017）已实现并通过验证（均见下文），但小规模验证不代表吞吐达标或效果推断；OCR 与渲染均未在真实 iPad/真实试卷上评估。
+复杂试卷/公式/图表自动结构化、混合版式 PDF 部分 OCR、真实资料来源法务评审、真实试卷 OCR 准确率评估、正式目标蓝图、可比独立验证与成绩效果评价、多用户访问身份管理。练习会话轮换、曝光原子化与作答幂等（ST-004）、数学纵向闭环与独立复测对比（ST-005）、学校私卷逐题人工核对与附件隔离（ST-006）、四科题型与评分来源可追溯（ST-007）、学习首页/复练/阶段诊断/缺证据解释用户旅程（ST-008）、iPad WebKit 仿真通道（ST-010）、人工审核台 UI（ST-011）、PWA 图标与选配记住令牌（ST-012）、题干公式渲染（ST-013）、扫描 PDF OCR 摄取（ST-014）、题库体检（ST-015）、生产栈与真机 iPad 全链核对（ST-016）、标签化部署/回滚（ST-017）、诊断未见题会话续答（ST-018）以及 R2 异地备份恢复与告警（AC-OPS-01/02）均已实现并通过验证（均见下文），但小规模验证不代表吞吐达标或效果推断；真实中文试卷扫描件的 OCR 准确率仍待首次真卷导入时评估。
 
 ## 当前环境验证记录（2026-10-18）
 
@@ -74,6 +74,9 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
 
 **AC-OPS-01 与 AC-OPS-02 均达成**：R2 异地备份→隔离恢复→端到端冒烟全绿（33s 备份/7s 拉回/1s 恢复/3s 冒烟）；healthchecks.io dead-man's switch 告警接通（ping 200 实测、4h+1h=5h 静默告警）；用户级 crontab 每 4 小时调度已生效。
 
-## ST-013~ST-015/ST-017 本地验证（2026-10-29，自规划阶段 1–2）
+## ST-013~ST-018 验证与 v1.6.1 生产收口（2026-10-29 ~ 11-01）
 
-题干公式渲染（ST-013，KaTeX `$…$`/`$$…$$`，纯函数切分+文本转义，单测 9/9、chromium 13p/3s、iPad/WebKit 16p，[记录](docs/quality/st-013-formula-rendering.md)）、扫描 PDF OCR 摄取（ST-014，无文本层 PDF pdftoppm→tesseract 逐页草稿，摄取 42p、全量 127p/25s，[记录](docs/quality/st-014-scanned-pdf-ocr.md)）、题库体检（ST-015，`pool_health` 纯函数+只读端点+首页卡片，J7/J7b 双引擎，[记录](docs/quality/st-015-pool-health.md)）均已实现并通过本地验证；含一次已授权的生产线文案修复（网络失败不再误报"本地服务:8000"）。ST-017 在本机生产栈实测标签化部署/回滚（构建→幂等迁移→换 api→门禁冒烟→回滚换镜像，legacy 内容探针证明不同构建在服务；数据行数与附件 sha 前后一致；[演练记录](docs/quality/st-017-deploy-rollback-drill.md)）；schema 降级回滚设计上排除。真实 iPad 设备、真实试卷 OCR 准确率、远端 CI（待推送）均未验证。
+- **ST-013~ST-015 / ST-017**：题干公式渲染（ST-013，KaTeX `$…$`/`$$…$$`，纯函数切分+文本转义，单测 9/9、chromium 13p/3s、iPad/WebKit 16p，[记录](docs/quality/st-013-formula-rendering.md)）、扫描 PDF OCR 摄取（ST-014，无文本层 PDF pdftoppm→tesseract 逐页草稿 + J8 导入闭环，摄取 42p，[记录](docs/quality/st-014-scanned-pdf-ocr.md)）、题库体检（ST-015，`pool_health` 纯函数+只读端点+首页卡片，J7/J7b 双引擎，[记录](docs/quality/st-015-pool-health.md)）均已实现并通过本地及远端 CI 五作业验证；含已授权的生产线文案修复（网络失败不再误报"本地服务:8000"）。ST-017 在本机生产栈实测标签化部署/回滚（构建→幂等迁移→换 api→门禁冒烟→回滚换镜像，[演练记录](docs/quality/st-017-deploy-rollback-drill.md)）。
+- **ST-018（会话续答）**：`GET /api/practice/resume` 只读恢复最近未作答诊断曝光（避免刷新/重开空烧未见题），J9 双引擎通过（后端 134 passed/25 skipped，chromium 17p/3s，iPad/WebKit 20p），远端 CI 五作业全绿，生产栈已部署 `shutong-api:api-198ad7a`（`v1.6.1`）；详见 [验证记录](docs/quality/st-018-session-resume.md)。
+- **ST-016（生产栈与真机 iPad 现场核对）**：经 USB Web Inspector 在真实 iPad Pro 12.9" 上完成首页/题库体检、练习判分、阶段诊断诚实对比、ST-018 续答、KaTeX 公式渲染与转义安全、PWA standalone 与本机记住令牌、断网文案核验；同步修复隧道 HTTP/2 协议、1033 自愈 watchdog 与局域网代理通道；详见 [验证记录](docs/quality/st-016-production-onsite.md)。
+- **2026-11-01 运维加固**：实测排查发现宿主机重启后 `/tmp/opencode`（tmpfs）消失会导致备份 cron 外层重定向失败与 `tunnel-watchdog.sh` 状态写入失败，已统一迁移至持久化目录 `infra/.local/logs` 并验证 R2 快照恢复。
