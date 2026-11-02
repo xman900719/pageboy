@@ -13,5 +13,6 @@
 - [备份唯一策略](operations/backup-policy.md)
 - [恢复操作手册](operations/recovery-runbook.md)
 - [验收索引](quality/acceptance.md)
+- [前端重构人工验收指南](quality/manual-acceptance.md)
 - [ST-004 起工程交接与后续任务](handoff/st-004-and-remaining.md)
 - [架构决策记录](decisions/0001-modular-monolith.md)

@@ -22,6 +22,6 @@
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **达成（2026-10-25）**：Cloudflare R2 异地备份 → 隔离环境完整恢复 DB+附件 → 端到端冒烟全绿（行数全等/附件字节级一致/练习可服务）；[演练记录](st-ops-01-offsite-restore.md) |
 | AC-OPS-02 | 异地备份失败可观察并告警 | **达成（2026-10-25）**：healthchecks.io dead-man's switch——成功 ping（HTTP 200 实测）、>5h 静默即邮件告警（4h 周期+1h 宽限）；第三方基础设施=外部故障域；[演练记录](st-ops-01-offsite-restore.md) |
 
-**验收证据**：具体 API 和纯函数测试位于 `services/api/tests/`；Schema/断链检查位于 `scripts/`；灾备必须附实际人工演练记录。严禁将设计状态 `proposed` 自动改为 `done`。
+**验收证据**：具体 API 和纯函数测试位于 `services/api/tests/`；Schema/断链检查位于 `scripts/`；灾备必须附实际人工演练记录；**前端任何新增或修改实现，所有前后端测试在宿主机上完成，前端人工测试必须在用于前端测试的模拟机（模拟 iPadOS 环境）中完成，并按 [人工验收指南](manual-acceptance.md) 配套选项式人工测试报告，且在测试人在模拟机中全项确认通过前严禁执行 git 提交**。严禁将设计状态 `proposed` 自动改为 `done`。
 
 ST-001 的实际命令、环境与未验证项见 [本地基线记录](st-001-baseline.md)。

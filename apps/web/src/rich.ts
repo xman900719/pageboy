@@ -1,12 +1,12 @@
 /* ST-013：题干富文本与公式渲染。
  *
- * 安全模型：文本段一律作为 React 子节点渲染（React 自动转义，不存在原始 HTML 通道）；
- * 只有 KaTeX 由 LaTeX 生成的 HTML 才经 dangerouslySetInnerHTML 注入，用户文本绝不当作 HTML。
+ * 安全模型：文本段一律作为文本节点渲染（Vue 自动转义，不存在原始 HTML 通道）；
+ * 只有 KaTeX 由 LaTeX 生成的 HTML 才经 innerHTML 注入，用户文本绝不当作 HTML。
  *
  * 分隔符：`$$…$$` 为独立公式块（display），`$…$` 为行内公式（inline）。
  * `$` 总数为奇数（不配对）或数学段为空时，按字面文本渲染（安全回退，不猜测用户意图）。
  */
-import { memo } from 'react'
+import { defineComponent, h, computed } from 'vue'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -51,32 +51,39 @@ export function splitMathSegments(text: string): RichSegment[] {
 }
 
 /**
- * 渲染一段可能含公式的文本。memo 按字符串缓存：同一文案不重复切分/渲染。
+ * 渲染一段可能含公式的文本。计算属性按字符串缓存：同一文案不重复切分。
  */
-export const RichText = memo(function RichText({ text }: { text: string }) {
-  const segments = splitMathSegments(text)
-  // 纯文本走原样子节点，保持既有 DOM/无障碍结构完全不变。
-  if (segments.length === 1 && segments[0].type === 'text') {
-    return <>{segments[0].value}</>
-  }
-  return (
-    <>
-      {segments.map((segment, index) =>
-        segment.type === 'text' ? (
-          <span key={index} className="rt-text">
-            {segment.value}
-          </span>
-        ) : (
-          <span
-            key={index}
-            className={segment.display ? 'rt-math rt-math-display' : 'rt-math rt-math-inline'}
-            // 仅注入 KaTeX 生成的 HTML；LaTeX 源本身来自题干，但渲染路径已被 KaTeX 解析而非当作 HTML。
-            dangerouslySetInnerHTML={{
-              __html: katex.renderToString(segment.value, { throwOnError: false, displayMode: segment.display }),
-            }}
-          />
-        ),
-      )}
-    </>
-  )
+export const RichText = defineComponent({
+  name: 'RichText',
+  props: {
+    text: {
+      type: String,
+      required: true,
+    },
+  },
+  setup(props) {
+    const segments = computed(() => splitMathSegments(props.text))
+
+    return () => {
+      const segs = segments.value
+      // 纯文本走原样子节点，保持既有 DOM/无障碍结构完全不变。
+      if (segs.length === 1 && segs[0].type === 'text') {
+        return segs[0].value
+      }
+      return segs.map((segment, index) => {
+        if (segment.type === 'text') {
+          return h('span', { key: index, class: 'rt-text' }, segment.value)
+        }
+        return h('span', {
+          key: index,
+          class: segment.display ? 'rt-math rt-math-display' : 'rt-math rt-math-inline',
+          // 仅注入 KaTeX 生成的 HTML；LaTeX 源本身来自题干，但渲染路径已被 KaTeX 解析而非当作 HTML。
+          innerHTML: katex.renderToString(segment.value, {
+            throwOnError: false,
+            displayMode: segment.display,
+          }),
+        })
+      })
+    }
+  },
 })

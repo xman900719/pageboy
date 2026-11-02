@@ -1,0 +1,51 @@
+# Vue 3 迁移重构任务清单 (task.md)
+
+- [x] **阶段 1：构建系统与依赖替换**
+  - [x] 备份或清理原 React 依赖，安装 `vue`、`@vitejs/plugin-vue`、`vue-tsc`
+  - [x] 更新 `apps/web/package.json` 依赖与 scripts
+  - [x] 更新 `apps/web/vite.config.ts` 配置 Vue 插件
+  - [x] 更新 `apps/web/tsconfig.json`
+  - [x] 改造 `apps/web/index.html` 与 `apps/web/src/main.ts` 入口
+- [x] **阶段 2：KaTeX 富文本与基础 UI 组件迁移**
+  - [x] 改造 `src/rich.tsx` 为 Vue 3 `src/components/RichText.vue`，保留数学公式拆分与纯文本转义
+  - [x] 验证 `src/rich.test.ts` 纯函数单测通过
+  - [x] 迁移 `src/components/Notice.vue`（顶部通知）
+  - [x] 迁移 `src/components/Note.vue`（提示卡片）
+  - [x] 迁移 `src/components/Badges.vue`（科目/题型/状态徽章）
+  - [x] 迁移 `src/components/AudioPlayer.vue`（听力音频播放器）
+  - [x] 迁移 `src/components/ValidationPanel.vue`（数学独立复测对比卡片）
+  - [x] 迁移 `src/components/PlanStepList.vue`（复练计划步骤）
+  - [x] 迁移 `src/components/PoolHealthCard.vue`（题库体检卡片）
+- [x] **阶段 3：复杂交互卡片与审核台表单迁移**
+  - [x] 迁移 `src/components/QuestionCard.vue`（题目卡片：单选/简答/主观自评/题组材料/音频）
+  - [x] 迁移 `src/components/admin/SourceReviewCard.vue`（来源台账与审核卡片）
+  - [x] 迁移 `src/components/admin/AttachmentCard.vue`（附件上传与解析卡片）
+  - [x] 迁移 `src/components/admin/ConfirmImportForm.vue`（逐题录入与确认导入卡片）
+  - [x] 迁移 `src/components/admin/QuestionVersionsCard.vue`（草稿审核与发布卡片）
+- [x] **阶段 4：顶层视图与根应用装配**
+  - [x] 迁移 `src/views/HomeView.vue`（学习首页）
+  - [x] 迁移 `src/views/PracticeView.vue`（练习做题视图）
+  - [x] 迁移 `src/views/DiagnosisView.vue`（阶段诊断与复测视图）
+  - [x] 迁移 `src/views/AdminView.vue`（人工审核台视图）
+  - [x] 迁移 `src/App.vue`（令牌门、记住令牌、主要导航、退出）
+  - [x] 移除陈旧的 React 相关遗留源码文件
+- [x] **阶段 5：质量与兼容性全面验收**
+  - [x] 运行 `npm run test:unit`（纯函数单测 9/9 passed）
+  - [x] 运行 `npm run build`（类型检查与产物构建 0 error passed）
+  - [x] 运行 `npm run test:e2e`（Playwright Chromium J1~J9 全套用户旅程 17 passed）
+  - [x] 运行 `npm run test:e2e:ipad`（Playwright WebKit iPad 仿真全套通道 20 passed）
+  - [x] 验证 Axe-core WCAG A/AA 扫描 0 违规
+- [x] **阶段 6：宿主机环境就绪与 iPadOS 模拟机人工测试门禁**
+  - [x] 明确执行拓扑规则：宿主机运行前后端测试/构建/服务，前端人工测试在用于模拟 iPadOS 环境的模拟机中运行与操作
+  - [x] 更新 `AGENTS.md`、`docs/quality/acceptance.md` 与 `docs/quality/manual-acceptance.md`（纠偏为模拟机与 iPadOS 环境）
+  - [x] 编写一键测试环境管理工具 `scripts/run_manual_test_env.py`（自动化建表、起后端、灌入完整种子、起前端、探针自检与状态管理）
+  - [x] 修复 `Gate.vue` 真实错误捕获与异步等待，通过 J6 自动化验证
+  - [x] 在 `docs/quality/checklists/` 下按主题生成 5 份独立核验清单（01 至 05），并建立总控索引与中断协议
+  - [x] 核验清单引入选项点选机制与「暂时中断核验，先修理Bug」门禁协议
+  - [x] 通过一键脚本启动宿主机测试服务并保持在线供模拟机访问（`http://192.168.3.102:4173`）
+  - [x] 主题 1（令牌门与会话安全）：测试人点选判定【通过】并归档于 `docs/quality/checklists/01-gate-and-auth.md`
+  - [x] 主题 2（iPadOS 视口与横竖屏触控）：测试人点选判定【通过】并归档于 `docs/quality/checklists/02-viewport-and-touch.md`
+  - [x] 主题 3（专项复练与主观题自评链）：测试人点选判定【通过】并归档于 `docs/quality/checklists/03-practice-and-assessment.md`
+  - [x] 主题 4（阶段诊断与未见题切后台恢复）：测试人点选判定【通过】并归档于 `docs/quality/checklists/04-diagnosis-and-resume.md`
+  - [x] 主题 5（题库审核台与 KaTeX 公式安全渲染）：测试人点选判定【通过】并归档于 `docs/quality/checklists/05-admin-and-formulas.md`
+  - [x] 5 项测试点全部逐项核验确认通过，人工验收硬门禁全绿解锁，允许执行 Git 提交
