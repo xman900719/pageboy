@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PoolHealth } from '../api'
+import { getKnowledgeLabel } from '../config/knowledge'
 
 const props = defineProps<{
   data: PoolHealth
@@ -21,7 +22,10 @@ const exposedTotal = computed(() =>
     <p v-if="data.knowledge.length === 0" class="muted">暂无可体检的已发布知识点。</p>
     <ul v-else class="comparison">
       <li v-for="entry in data.knowledge" :key="entry.knowledge_id">
-        <code class="kid">{{ entry.knowledge_id }}</code>
+        <code class="kid">
+          <span class="k-label">{{ getKnowledgeLabel(entry.knowledge_id) }}</span>
+          <span class="k-code"> · {{ entry.knowledge_id }}</span>
+        </code>
         <span class="step-facts">
           <span>
             已发布 <b>{{ entry.published }}</b>

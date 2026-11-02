@@ -14,6 +14,7 @@ import { KindBadge } from './Badges'
 import AudioPlayer from './AudioPlayer.vue'
 import Note from './Note.vue'
 import { RichText } from '../rich'
+import { getKnowledgeLabel } from '../config/knowledge'
 
 type Phase = 'answering' | 'sending' | 'answered'
 
@@ -128,6 +129,14 @@ const resultTone = computed(() =>
     <div class="question-head">
       <span class="eyebrow">
         {{ badge }} · {{ item.knowledge_ids.join(' / ') }}
+        <span
+          v-for="kid in item.knowledge_ids"
+          :key="kid"
+          class="chip good k-badge"
+          style="margin-left: 6px; font-size: 0.82rem;"
+        >
+          {{ getKnowledgeLabel(kid) }}
+        </span>
       </span>
       <KindBadge :kind="item.kind" />
     </div>

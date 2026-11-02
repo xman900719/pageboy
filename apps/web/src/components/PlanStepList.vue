@@ -2,6 +2,7 @@
 import { ACTION_LABELS, pct } from '../copy'
 import type { PlanStep, ProfileEntry } from '../api'
 import { GapBadge } from './Badges'
+import { getKnowledgeLabel } from '../config/knowledge'
 
 defineProps<{
   steps: PlanStep[]
@@ -26,7 +27,10 @@ const emit = defineEmits<{
       :class="['step', `gap-${step.gap_type.toLowerCase()}`]"
     >
       <div class="step-head">
-        <code class="kid">{{ step.knowledge_id }}</code>
+        <code class="kid">
+          <span class="k-label">{{ getKnowledgeLabel(step.knowledge_id) }}</span>
+          <span class="k-code"> · {{ step.knowledge_id }}</span>
+        </code>
         <GapBadge :gap="step.gap_type" />
       </div>
       <p class="step-reason">{{ step.reason }}</p>

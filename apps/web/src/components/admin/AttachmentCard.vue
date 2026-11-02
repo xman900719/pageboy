@@ -57,6 +57,19 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement
   file.value = target.files?.[0] ?? null
+  if (file.value) {
+    uploadError.value = ''
+  }
+}
+
+function triggerBrowse() {
+  fileInputRef.value?.click()
+}
+
+function clearFile() {
+  file.value = null
+  if (fileInputRef.value) fileInputRef.value.value = ''
+  uploadError.value = ''
 }
 
 async function upload() {
@@ -120,23 +133,60 @@ async function parse(attachment: AttachmentOut) {
     <Note tone="caution">{{ REUPLOAD_RESET_NOTE }}</Note>
 
     <div class="attachment-upload">
+      <!-- 月考/试卷等附件提交内容明确指引说明 -->
+      <div class="note note-neutral" style="margin-bottom: 12px; font-size: 0.9rem;">
+        <b>📄 试卷与教学资料提交规范指引</b>
+        <ul style="margin: 6px 0 0 18px; padding: 0;">
+          <li><b>月考 / 单元检测卷</b>：请提交包含完整题面、选项与分值的整卷清晰原件或扫描件（PDF / PNG / JPG，单文件上限 10 MiB）。</li>
+          <li><b>英语听力试卷</b>：除试题文本扫描件外，请同时上传配套的 MP3 / M4A 录音音频，以支持听力播放组件关联。</li>
+          <li><b>上传后操作流程</b>：上传成功后点击「解析」提取机读文本，随后在下方「逐题录入并确认导入」中录入各题干、题型与考点。</li>
+        </ul>
+      </div>
+
       <label>
-        选择原始附件（PDF / PNG / JPG / MP3 / M4A，不超过 10 MiB）
+        选择原始附件文件（PDF / PNG / JPG / MP3 / M4A）
         <input
           ref="fileInputRef"
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.mp3,.m4a,application/pdf,image/png,image/jpeg,audio/mpeg,audio/mp4"
           @change="onFileChange"
+          style="margin-top: 4px;"
         />
       </label>
-      <button
-        type="button"
-        class="primary"
-        @click="upload"
-        :disabled="uploading || !file"
-      >
-        {{ uploading ? '上传中…' : '上传附件' }}
-      </button>
+
+      <!-- 显式浏览与当前已选文件状态 -->
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <button
+          type="button"
+          class="ghost small"
+          @click="triggerBrowse"
+          :disabled="uploading"
+        >
+          📂 浏览本地文件…
+        </button>
+
+        <span v-if="file" class="chip good" style="font-size: 0.85rem;">
+          已选本地文件：<b>{{ file.name }}</b>（{{ fmtBytes(file.size) }}）
+        </span>
+        <button
+          v-if="file && !uploading"
+          type="button"
+          class="ghost small"
+          @click="clearFile"
+        >
+          清空重选
+        </button>
+
+        <button
+          type="button"
+          class="primary"
+          @click="upload"
+          :disabled="uploading || !file"
+        >
+          {{ uploading ? '上传中…' : '确认上传附件' }}
+        </button>
+      </div>
+
       <p v-if="uploadError" class="form-error">{{ uploadError }}</p>
     </div>
 

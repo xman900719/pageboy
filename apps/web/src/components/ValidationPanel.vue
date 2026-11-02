@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { CANNOT_COMPARE_EXPLAIN, VALIDATION_HEADLINES } from '../copy'
 import type { Validation } from '../api'
 import { VerdictChip } from './Badges'
+import { getKnowledgeLabel } from '../config/knowledge'
 
 const props = defineProps<{
   validation: Validation
@@ -34,7 +35,10 @@ function fmtRate(value: number | undefined): string {
     <p v-if="validation.knowledge.length === 0" class="muted">还没有可用于对比的独立验证记录。</p>
     <ul v-else class="comparison">
       <li v-for="entry in validation.knowledge" :key="entry.knowledge_id">
-        <code class="kid">{{ entry.knowledge_id }}</code>
+        <code class="kid">
+          <span class="k-label">{{ getKnowledgeLabel(entry.knowledge_id) }}</span>
+          <span class="k-code"> · {{ entry.knowledge_id }}</span>
+        </code>
         <span v-if="entry.verdict === 'cannot_compare'" class="comp-main">
           <VerdictChip verdict="cannot_compare" />
           <span class="muted">

@@ -12,6 +12,7 @@ import { KindBadge } from '../../components/Badges'
 import Note from '../../components/Note.vue'
 import { RichText } from '../../rich'
 import type { NoticeTone } from '../../components/Notice.vue'
+import { getKnowledgeLabel } from '../../config/knowledge'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 
@@ -115,7 +116,7 @@ async function publish(version: QuestionVersion) {
         </p>
         <div class="version-meta">
           <code v-for="kid in v.knowledge_ids" :key="kid" class="kid">
-            {{ kid }}
+            {{ getKnowledgeLabel(kid) }} · {{ kid }}
           </code>
           <span v-if="v.group_context" class="muted tiny">含组内材料</span>
           <span v-if="v.media_attachment_id" class="muted tiny">含媒体附件</span>

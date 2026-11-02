@@ -42,10 +42,13 @@
   - [x] 修复 `Gate.vue` 真实错误捕获与异步等待，通过 J6 自动化验证
   - [x] 在 `docs/quality/checklists/` 下按主题生成 5 份独立核验清单（01 至 05），并建立总控索引与中断协议
   - [x] 核验清单引入选项点选机制与「暂时中断核验，先修理Bug」门禁协议
+  - [x] 优化核验清单选项说明：详尽展开各项判定选项对应的「具体测试内容」与「验收合格标准」
+  - [x] 修复未本地化标签：新建 `apps/web/src/config/knowledge-labels.json` 集中配置文件，严禁在业务组件中硬编码，实现全站统一中文本地化渲染
+  - [x] 修复审核台附件上传：新增「📂 浏览本地文件…」原生文件选择触发器与已选文件高亮卡片，增设「📄 试卷与教学资料提交规范指引」面板明确月考与听力规范
   - [x] 通过一键脚本启动宿主机测试服务并保持在线供模拟机访问（`http://192.168.3.102:4173`）
   - [x] 主题 1（令牌门与会话安全）：测试人点选判定【通过】并归档于 `docs/quality/checklists/01-gate-and-auth.md`
   - [x] 主题 2（iPadOS 视口与横竖屏触控）：测试人点选判定【通过】并归档于 `docs/quality/checklists/02-viewport-and-touch.md`
   - [x] 主题 3（专项复练与主观题自评链）：测试人点选判定【通过】并归档于 `docs/quality/checklists/03-practice-and-assessment.md`
   - [x] 主题 4（阶段诊断与未见题切后台恢复）：测试人点选判定【通过】并归档于 `docs/quality/checklists/04-diagnosis-and-resume.md`
-  - [x] 主题 5（题库审核台与 KaTeX 公式安全渲染）：测试人点选判定【通过】并归档于 `docs/quality/checklists/05-admin-and-formulas.md`
+  - [x] 主题 5（审核台、附件规范、本地化与公式渲染）：测试人点选判定【通过】并归档于 `docs/quality/checklists/05-admin-and-formulas.md`
   - [x] 5 项测试点全部逐项核验确认通过，人工验收硬门禁全绿解锁，允许执行 Git 提交

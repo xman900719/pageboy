@@ -104,7 +104,7 @@ uv run python scripts/run_manual_test_env.py sim-landscape
 | **主题 2** | [02-viewport-and-touch.md](checklists/02-viewport-and-touch.md) | iPad 竖屏零横向滚动、横屏 980px 居中收束留白、Tab 与学科触控切换流畅 | 依赖【主题 1 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 | **主题 3** | [03-practice-and-assessment.md](checklists/03-practice-and-assessment.md) | 练习题目轮换不重复、单选题作答与来源标明、主观题参考答案展示与自评锁定 | 依赖【主题 1、2 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 | **主题 4** | [04-diagnosis-and-resume.md](checklists/04-diagnosis-and-resume.md) | 未见题严肃纪律、**未答切后台/按 F5 刷新自动恢复未答题（ST-018，防空烧）** | 依赖【主题 1、2、3 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
-| **主题 5** | [05-admin-and-formulas.md](checklists/05-admin-and-formulas.md) | 审核台 `v-model` 表单录入、KaTeX 复杂公式专业排版、非规范 `$` 纯文本安全回退 | 依赖【主题 1 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
+| **主题 5** | [05-admin-and-formulas.md](checklists/05-admin-and-formulas.md) | 审核台 `v-model` 表单录入、**附件本地文件浏览与试卷规范指引**、**知识点配置化本地化**、KaTeX 复杂公式专业排版、非规范 `$` 纯文本安全回退 | 依赖【主题 1~4 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 
 ---
 
