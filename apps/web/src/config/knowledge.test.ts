@@ -13,8 +13,8 @@ describe('knowledge 配置文件读取与本地化解析', () => {
     expect(getKnowledgeLabel('')).toBe('')
   })
 
-  it('格式化标题能兼顾中文与溯源码', () => {
-    expect(formatKnowledgeTitle('math.ok')).toBe('达标考点（对照） (math.ok)')
+  it('格式化标题统一返回规范纯中文', () => {
+    expect(formatKnowledgeTitle('math.ok')).toBe('达标考点（对照）')
     expect(formatKnowledgeTitle('unknown.code')).toBe('unknown.code')
   })
 })

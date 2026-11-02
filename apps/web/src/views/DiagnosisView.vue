@@ -241,7 +241,7 @@ async function saveExam() {
       <p class="muted">本次诊断后，知识点状态发生了以下变化：</p>
       <ul class="transitions">
         <li v-for="transition in transitions" :key="transition.kid">
-          <code class="kid">{{ getKnowledgeLabel(transition.kid) }} · {{ transition.kid }}</code>
+          <code class="kid">{{ getKnowledgeLabel(transition.kid) }}</code>
           <span>
             {{ transition.from }} → <b>{{ transition.to }}</b>
           </span>

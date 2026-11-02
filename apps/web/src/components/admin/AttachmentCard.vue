@@ -62,8 +62,15 @@ function onFileChange(event: Event) {
   }
 }
 
-function triggerBrowse() {
-  fileInputRef.value?.click()
+function onInputClick() {
+  // 点击 input 任意区域（含右侧空白与文本）均可靠唤起系统文件选择窗口
+  if (typeof fileInputRef.value?.showPicker === 'function') {
+    try {
+      fileInputRef.value.showPicker()
+    } catch {
+      // 浏览器已原生处理或不支持时静默忽略
+    }
+  }
 }
 
 function clearFile() {
@@ -143,30 +150,30 @@ async function parse(attachment: AttachmentOut) {
         </ul>
       </div>
 
-      <label>
-        选择原始附件文件（PDF / PNG / JPG / MP3 / M4A）
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.mp3,.m4a,application/pdf,image/png,image/jpeg,audio/mpeg,audio/mp4"
-          @change="onFileChange"
-          style="margin-top: 4px;"
-        />
+      <label for="attachment-file-input">
+        选择原始附件（PDF / PNG / JPG / MP3 / M4A，不超过 10 MiB）
       </label>
+      <input
+        id="attachment-file-input"
+        ref="fileInputRef"
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.mp3,.m4a,application/pdf,image/png,image/jpeg,audio/mpeg,audio/mp4"
+        @change="onFileChange"
+        @click="onInputClick"
+      />
 
-      <!-- 显式浏览与当前已选文件状态 -->
       <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <button
           type="button"
-          class="ghost small"
-          @click="triggerBrowse"
-          :disabled="uploading"
+          class="primary"
+          @click="upload"
+          :disabled="uploading || !file"
         >
-          📂 浏览本地文件…
+          {{ uploading ? '上传中…' : '上传附件' }}
         </button>
 
         <span v-if="file" class="chip good" style="font-size: 0.85rem;">
-          已选本地文件：<b>{{ file.name }}</b>（{{ fmtBytes(file.size) }}）
+          已选文件：<b>{{ file.name }}</b>（{{ fmtBytes(file.size) }}）
         </span>
         <button
           v-if="file && !uploading"
@@ -174,16 +181,7 @@ async function parse(attachment: AttachmentOut) {
           class="ghost small"
           @click="clearFile"
         >
-          清空重选
-        </button>
-
-        <button
-          type="button"
-          class="primary"
-          @click="upload"
-          :disabled="uploading || !file"
-        >
-          {{ uploading ? '上传中…' : '确认上传附件' }}
+          清空
         </button>
       </div>
 

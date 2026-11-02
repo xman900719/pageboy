@@ -37,7 +37,6 @@ function fmtRate(value: number | undefined): string {
       <li v-for="entry in validation.knowledge" :key="entry.knowledge_id">
         <code class="kid">
           <span class="k-label">{{ getKnowledgeLabel(entry.knowledge_id) }}</span>
-          <span class="k-code"> · {{ entry.knowledge_id }}</span>
         </code>
         <span v-if="entry.verdict === 'cannot_compare'" class="comp-main">
           <VerdictChip verdict="cannot_compare" />

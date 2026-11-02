@@ -14,7 +14,7 @@ import {
 import { excerpt, fmtPoints, KIND_LABELS, SCORING_LABELS, shortTime } from '../copy'
 import QuestionCard from '../components/QuestionCard.vue'
 import type { NoticeTone } from '../components/Notice.vue'
-import { formatKnowledgeTitle } from '../config/knowledge'
+import { getKnowledgeLabel } from '../config/knowledge'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 type SessionEntry = { n: number; excerptText: string; outcome: string; tone: 'good' | 'mid' | 'wait' }
@@ -113,7 +113,7 @@ function onSelfRecorded(_record: SelfAssessmentResult) {
         <select v-if="steps" v-model="knowledgeId">
           <option value="">全部知识点</option>
           <option v-for="step in steps" :key="step.knowledge_id" :value="step.knowledge_id">
-            {{ formatKnowledgeTitle(step.knowledge_id) }}
+            {{ getKnowledgeLabel(step.knowledge_id) }}
           </option>
         </select>
         <select v-else disabled>

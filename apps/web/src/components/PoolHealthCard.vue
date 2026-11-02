@@ -24,7 +24,6 @@ const exposedTotal = computed(() =>
       <li v-for="entry in data.knowledge" :key="entry.knowledge_id">
         <code class="kid">
           <span class="k-label">{{ getKnowledgeLabel(entry.knowledge_id) }}</span>
-          <span class="k-code"> · {{ entry.knowledge_id }}</span>
         </code>
         <span class="step-facts">
           <span>

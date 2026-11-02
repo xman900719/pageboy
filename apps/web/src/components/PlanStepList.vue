@@ -29,7 +29,6 @@ const emit = defineEmits<{
       <div class="step-head">
         <code class="kid">
           <span class="k-label">{{ getKnowledgeLabel(step.knowledge_id) }}</span>
-          <span class="k-code"> · {{ step.knowledge_id }}</span>
         </code>
         <GapBadge :gap="step.gap_type" />
       </div>

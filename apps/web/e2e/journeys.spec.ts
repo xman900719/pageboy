@@ -8,6 +8,7 @@
  * J3 的确定性只依赖种子配比：math.gap 最早创建（evaluation 按 created_at 先发它）且共有
  * ≥6 道未见客观题（10 道：基线 3 + 复测 3 + 余量 4），与 J2 是否先消耗训练题无关。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
+import { getKnowledgeLabel } from '../src/config/knowledge'
 
 const TOKEN = 'test-journey-secret'
 
@@ -27,12 +28,14 @@ function navTab(page: Page, label: RegExp): Locator {
 /** 指定知识点的计划行（匹配含该 code.kid 的 li.step）。 */
 function stepRow(page: Page, kid: string, root?: Locator): Locator {
   const scope = root ?? page
-  return scope.locator('li.step', { has: page.locator('code.kid', { hasText: kid }) })
+  const label = getKnowledgeLabel(kid)
+  return scope.locator('li.step', { has: page.locator('code.kid', { hasText: new RegExp(`${label}|${kid}`) }) })
 }
 
 /** 阶段对比列表里的知识点行。 */
 function comparisonRow(page: Page, kid: string, root: Locator): Locator {
-  return root.locator('li', { has: page.locator('code.kid', { hasText: kid }) })
+  const label = getKnowledgeLabel(kid)
+  return root.locator('li', { has: page.locator('code.kid', { hasText: new RegExp(`${label}|${kid}`) }) })
 }
 
 /** 当前题目卡（aria-label="题目" 的 region）。 */
@@ -120,7 +123,7 @@ test('J2 复练与轮换：轮换可见、客观判分、主观自评链与听�
   await practice.getByRole('button', { name: '开始练习' }).click()
   let card = questionCard(page)
   await expect(card).toBeVisible()
-  await expect(card).toContainText('专项训练 · math.gap')
+  await expect(card).toContainText(new RegExp(`专项训练 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
   const firstStem = await card.locator('p.stem').innerText()
   await card.getByRole('radio', { name: /甲/ }).click()
   await card.getByRole('button', { name: '提交答案' }).click()
@@ -132,7 +135,7 @@ test('J2 复练与轮换：轮换可见、客观判分、主观自评链与听�
   // 须先用否定断言等新题挂载，避免读到旧卡内容。
   await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
   await expect(card.locator('p.stem')).not.toHaveText(firstStem)
-  await expect(card).toContainText('专项训练 · math.gap')
+  await expect(card).toContainText(new RegExp(`专项训练 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
   const secondStem = await card.locator('p.stem').innerText()
   expect(secondStem).not.toBe(firstStem)
   expect(secondStem).toContain('差距题')
@@ -209,7 +212,7 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
     await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
     const card = questionCard(page)
     await expect(card).toBeVisible()
-    await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+    await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
     await card.getByRole('radio', { name: /乙/ }).click()
     await card.getByRole('button', { name: '提交答案' }).click()
     await expect(card.getByText('本题得分 0 / 2')).toBeVisible()
@@ -236,7 +239,7 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
     await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
     const card = questionCard(page)
     await expect(card).toBeVisible()
-    await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+    await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
     await card.getByRole('radio', { name: /甲/ }).click()
     await card.getByRole('button', { name: '提交答案' }).click()
     await expect(card.getByText('本题得分 2 / 2')).toBeVisible()
@@ -427,7 +430,7 @@ test('J9 会话续答：领取未见题后刷新恢复同一曝光，作答完�
   await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
   const card = questionCard(page)
   await expect(card).toBeVisible()
-  await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+  await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
   const claimedStem = await card.locator('p.stem').innerText()
 
   // 刷新（令牌仅内存 → 重新输入）后进入诊断页：同一曝光被恢复，题干一致，且明示续答。
@@ -437,7 +440,7 @@ test('J9 会话续答：领取未见题后刷新恢复同一曝光，作答完�
   await navTab(page, /阶段诊断/).click()
   await expect(page.getByText('已恢复上次未完成作答的题目')).toBeVisible()
   await expect(card.locator('p.stem')).toHaveText(claimedStem)
-  await expect(card).toContainText('阶段诊断 · 未见题 · math.gap')
+  await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
   // 已持有曝光时按钮切换为「已领取」态（不可重复领取），证明没有双烧未见题。
   await expect(claimRegion.getByRole('button', { name: '已领取，请在本页作答' })).toBeDisabled()
   await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toHaveCount(0)
