@@ -5,3 +5,6 @@ docs_dir = "docs"
 site_dir = "site"
 strict = true
 use_directory_urls = true
+extra_javascript = [
+    "assets/javascripts/mermaid.min.js"
+]

@@ -48,8 +48,28 @@
   - [x] 测试人针对选择文件按钮修复结果在 iPadOS 模拟机完成选项式复验并确认全绿通过
   - [x] 通过一键脚本启动宿主机测试服务并保持在线供模拟机访问（`http://192.168.3.102:4173`）
   - [x] 主题 1（令牌门与会话安全）：测试人点选判定【通过】并归档于 `docs/quality/checklists/01-gate-and-auth.md`
+
+- [x] **阶段 7：前端管理功能与使用功能强隔离 (Vite MPA + 网络反代防护)**
+  - [x] 7.1 前端多入口构建配置（`apps/web/vite.config.ts`、`admin.html`、`src/admin.ts`）
+  - [x] 7.2 剥离学校考试组件并在管理端集成（`SchoolExamCard.vue`、`AdminApp.vue`、`PoolHealthCard.vue`）
+  - [x] 7.3 学生端纯净化重构（`App.vue`、`copy.ts`、`HomeView.vue`、`DiagnosisView.vue` 移除管理表单）
+  - [x] 7.4 构建类型检查与物理产物隔离安全审计（`npm run build`、`dist/index.html` 零 Admin 泄露）
+  - [x] 7.5 Caddy 反代配置更新（`infra/Caddyfile`、`Caddyfile.local` 阻断 `CF-Ray` 的 `/admin*` 访问）
+  - [x] 7.6 自动化测试套件适配（`journeys.spec.ts`、`pool-health.spec.ts`、`a11y.spec.ts`、`formulas.spec.ts`、`ingest-scanned.spec.ts`、`ipad-responsive.spec.ts`）
+  - [x] 7.7 宿主机测试环境工具与核验清单编制（`scripts/run_manual_test_env.py`、`docs/quality/checklists/06-frontend-isolation.md`）
+  - [x] 7.8 自动化全量回归与模拟机人工测试选项式门禁核验（自动化回归全绿；测试人完成核验点选放行）
+
   - [x] 主题 2（iPadOS 视口与横竖屏触控）：测试人点选判定【通过】并归档于 `docs/quality/checklists/02-viewport-and-touch.md`
   - [x] 主题 3（专项复练与主观题自评链）：测试人点选判定【通过】并归档于 `docs/quality/checklists/03-practice-and-assessment.md`
   - [x] 主题 4（阶段诊断与未见题切后台恢复）：测试人点选判定【通过】并归档于 `docs/quality/checklists/04-diagnosis-and-resume.md`
   - [x] 主题 5（审核台、附件规范、本地化与公式渲染）：测试人点选判定【通过】并归档于 `docs/quality/checklists/05-admin-and-formulas.md`
   - [x] 5 项测试点全部逐项核验确认通过，人工验收硬门禁全绿解锁，允许执行 Git 提交
+
+- [x] **阶段 8：生产环境迁移至大容量存储 (`/media/xc/backup_ext4/prod-env/pageboy`)**
+  - [x] 8.1 生产环境现状调研与迁移实施方案规划 (`implementation_plan.md`)
+  - [x] 8.2 编写全自动幂等割接脚本 (`infra/migrate-prod-root.sh`)
+  - [x] 8.3 代码库与初始化脚本适配 (`infra/provision-prod.sh`、`infra/shutong-caddy.service`、`infra/.env.example`)
+  - [x] 8.4 环境隔离自检脚本与运维手册同步 (`scripts/check_env_isolation.sh`、`docs/operations/prod-separation-runbook.md`、`docs/operations/cloud-migration.md`)
+  - [x] 8.5 验证隔离规则通过 (`bash scripts/check_env_isolation.sh` 全项 PASS)
+  - [x] 8.6 宿主机提权割接执行与服务无缝切换 (`sudo bash infra/migrate-prod-root.sh`)
+  - [x] 8.7 割接后全套健康检查与生产备份验证 (`/health/live`、`/health/ready`、`8180 Web`、`release.git ls-remote`)
