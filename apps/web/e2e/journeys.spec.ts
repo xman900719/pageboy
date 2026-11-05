@@ -21,8 +21,19 @@ async function enterSpace(page: Page): Promise<void> {
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
+async function enterAdminSpace(page: Page): Promise<void> {
+  await page.goto('/admin.html')
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+}
+
 function navTab(page: Page, label: RegExp): Locator {
   return page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: label })
+}
+
+function adminNavTab(page: Page, label: RegExp): Locator {
+  return page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: label })
 }
 
 /** 指定知识点的计划行（匹配含该 code.kid 的 li.step）。 */
@@ -266,8 +277,8 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
 /* ---------- J4 校卷总分 ---------- */
 
 test('J4 校卷总分：录入成功、明示「总分不产生考点证据」并列出条目', async ({ page }) => {
-  await enterSpace(page)
-  await navTab(page, /阶段诊断/).click()
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
   await expect(examRegion).toContainText('总分不产生考点证据')
@@ -295,8 +306,8 @@ test('J4 校卷总分：录入成功、明示「总分不产生考点证据」�
 /* ---------- J5 审核台：录入真题全闭环 ---------- */
 
 test('J5 审核台：题源登记→来源人工审核→附件解析→确认导入→草稿审核→发布（人工门禁全程如实）', async ({ page }) => {
-  await enterSpace(page)
-  await navTab(page, /审核台/).click()
+  await enterAdminSpace(page)
+  await adminNavTab(page, /题库审核台/).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })

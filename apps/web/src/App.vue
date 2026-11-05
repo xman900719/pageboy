@@ -7,7 +7,6 @@ import Gate from './components/Gate.vue'
 import HomeView from './views/HomeView.vue'
 import PracticeView from './views/PracticeView.vue'
 import DiagnosisView from './views/DiagnosisView.vue'
-import AdminView from './views/AdminView.vue'
 
 /** 本机记住的令牌（ST-012）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
  *  值不出设备、不经网络传给任何第三方（verify 只是带 Authorization 的本服务请求）；
@@ -126,12 +125,6 @@ function signOut() {
         :subject="subject"
         :notify="notify"
         @goHome="view = 'home'"
-      />
-      <AdminView
-        v-else-if="view === 'admin'"
-        :client="client"
-        :subject="subject"
-        :notify="notify"
       />
     </main>
 

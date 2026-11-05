@@ -8,11 +8,10 @@ import {
   type NextItem,
   type PlanStep,
   type ProfileEntry,
-  type SchoolExam,
   type Subject,
   type Validation,
 } from '../api'
-import { DISCIPLINE_TEXT, DISCIPLINE_TITLE, EXAM_NOTE, fmtPoints, GAP_LABELS } from '../copy'
+import { DISCIPLINE_TEXT, DISCIPLINE_TITLE, GAP_LABELS } from '../copy'
 import QuestionCard from '../components/QuestionCard.vue'
 import Note from '../components/Note.vue'
 import PlanStepList from '../components/PlanStepList.vue'
@@ -45,12 +44,6 @@ const planStatus = ref<'loading' | 'goal' | 'error' | 'ok'>('loading')
 const profiles = ref<Record<string, ProfileEntry>>({})
 const refreshed = ref(false)
 const resumed = ref(false)
-const exams = ref<SchoolExam[] | null>(null)
-const examTitle = ref('学校考试')
-const examDate = ref(new Date().toISOString().slice(0, 10))
-const examEarned = ref(72)
-const examMax = ref(100)
-const savingExam = ref(false)
 
 async function loadPlan(): Promise<PlanStep[] | null> {
   try {
@@ -112,15 +105,6 @@ watch(
       .catch(() => {
         profiles.value = {}
       })
-
-    props.client
-      .schoolExams(props.subject)
-      .then(data => {
-        exams.value = data
-      })
-      .catch(() => {
-        exams.value = null
-      })
   },
   { immediate: true }
 )
@@ -163,26 +147,6 @@ async function onSubmitted(submitted: AttemptResult) {
   const [planRes, validationRes] = await Promise.allSettled([loadPlan(), loadValidation()])
   if (planRes.status === 'fulfilled' && planRes.value !== null) refreshed.value = true
   void validationRes
-}
-
-async function saveExam() {
-  savingExam.value = true
-  try {
-    const saved = await props.client.addSchoolExam({
-      subject: props.subject,
-      title: examTitle.value.trim() === '' ? '学校考试' : examTitle.value.trim(),
-      examDate: examDate.value,
-      earnedPoints: Number(examEarned.value),
-      maxPoints: Number(examMax.value),
-      confirmedByUser: true,
-    })
-    props.notify(`学校考试已记录（${saved.id.slice(0, 8)}…）。总分不产生考点证据。`, 'success')
-    exams.value = await props.client.schoolExams(props.subject)
-  } catch (e) {
-    props.notify(describeError(e), 'error')
-  } finally {
-    savingExam.value = false
-  }
 }
 </script>
 
@@ -266,50 +230,6 @@ async function saveExam() {
     </div>
     <ValidationPanel v-if="validation" :validation="validation" />
     <p v-else class="muted">{{ validationLoading ? '加载中…' : '阶段对比加载失败。' }}</p>
-  </section>
-
-  <section class="card" aria-label="学校考试总分">
-    <div class="card-head">
-      <h2>学校考试总分</h2>
-    </div>
-    <Note tone="caution">{{ EXAM_NOTE }}</Note>
-    <div class="exam-form">
-      <div class="goal-fields">
-        <label>
-          考试名称
-          <input v-model="examTitle" placeholder="如：学校月考" />
-        </label>
-        <label>
-          考试日期
-          <input type="date" v-model="examDate" />
-        </label>
-        <label>
-          获得分数
-          <input type="number" :min="0" v-model.number="examEarned" />
-        </label>
-        <label>
-          考试满分
-          <input type="number" :min="1" v-model.number="examMax" />
-        </label>
-      </div>
-      <button type="button" class="primary" @click="saveExam" :disabled="savingExam">
-        {{ savingExam ? '保存中…' : '记录已核对总分' }}
-      </button>
-    </div>
-    <p v-if="exams === null" class="muted">已录入考试加载中…</p>
-    <p v-else-if="exams.length === 0" class="muted">还没有录入过学校考试总分。</p>
-    <ul v-else class="exam-list">
-      <li v-for="exam in exams" :key="exam.id">
-        <span>{{ exam.exam_date }}</span>
-        <span class="exam-title">{{ exam.title }}</span>
-        <span>
-          <b>{{ fmtPoints(exam.earned_points) }} / {{ fmtPoints(exam.max_points) }}</b>
-        </span>
-        <span :class="['chip', exam.confirmed_by_user ? 'good' : 'wait']">
-          {{ exam.confirmed_by_user ? '已核对' : '未核对' }}
-        </span>
-      </li>
-    </ul>
   </section>
 
   <Note v-if="planStatus === 'goal'" tone="caution" title="还没有目标">

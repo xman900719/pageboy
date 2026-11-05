@@ -5,7 +5,6 @@ import {
   describeError,
   type ApiClient,
   type Plan,
-  type PoolHealth,
   type ProfileEntry,
   type Subject,
   type Validation,
@@ -13,7 +12,6 @@ import {
 import { GOAL_NOTE, pct, type ViewId } from '../copy'
 import Note from '../components/Note.vue'
 import PlanStepList from '../components/PlanStepList.vue'
-import PoolHealthCard from '../components/PoolHealthCard.vue'
 import ValidationPanel from '../components/ValidationPanel.vue'
 
 type Notify = (text: string, tone?: 'info' | 'success' | 'caution' | 'error') => void
@@ -32,7 +30,6 @@ const emit = defineEmits<{
 const planState = ref<PlanState>({ status: 'loading', plan: null, errorText: '' })
 const profiles = ref<Record<string, ProfileEntry>>({})
 const validation = ref<Validation | null>(null)
-const poolHealth = ref<PoolHealth | null>(null)
 const loading = ref(true)
 const goalOpen = ref(false)
 const target = ref(props.subject === 'physics' ? 70 : 90)
@@ -43,11 +40,10 @@ const maxPoints = computed(() => (props.subject === 'physics' ? 80 : 100))
 
 async function refresh() {
   loading.value = true
-  const [planRes, profileRes, validationRes, poolRes] = await Promise.allSettled([
+  const [planRes, profileRes, validationRes] = await Promise.allSettled([
     props.client.plan(props.subject),
     props.client.profile(props.subject),
     props.client.validation(props.subject),
-    props.client.poolHealth(props.subject),
   ])
   if (planRes.status === 'fulfilled') {
     planState.value = { status: 'ok', plan: planRes.value, errorText: '' }
@@ -65,7 +61,6 @@ async function refresh() {
     )
   }
   if (validationRes.status === 'fulfilled') validation.value = validationRes.value
-  if (poolRes.status === 'fulfilled') poolHealth.value = poolRes.value
   loading.value = false
 }
 
@@ -170,14 +165,6 @@ async function saveGoal() {
         </div>
         <ValidationPanel v-if="validation" :validation="validation" />
         <p v-else class="muted">{{ loading ? '加载中…' : '阶段对比加载失败。' }}</p>
-      </section>
-
-      <section class="card" aria-label="题库体检">
-        <div class="card-head">
-          <h2>题库体检</h2>
-        </div>
-        <PoolHealthCard v-if="poolHealth" :data="poolHealth" />
-        <p v-else class="muted">{{ loading ? '加载中…' : '题库体检加载失败。' }}</p>
       </section>
 
       <Note title="这里的数字是什么">

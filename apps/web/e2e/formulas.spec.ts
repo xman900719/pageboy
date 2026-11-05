@@ -109,6 +109,13 @@ async function enterSpace(page: Page): Promise<void> {
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
+async function enterAdminSpace(page: Page): Promise<void> {
+  await page.goto('/admin.html')
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+}
+
 function questionCard(page: Page) {
   return page.getByRole('region', { name: '题目' })
 }
@@ -179,8 +186,7 @@ test('主观题：参考答案公式渲染（自评链照常）', async ({ page 
 /* ---------- 审核台：草稿列表公式预览 ---------- */
 
 test('审核台：题目草稿列表的公式预览同样安全渲染', async ({ page }) => {
-  await enterSpace(page)
-  await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /审核台/ }).click()
+  await enterAdminSpace(page)
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   await ledger.getByRole('button', { name: /ST-013 公式渲染题源/ }).click()

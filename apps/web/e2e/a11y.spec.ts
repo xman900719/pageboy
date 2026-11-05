@@ -28,6 +28,13 @@ async function enterSpace(page: Page): Promise<void> {
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
+async function enterAdminSpace(page: Page): Promise<void> {
+  await page.goto('/admin.html')
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+}
+
 function navTab(page: Page, label: RegExp) {
   return page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: label })
 }
@@ -109,7 +116,7 @@ test('A2 练习：训练题卡渲染后的 WCAG A/AA 扫描', async ({ page }) =
   await scanAndReport(page, 'practice')
 })
 
-test('A3 阶段诊断：独立验证纪律、判决与校卷总分面板的 WCAG A/AA 扫描', async ({ page }) => {
+test('A3 阶段诊断：独立验证纪律与判决面板的 WCAG A/AA 扫描', async ({ page }) => {
   await enterSpace(page)
   await navTab(page, /阶段诊断/).click()
 
@@ -118,15 +125,13 @@ test('A3 阶段诊断：独立验证纪律、判决与校卷总分面板的 WCAG
   const claimRegion = page.getByRole('region', { name: '领取未见题' })
   await expect(claimRegion).toContainText('「未见题」指你从未曝光过的题')
   await expect(page.getByRole('region', { name: '阶段对比判决' })).toContainText('证据不足，无法比较')
-  await expect(page.getByRole('region', { name: '学校考试总分' })).toContainText('总分不产生考点证据')
   await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toBeEnabled()
 
   await scanAndReport(page, 'diagnosis')
 })
 
 test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', async ({ page }) => {
-  await enterSpace(page)
-  await navTab(page, /审核台/).click()
+  await enterAdminSpace(page)
 
   // 种子含两个已发布题源：台账非空，默认选中第一个，四个区块完整渲染后扫描。
   // 本扫描只读：不创建题源、不上传、不提交审核（state 边界与 a11y 文件头一致）。

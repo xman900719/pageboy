@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -8,4 +9,12 @@ export default defineConfig({
   plugins: [vue()],
   server: { proxy: { '/api': apiTarget, '/health': apiTarget } },
   preview: { proxy: { '/api': apiTarget, '/health': apiTarget } },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        admin: resolve(__dirname, 'admin.html'),
+      },
+    },
+  },
 })

@@ -2,12 +2,33 @@
 # TLS 在 Cloudflare 终结（Tunnel → Access → 本端口明文回环，不出宿主）。
 # SPA 路由回退：任意未命中路径回 index.html。
 :8080 {
+	# 阻断来自外网 Cloudflare 隧道的管理端访问（iPad 等外网设备严禁访问管理端）
+	@cf_admin_web {
+		header CF-Ray *
+		path /admin* /admin.html*
+	}
+	@cf_admin_api {
+		header CF-Ray *
+		path /api/admin/*
+	}
+	handle @cf_admin_web {
+		respond "Access Denied: Admin is restricted to local network" 403
+	}
+	handle @cf_admin_api {
+		respond "Access Denied: Admin API is restricted to local network" 403
+	}
+
 	# API 与健康检查转发到 compose 网络内的 api 服务（容器名 DNS，勿用 127.0.0.1）。
 	handle /api/* {
 		reverse_proxy api:8000
 	}
 	handle /health/* {
 		reverse_proxy api:8000
+	}
+	handle /admin* {
+		root * /srv/web
+		rewrite * /admin.html
+		file_server
 	}
 	handle {
 		root * /srv/web

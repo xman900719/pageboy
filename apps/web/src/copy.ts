@@ -1,13 +1,20 @@
 /* All user-facing labels & honest-language copy in one place (red-line discipline). */
 import type { AttachmentStatus, GapType, Kind, QuestionVersionStatus, RightsStatus } from './api'
 
-export type ViewId = 'home' | 'practice' | 'diagnosis' | 'admin'
+export type ViewId = 'home' | 'practice' | 'diagnosis'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'home', label: '首页', hint: '目标与知识点状态' },
   { id: 'practice', label: '练习', hint: '复练与轮换取题' },
   { id: 'diagnosis', label: '阶段诊断', hint: '未见题独立验证' },
-  { id: 'admin', label: '审核台', hint: '题源 · 附件 · 人工发布' },
+]
+
+export type AdminViewId = 'ledger' | 'health' | 'exams'
+
+export const ADMIN_VIEWS: { id: AdminViewId; label: string; hint: string }[] = [
+  { id: 'ledger', label: '题库审核台', hint: '题源 · 附件 · 人工发布' },
+  { id: 'health', label: '题库体检', hint: '余量与知识点覆盖' },
+  { id: 'exams', label: '学校考试', hint: '月考与期末总分录入' },
 ]
 
 export const GAP_LABELS: Record<GapType, string> = {

@@ -9,11 +9,11 @@ import { getKnowledgeLabel } from '../src/config/knowledge'
 
 const TOKEN = 'test-journey-secret'
 
-async function enterSpace(page: Page): Promise<void> {
-  await page.goto('/')
+async function enterAdminSpace(page: Page): Promise<void> {
+  await page.goto('/admin.html')
   await page.getByLabel('访问令牌').fill(TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
-  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
 
 /** 诚实文案红线（与 journeys.spec.ts 同一口径）：禁「提分」；「预测」只允许否定式上下文。 */
@@ -27,7 +27,8 @@ async function expectHonestLanguage(page: Page): Promise<void> {
 }
 
 test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责声明在位', async ({ page }) => {
-  await enterSpace(page)
+  await enterAdminSpace(page)
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: /题库体检/ }).click()
 
   const card = page.getByRole('region', { name: '题库体检' })
   await expect(card).toBeVisible()
@@ -50,7 +51,8 @@ test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责�
 })
 
 test('J7b 题库体检：零余量知识点如实显示「暂无未见题余量」，不伪造 0 分语义', async ({ page }) => {
-  await enterSpace(page)
+  await enterAdminSpace(page)
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: /题库体检/ }).click()
 
   const card = page.getByRole('region', { name: '题库体检' })
   await expect(card).toBeVisible()

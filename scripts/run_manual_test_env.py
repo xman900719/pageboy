@@ -38,35 +38,6 @@ WEB_PORT = 4173
 TEST_TOKEN = "test-journey-secret"
 
 
-def get_host_ips() -> list[str]:
-    """获取宿主机局域网主要 IP 地址列表，优先返回 192.168.* 物理网卡 IP"""
-    ips: list[str] = []
-    try:
-        res = subprocess.run(["ip", "-br", "addr"], capture_output=True, text=True)
-        for line in res.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 3 and parts[1].upper() == "UP":
-                for cidr in parts[2:]:
-                    ip = cidr.split("/")[0]
-                    if ":" not in ip and not ip.startswith("127."):
-                        ips.append(ip)
-    except Exception:
-        pass
-
-    # 排序：优先 192.168.*，再 172.* / 10.*，其余排后
-    def ip_prio(ip: str) -> int:
-        if ip.startswith("192.168."):
-            return 0
-        if ip.startswith("172."):
-            return 1
-        if ip.startswith("10."):
-            return 2
-        return 3
-
-    ips.sort(key=ip_prio)
-    return ips or ["127.0.0.1"]
-
-
 def is_port_in_use(port: int) -> bool:
     """检查指定 TCP 端口是否被占用"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -122,16 +93,17 @@ def start_env() -> int:
         return 1
 
     # 3. 启动后端 API 服务
-    print(f"🌐 正在启动后端 API 服务 (监听 0.0.0.0:{API_PORT})...")
+    print(f"🌐 正在启动后端 API 服务 (监听 127.0.0.1:{API_PORT})...")
     api_log_path = TMP_DIR / "manual_api.log"
     api_log_file = open(api_log_path, "w", encoding="utf-8")
     api_env = os.environ.copy()
     api_env["SHUTONG_TOKEN"] = TEST_TOKEN
     api_env["DATABASE_URL"] = f"sqlite:///{DB_FILE}"
-    api_env["PAGEBOY_ATTACHMENTS_DIR"] = str(ATTACHMENTS_DIR)
+    api_env["SHUTONG_PRIVATE_DIR"] = str(ATTACHMENTS_DIR)
+    api_env["SHUTONG_ENV"] = "test"
 
     api_proc = subprocess.Popen(
-        ["uv", "run", "python", "-m", "uvicorn", "shutong.main:app", "--host", "0.0.0.0", "--port", str(API_PORT)],
+        ["uv", "run", "python", "-m", "uvicorn", "shutong.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
         cwd=REPO_ROOT,
         env=api_env,
         stdout=api_log_file,
@@ -161,15 +133,15 @@ import('./apps/web/e2e/global-setup.ts').then(async m => {
         stop_env()
         return 1
 
-    # 5. 启动前端 Vite 生产预览 (绑定 0.0.0.0:4173，内置同源代理)
-    print(f"🎨 正在启动前端预览服务 (监听 0.0.0.0:{WEB_PORT})...")
+    # 5. 启动前端 Vite 生产预览 (绑定 127.0.0.1:4173，内置同源代理)
+    print(f"🎨 正在启动前端预览服务 (监听 127.0.0.1:{WEB_PORT})...")
     web_log_path = TMP_DIR / "manual_web.log"
     web_log_file = open(web_log_path, "w", encoding="utf-8")
     web_env = os.environ.copy()
     web_env["API_PROXY_TARGET"] = f"http://127.0.0.1:{API_PORT}"
 
     web_proc = subprocess.Popen(
-        ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", str(WEB_PORT)],
+        ["npm", "run", "preview", "--", "--host", "127.0.0.1", "--port", str(WEB_PORT)],
         cwd=REPO_ROOT / "apps" / "web",
         env=web_env,
         stdout=web_log_file,
@@ -187,15 +159,11 @@ import('./apps/web/e2e/global-setup.ts').then(async m => {
     PID_FILE.write_text(json.dumps(pids, indent=2), encoding="utf-8")
 
     # 7. 打印就绪信息与 iPadOS 模拟机操作入口
-    host_ips = get_host_ips()
-    primary_ip = host_ips[0]
     print("==================================================================")
-    print("✅ 测试服务已在宿主机就绪！")
-    print(f"📱 iPadOS 模拟机推荐访问入口: http://{primary_ip}:{WEB_PORT}")
-    if len(host_ips) > 1:
-        print(f"🔗 备选网络 IP 入口:        " + ", ".join(f"http://{ip}:{WEB_PORT}" for ip in host_ips[1:3]))
-    print(f"💻 宿主机本地回环入口:       http://127.0.0.1:{WEB_PORT}")
-    print(f"🔑 测试有效访问令牌:         {TEST_TOKEN}")
+    print("✅ 测试服务已在宿主机就绪！（仅监听回环地址，真实 iPad 不可访问；iPad 只连生产）")
+    print(f"📱 iPadOS 模拟机访问入口 (学生端):  http://127.0.0.1:{WEB_PORT}")
+    print(f"🖥️ PC 桌面端访问入口 (管理端):     http://127.0.0.1:{WEB_PORT}/admin.html")
+    print(f"🔑 测试有效访问令牌:              {TEST_TOKEN}")
     print("==================================================================")
     print("测试人可直接在用于模拟 iPadOS 环境的模拟机中打开上述链接进行操作。")
     print("测试完成后，运行 `uv run python scripts/run_manual_test_env.py stop` 停止环境。")
@@ -234,8 +202,6 @@ def stop_env() -> int:
 
 def status_env() -> int:
     """检查测试环境状态与连通性"""
-    host_ips = get_host_ips()
-    primary_ip = host_ips[0]
     api_live = is_port_in_use(API_PORT)
     web_live = is_port_in_use(WEB_PORT)
 
@@ -244,9 +210,8 @@ def status_env() -> int:
     print("==================================================================")
     print(f"后端 API (端口 {API_PORT}): {'🟢 在线' if api_live else '🔴 离线'}")
     print(f"前端 Web (端口 {WEB_PORT}): {'🟢 在线' if web_live else '🔴 离线'}")
-    print(f"宿主机主要网络 IP:         {primary_ip}")
     if web_live:
-        print(f"iPadOS 模拟机推荐访问 URL: http://{primary_ip}:{WEB_PORT}")
+        print(f"iPadOS 模拟机访问 URL: http://127.0.0.1:{WEB_PORT}")
     print("==================================================================")
     return 0 if (api_live and web_live) else 1
 
