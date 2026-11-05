@@ -12,6 +12,7 @@
 #   infra/deploy.sh                 # 构建并部署 shutong-api:api-<git短SHA>
 #   SHUTONG_API_TAG=api-<sha> infra/deploy.sh --no-build   # 只切换/重部署已有本地镜像
 #   infra/deploy.sh --web           # 部署前先重建 apps/web/dist（宿主 caddy 直接伺服）
+#   infra/deploy.sh --allow-dirty   # 工作区有未提交改动时默认拒绝部署；显式放行（标签将不可追溯）
 #
 # 环境：infra/.env（与运行栈同一份；不新建、不打印其中的机密）。
 set -euo pipefail
@@ -25,13 +26,21 @@ set -a; source "$ENV_FILE"; set +a
 
 no_build=0
 with_web=0
+allow_dirty=0
 for arg in "$@"; do
   case "$arg" in
     --no-build) no_build=1 ;;
     --web) with_web=1 ;;
+    --allow-dirty) allow_dirty=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+
+# 环境隔离护栏：标签取自 git HEAD，有未提交改动时镜像内容与标签不符，默认拒绝。
+if [[ "$allow_dirty" -eq 0 && -n "$(git -C "$repo_root" status --porcelain)" ]]; then
+  echo "工作区有未提交改动，拒绝部署（标签 $(git -C "$repo_root" rev-parse --short HEAD) 将不可追溯）；确需部署请加 --allow-dirty" >&2
+  exit 3
+fi
 
 API_BASE_URL="${API_BASE_URL:-http://127.0.0.1:18000}"
 WEB_BASE_URL="${WEB_BASE_URL:-http://127.0.0.1:8180}"
@@ -55,6 +64,7 @@ smoke() {
   ready="$(curl -fsS --max-time 10 "$API_BASE_URL/health/ready")"
   # app_revision 与镜像标签一致，才承认"这个构建在服务"（ST-017）。
   grep -q "\"app_revision\":\"$tag\"" <<<"$live" || { echo "SMOKE FAIL: /health/live 未报告 $tag：$live" >&2; return 1; }
+  grep -q '"env":"prod"' <<<"$live" || { echo "SMOKE FAIL: /health/live 未报告 env=prod：$live" >&2; return 1; }
   grep -q '"status":"ready"' <<<"$ready" || { echo "SMOKE FAIL: /health/ready: $ready" >&2; return 1; }
   subjects="$(curl -fsS --max-time 10 -H "Authorization: Bearer $SHUTONG_TOKEN" "$API_BASE_URL/api/subjects")"
   grep -q '"math"' <<<"$subjects" || { echo "SMOKE FAIL: /api/subjects: $subjects" >&2; return 1; }

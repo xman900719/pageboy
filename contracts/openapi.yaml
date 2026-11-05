@@ -106,6 +106,16 @@ components:
       - answer
       title: AttemptIn
       type: object
+    ErratumIn:
+      properties:
+        note:
+          minLength: 1
+          title: Note
+          type: string
+      required:
+      - note
+      title: ErratumIn
+      type: object
     GoalIn:
       properties:
         max_points:
@@ -162,6 +172,95 @@ components:
       - confirmed_by_human
       - questions
       title: ImportConfirmationIn
+      type: object
+    LinkIn:
+      properties:
+        evidence:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Evidence
+        node_id:
+          title: Node Id
+          type: string
+        question_version_id:
+          title: Question Version Id
+          type: string
+        role:
+          default: core
+          enum:
+          - core
+          - aux
+          title: Role
+          type: string
+        sub_index:
+          default: 0
+          minimum: 0.0
+          title: Sub Index
+          type: integer
+      required:
+      - question_version_id
+      - node_id
+      title: LinkIn
+      type: object
+    NodeIn:
+      properties:
+        code:
+          maxLength: 80
+          minLength: 1
+          title: Code
+          type: string
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        name:
+          maxLength: 200
+          minLength: 1
+          title: Name
+          type: string
+        origin:
+          default: manual
+          enum:
+          - manual
+          - ai_suggested
+          title: Origin
+          type: string
+        parent_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Code
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      required:
+      - subject
+      - code
+      - name
+      title: NodeIn
+      type: object
+    NodeVersionIn:
+      properties:
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        name:
+          maxLength: 200
+          minLength: 1
+          title: Name
+          type: string
+      required:
+      - name
+      title: NodeVersionIn
       type: object
     QuestionIn:
       properties:
@@ -316,6 +415,26 @@ components:
       - media_attachment_id
       title: QuestionVersionOut
       type: object
+    RunIn:
+      properties:
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        target_year:
+          maximum: 2100.0
+          minimum: 2000.0
+          title: Target Year
+          type: integer
+      required:
+      - subject
+      - target_year
+      title: RunIn
+      type: object
     SchoolExamIn:
       properties:
         confirmed_by_user:
@@ -460,6 +579,12 @@ components:
             type: integer
           - type: 'null'
           title: Exam Year
+        paper_key:
+          anyOf:
+          - maxLength: 40
+            type: string
+          - type: 'null'
+          title: Paper Key
         rights_status:
           default: unknown
           enum:
@@ -467,6 +592,23 @@ components:
           - personal_use_reviewed
           - licensed
           title: Rights Status
+          type: string
+        sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Sha256
+        source_class:
+          default: unclassified
+          enum:
+          - official_exam
+          - aux_book
+          - adapted
+          - school
+          - ai
+          - unclassified
+          title: Source Class
           type: string
         source_url:
           anyOf:
@@ -567,6 +709,27 @@ components:
       - reviewed_by
       - created_at
       title: SourceReviewRecordOut
+      type: object
+    SourceStatusIn:
+      properties:
+        ingest_status:
+          anyOf:
+          - enum:
+            - recorded
+            - ingested
+            type: string
+          - type: 'null'
+          title: Ingest Status
+        review_status:
+          anyOf:
+          - enum:
+            - pending
+            - approved
+            - rejected
+            type: string
+          - type: 'null'
+          title: Review Status
+      title: SourceStatusIn
       type: object
     ValidationError:
       properties:
@@ -737,6 +900,245 @@ paths:
       summary: Parse Attachment
       tags:
       - private content ingestion
+  /api/admin/coverage:
+    get:
+      operationId: coverage_api_admin_coverage_get
+      parameters:
+      - in: query
+        name: year_from
+        required: false
+        schema:
+          default: 2018
+          title: Year From
+          type: integer
+      - in: query
+        name: year_to
+        required: false
+        schema:
+          default: 2026
+          title: Year To
+          type: integer
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Coverage
+  /api/admin/knowledge/links:
+    post:
+      operationId: link_api_admin_knowledge_links_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Link
+  /api/admin/knowledge/links/{link_id}/review:
+    post:
+      operationId: review_link_api_admin_knowledge_links__link_id__review_post
+      parameters:
+      - in: path
+        name: link_id
+        required: true
+        schema:
+          title: Link Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Review Link
+  /api/admin/knowledge/nodes:
+    post:
+      operationId: create_node_api_admin_knowledge_nodes_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Create Node
+  /api/admin/knowledge/nodes/{node_id}/deprecate:
+    post:
+      operationId: deprecate_node_api_admin_knowledge_nodes__node_id__deprecate_post
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      - in: query
+        name: merged_into
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Merged Into
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Deprecate Node
+  /api/admin/knowledge/nodes/{node_id}/questions:
+    get:
+      operationId: node_questions_api_admin_knowledge_nodes__node_id__questions_get
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Node Questions
+  /api/admin/knowledge/nodes/{node_id}/versions:
+    post:
+      operationId: revise_node_api_admin_knowledge_nodes__node_id__versions_post
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeVersionIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Revise Node
   /api/admin/questions:
     post:
       operationId: add_question_api_admin_questions_post
@@ -768,6 +1170,74 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add Question
+  /api/admin/questions/{version_id}/errata:
+    post:
+      operationId: add_erratum_api_admin_questions__version_id__errata_post
+      parameters:
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErratumIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Add Erratum
+  /api/admin/questions/{version_id}/knowledge:
+    get:
+      operationId: question_knowledge_api_admin_questions__version_id__knowledge_get
+      parameters:
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Question Knowledge
   /api/admin/questions/{version_id}/publish:
     post:
       operationId: publish_question_api_admin_questions__version_id__publish_post
@@ -875,6 +1345,61 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Revise Question
+  /api/admin/research/runs:
+    get:
+      operationId: list_runs_api_admin_research_runs_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Runs
+    post:
+      operationId: run_research_api_admin_research_runs_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Run Research
   /api/admin/sources:
     get:
       operationId: source_ledger_api_admin_sources_get
@@ -1127,6 +1652,44 @@ paths:
       summary: Review Source
       tags:
       - private content ingestion
+  /api/admin/sources/{source_id}/status:
+    post:
+      description: 采录状态与审核状态分别维护；仅 owner 人工操作。
+      operationId: set_source_status_api_admin_sources__source_id__status_post
+      parameters:
+      - in: path
+        name: source_id
+        required: true
+        schema:
+          title: Source Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceStatusIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Set Source Status
   /api/goals:
     post:
       operationId: set_goal_api_goals_post

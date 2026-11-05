@@ -12,6 +12,8 @@ from starlette.concurrency import run_in_threadpool
 from .auth import require_owner
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
+from .fourcorpus import router as corpus_router
+from .research import official_reject_reason
 from .database import get_db
 from . import models as m
 from . import private_files as files
@@ -20,12 +22,14 @@ from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_val
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
+app.include_router(corpus_router)
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if x.strip()], allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["Authorization", "Content-Type"])
 
 @app.get("/health/live")
 def live():
     # app_revision 供部署/回滚演练核对“哪个构建在服务”（ST-017）；未设置时如实报 dev。
-    return {"status": "alive", "app_revision": os.getenv("SHUTONG_APP_REVISION", "dev")}
+    # env 标识运行环境（dev/test/prod），供脚本拒绝向 prod 写入演示数据；未设置即 dev。
+    return {"status": "alive", "app_revision": os.getenv("SHUTONG_APP_REVISION", "dev"), "env": os.getenv("SHUTONG_ENV", "dev")}
 
 @app.get("/health/ready")
 def ready(db: Session = Depends(get_db)):
@@ -37,6 +41,13 @@ def ready(db: Session = Depends(get_db)):
 
 @app.post("/api/admin/sources", status_code=201)
 def add_source(payload: SourceIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+    if payload.source_class == "official_exam":
+        reason = official_reject_reason(payload.title)
+        if reason:
+            raise HTTPException(422, detail=reason)
+    # 仅格式合法的哈希不能证明原件存在；来源哈希由附件上传端计算并登记。
+    if payload.sha256 is not None:
+        raise HTTPException(422, detail="SOURCE_HASH_REQUIRES_ATTACHMENT_UPLOAD")
     src = m.SourceDocument(**payload.model_dump())
     db.add(src); db.commit(); db.refresh(src)
     return {"id": src.id, "status": "recorded"}

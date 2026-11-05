@@ -13,3 +13,12 @@ def test_health_live_reports_build_revision(client, monkeypatch):
     r = client.get("/health/live")
     assert r.status_code == 200
     assert r.json()["app_revision"] == "drill-b"
+
+
+def test_health_live_env_defaults_to_dev(client):
+    assert client.get("/health/live").json()["env"] == "dev"  # 缺省不得冒充 prod
+
+
+def test_health_live_reports_env(client, monkeypatch):
+    monkeypatch.setenv("SHUTONG_ENV", "prod")
+    assert client.get("/health/live").json()["env"] == "prod"

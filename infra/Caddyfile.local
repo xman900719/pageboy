@@ -4,11 +4,32 @@
 #   infra/.local/caddy run --config infra/Caddyfile.local --pidfile infra/.local/caddy.pid
 # TLS 在 Cloudflare 终结（Tunnel → Access 门禁 → 本端口明文回环，不出宿主）；SPA 路由回退。
 :8180 {
+	# 阻断来自外网 Cloudflare 隧道的管理端访问（iPad 等外网设备严禁访问管理端）
+	@cf_admin_web {
+		header CF-Ray *
+		path /admin* /admin.html*
+	}
+	@cf_admin_api {
+		header CF-Ray *
+		path /api/admin/*
+	}
+	handle @cf_admin_web {
+		respond "Access Denied: Admin is restricted to local network" 403
+	}
+	handle @cf_admin_api {
+		respond "Access Denied: Admin API is restricted to local network" 403
+	}
+
 	handle /api/* {
 		reverse_proxy 127.0.0.1:18000
 	}
 	handle /health/* {
 		reverse_proxy 127.0.0.1:18000
+	}
+	handle /admin* {
+		root * ../apps/web/dist
+		rewrite * /admin.html
+		file_server
 	}
 	handle {
 		root * ../apps/web/dist

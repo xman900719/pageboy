@@ -80,3 +80,16 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
 - **ST-018（会话续答）**：`GET /api/practice/resume` 只读恢复最近未作答诊断曝光（避免刷新/重开空烧未见题），J9 双引擎通过（后端 134 passed/25 skipped，chromium 17p/3s，iPad/WebKit 20p），远端 CI 五作业全绿，生产栈已部署 `shutong-api:api-198ad7a`（`v1.6.1`）；详见 [验证记录](docs/quality/st-018-session-resume.md)。
 - **ST-016（生产栈与真机 iPad 现场核对）**：经 USB Web Inspector 在真实 iPad Pro 12.9" 上完成首页/题库体检、练习判分、阶段诊断诚实对比、ST-018 续答、KaTeX 公式渲染与转义安全、PWA standalone 与本机记住令牌、断网文案核验；同步修复隧道 HTTP/2 协议、1033 自愈 watchdog 与局域网代理通道；详见 [验证记录](docs/quality/st-016-production-onsite.md)。
 - **2026-11-01 运维加固**：实测排查发现宿主机重启后 `/tmp/opencode`（tmpfs）消失会导致备份 cron 外层重定向失败与 `tunnel-watchdog.sh` 状态写入失败，已统一迁移至持久化目录 `infra/.local/logs` 并验证 R2 快照恢复。
+
+## 四科语料增量（迁移 0006）
+
+已实现并通过后端测试：来源类别/哈希/采录与审核状态、知识点版本化与题目双向关联、勘误、覆盖缺口报告、统计型命题研究与无泄漏回测、`scripts/audit_exam_corpus.py` 只读审计。**未实现**：知识点内容播种、真题切题入库与人工审核、AI 模型推理（BLOCKED）、前端界面。详见 [四科语料增量](docs/design/four-subject-corpus.md)。
+
+## 前端管理与使用功能物理强隔离（阶段 7，2026-11-06）
+
+已通过 Vite MPA 多入口架构（`index.html` 与 `admin.html`）实现学生端与管理端物理脱钩。学生端彻底剥离审核台、题库体检卡片与校考录入表单；管理端工作台聚合审核台、题库体检与学校考试录入。Caddy 反代层对所有带有 `CF-Ray` 的外网隧道请求访问管理端实施 403 Forbidden 物理阻断。Playwright E2E、Vitest 及 iPadOS 模拟机主题 6 人工验收全部全绿放行。详见 [主题 6 核验清单](docs/quality/checklists/06-frontend-isolation.md)。
+
+## 生产环境大容量存储迁移与环境隔离（阶段 8，2026-11-06）
+
+生产根目录已平滑迁移至独立挂载大容量数据盘 `/media/xc/backup_ext4/prod-env/pageboy`。通过 `scripts/check_env_isolation.sh` 实施环境隔离自检护栏，确保开发树无生产配置密钥、无真实附件且开发用户无 docker 组提权。
+

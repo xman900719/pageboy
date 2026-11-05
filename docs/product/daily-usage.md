@@ -34,7 +34,7 @@ infra/deploy.sh --web      # 同前并重建 Web 产物
 infra/rollback.sh          # 回滚到上一个可用镜像标签
 ```
 
-备份每 4 小时自动执行（R2 异地 + healthchecks.io 静默告警）；恢复流程见 [recovery-runbook.md](../operations/recovery-runbook.md)。iPad 真机核对清单见 [ipad-field-checklist.md](../operations/ipad-field-checklist.md)。
+备份每 4 小时自动执行（R2 异地 + healthchecks.io 静默告警）；恢复流程见 [recovery-runbook.md](../operations/recovery-runbook.md)。iPad 真机核对清单见 [ipad-field-checklist.md](../operations/ipad-field-checklist.md)。前端重构与人工验收步骤见 [manual-acceptance.md](../quality/manual-acceptance.md)。
 
 ## iPad 使用注意（2026-10-30 实测）
 

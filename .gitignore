@@ -26,6 +26,8 @@ secrets/
 site/
 .cache/
 .slim/deepwork/
+test-results/
 apps/web/test-results/
 apps/web/playwright-report/
 infra/.local/
+.vscode/

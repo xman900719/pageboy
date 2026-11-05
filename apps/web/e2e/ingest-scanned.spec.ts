@@ -81,9 +81,15 @@ async function enterSpace(page: Page): Promise<void> {
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
+async function enterAdminSpace(page: Page): Promise<void> {
+  await page.goto('/admin.html')
+  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+}
+
 test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确认导入→审核发布→练习渲染公式', async ({ page }) => {
-  await enterSpace(page)
-  await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /审核台/ }).click()
+  await enterAdminSpace(page)
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })
@@ -142,7 +148,8 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await draftRow.getByRole('button', { name: '发布' }).click()
   await expect(page.getByRole('status')).toContainText('题目已发布')
 
-  // ⑥ 进入练习按该知识点取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
+  // ⑥ 进入学生练习区按该知识点取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
+  await enterSpace(page)
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
   await practice.getByLabel('按知识点').selectOption(KID)

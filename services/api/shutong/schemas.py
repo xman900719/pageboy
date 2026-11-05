@@ -12,6 +12,9 @@ class SourceIn(BaseModel):
     source_url: str | None = None
     rights_status: Literal["unknown", "personal_use_reviewed", "licensed"] = "unknown"
     verified: bool = False
+    source_class: Literal["official_exam", "aux_book", "adapted", "school", "ai", "unclassified"] = "unclassified"
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    paper_key: str | None = Field(default=None, max_length=40)
 
 class QuestionIn(BaseModel):
     source_document_id: str

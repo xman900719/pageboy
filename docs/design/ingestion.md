@@ -23,6 +23,8 @@
 | 文本草稿 | `POST /api/admin/attachments/{attachment_id}/parse`，PDF 用 Poppler、图片用本地 Tesseract `chi_sim+eng`，记录解析器版本，不调用外部模型；无文本层的 PDF 走 pdftoppm 渲染 + 逐页 OCR 兜底（页码标记草稿，仍须人工核对） |
 | 人工确认 | `POST /api/admin/attachments/{attachment_id}/confirm`，提交 `confirmed_by_human=true` 与同来源的 1–100 个完整 `QuestionIn`；单事务创建草稿和原件追溯关系 |
 
+来源登记的 `SourceIn.sha256` 不能作为未经字节核对的可信原件哈希：若在 `POST /api/admin/sources` 中直接提交该字段，返回 422。须在附件上传时由服务端计算，并可用上传请求的 `expected_sha256` 核对。来源级哈希对应首次成功上传的附件，之后的补充附件保留各自 SHA256；历史来源若没有任何已上传附件，单独填写的哈希不构成已核验原件证据。文件上传成功本身不意味着题目已结构化入库。
+
 状态为 `uploaded → parsed / needs_manual_input → confirmed`。无可提取文字且 OCR 无输出的扫描 PDF 返回 `needs_manual_input`，人工录入完整题目后可继续。确认不是发布；答案、选项、标签须人工提供，草稿仍需独立题目审核和来源发布门禁。已确认附件不能重解析或再次确认；修订沿用原件关系，发布时重新核对哈希。带附件来源不能通过旧建题接口绕过导入确认。
 
 未实现公式/图表/题组自动结构化、版权证据专项管理；扫描 PDF OCR 准确率与真实题源合法性没有用真实材料证明（合成测试只验证管线通断）。混合版式 PDF（部分页有文本层）不做部分 OCR。根目录的测试样例均是**虚构题**，不得伪称历年真题。验证及迁移边界见 [ST-003 记录](../quality/st-003-private-ingestion.md) 与 [ST-014 记录](../quality/st-014-scanned-pdf-ocr.md)。

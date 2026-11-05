@@ -12,7 +12,7 @@ from .auth import require_owner
 from .content import create_question_draft
 from .database import get_db
 from . import private_files as files
-from .schemas import AttachmentOut, ImportConfirmationIn, QuestionVersionOut, SourceDetailOut, SourceReviewIn, SourceReviewRecordOut
+from .schemas import AttachmentOut, ImportConfirmationIn, QuestionVersionOut, SourceDetailOut, SourceIn, SourceReviewIn, SourceReviewRecordOut
 
 router = APIRouter(prefix="/api/admin", tags=["private content ingestion"])
 
@@ -49,7 +49,10 @@ def source_details(source_id: str, owner: str = Depends(require_owner), db: Sess
     source = source_or_404(db, source_id)
     reviews = db.scalars(select(m.SourceReview).where(m.SourceReview.source_document_id == source_id).order_by(m.SourceReview.created_at, m.SourceReview.id)).all()
     attachments = db.scalars(select(m.SourceAttachment).where(m.SourceAttachment.source_document_id == source_id, m.SourceAttachment.owner_id == owner).order_by(m.SourceAttachment.created_at, m.SourceAttachment.id)).all()
-    return {"id": source.id, "source": {name: getattr(source, name) for name in ("title", "subject", "exam_year", "source_url", "rights_status", "verified")},
+    source_info = {name: getattr(source, name) for name in SourceIn.model_fields}
+    # 老记录的来源级哈希可能只是人工输入，不能作为原件存在的证据。
+    source_info["sha256"] = attachments[0].sha256 if attachments else None
+    return {"id": source.id, "source": source_info,
             "reviews": [review_data(review) for review in reviews], "attachments": [attachment_data(db, item) for item in attachments]}
 
 
@@ -92,11 +95,17 @@ def save_attachment(db, source_id, owner, filename, media_type, data, expected_s
     digest = sha256(data).hexdigest()
     if expected_sha256 is not None and expected_sha256 != digest:
         raise HTTPException(422, detail="UPLOAD_HASH_MISMATCH")
+    # 来源级 SHA256 锚定首次上传的文件。后续音频、图片等补充附件不能覆写它。
+    first_attachment = db.scalars(select(m.SourceAttachment).where(
+        m.SourceAttachment.source_document_id == source.id).order_by(
+        m.SourceAttachment.created_at, m.SourceAttachment.id).limit(1)).first()
     key = None
     try:
         key = files.write_blob(data)
         attachment = m.SourceAttachment(source_document_id=source.id, owner_id=owner, filename=filename,
                                         media_type=media_type, sha256=digest, byte_size=len(data), storage_key=key)
+        # 旧记录如有未经原件核对的手填哈希，以已有附件的服务端哈希校正。
+        source.sha256 = first_attachment.sha256 if first_attachment is not None else digest
         source.verified = False
         db.add(attachment)
         db.commit()

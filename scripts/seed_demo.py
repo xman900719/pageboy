@@ -5,6 +5,10 @@ BASE=os.getenv('SHUTONG_API_URL','http://127.0.0.1:8000')
 TOKEN=os.environ.get('SHUTONG_TOKEN')
 if not TOKEN: raise SystemExit('Set SHUTONG_TOKEN to the same secret used by your local API')
 
+# 防呆：目标服务自报 env=prod 时拒绝写入虚构演示数据（旧版无 env 字段则视为非生产）。
+with urllib.request.urlopen(BASE+'/health/live',timeout=10) as response:
+    if json.load(response).get('env')=='prod': raise SystemExit('目标为生产环境(env=prod)，拒绝写入虚构演示数据')
+
 def send(path,payload=None):
     req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode('utf-8') if payload is not None else None,headers={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},method='POST' if payload is not None else 'GET')
     with urllib.request.urlopen(req,timeout=10) as response:
