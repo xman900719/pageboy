@@ -124,6 +124,61 @@ def test_pdf_import_requires_source_and_question_human_review(client, auth, sour
     assert 'storage_key' not in str(ledger.json())
 
 
+
+
+def test_source_hash_requires_real_upload(client, auth):
+    # 无原件的来源登记不能将任意 64 位字符串标记为已核验 SHA256。
+    response = client.post('/api/admin/sources', headers=auth, json={
+        'title': '虚构测试数据：无原件伪哈希', 'subject': 'math', 'sha256': 'a' * 64,
+    })
+    assert response.status_code == 422
+    assert response.json()['detail'] == 'SOURCE_HASH_REQUIRES_ATTACHMENT_UPLOAD'
+    with database() as db:
+        assert db.scalars(select(m.SourceDocument).where(
+            m.SourceDocument.title == '虚构测试数据：无原件伪哈希')).all() == []
+
+
+def test_source_hash_derived_from_first_uploaded_attachment(client, auth, source):
+    details = client.get(f'/api/admin/sources/{source}', headers=auth).json()
+    assert details['source']['sha256'] is None
+
+    first = synthetic_pdf(text='first synthetic data')
+    expected = sha256(first).hexdigest()
+    bad = upload(client, auth, source, first, expected_sha256='0' * 64)
+    assert bad.status_code == 422
+    assert client.get(f'/api/admin/sources/{source}', headers=auth).json()['source']['sha256'] is None
+
+    attached = upload(client, auth, source, first, expected_sha256=expected)
+    assert attached.status_code == 201
+    assert attached.json()['sha256'] == expected
+    details = client.get(f'/api/admin/sources/{source}', headers=auth).json()
+    assert details['source']['sha256'] == expected
+    with database() as db:
+        assert db.get(m.SourceDocument, source).sha256 == expected
+
+    second = synthetic_pdf(text='second synthetic data')
+    assert sha256(second).hexdigest() != expected
+    extra = upload(client, auth, source, second)
+    assert extra.status_code == 201
+    assert extra.json()['sha256'] == sha256(second).hexdigest()
+    assert client.get(f'/api/admin/sources/{source}', headers=auth).json()['source']['sha256'] == expected
+    with database() as db:
+        assert db.get(m.SourceDocument, source).sha256 == expected
+
+
+def test_legacy_unbacked_source_hash_is_not_presented_as_verified(client, auth, source):
+    with database() as db:
+        db.get(m.SourceDocument, source).sha256 = 'a' * 64
+        db.commit()
+    # 旧库的人工输入哈希不在无附件时作为可信原件哈希回显。
+    details = client.get(f'/api/admin/sources/{source}', headers=auth).json()
+    assert details['source']['sha256'] is None
+    assert upload(client, auth, source).status_code == 201
+    details = client.get(f'/api/admin/sources/{source}', headers=auth).json()
+    assert details['source']['sha256'] == details['attachments'][0]['sha256']
+    assert details['source']['sha256'] != 'a' * 64
+
+
 @pytest.mark.parametrize('media_type, filename', [('image/png', 'synthetic.png'), ('image/jpeg', 'synthetic.jpg')])
 def test_image_ocr_is_only_an_unreviewed_text_draft(client, auth, source, media_type, filename):
     image = Image.new('RGB', (1000, 200), 'white')

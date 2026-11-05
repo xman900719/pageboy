@@ -22,6 +22,12 @@ class SourceDocument(Base):
     rights_status: Mapped[str] = mapped_column(String(32), default="unknown")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    # 0006：来源类别隔离（official_exam/aux_book/adapted/school/ai/unclassified）、原件哈希、采录与审核状态分离、卷别键。
+    source_class: Mapped[str] = mapped_column(String(20), default="unclassified", server_default="unclassified")
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    ingest_status: Mapped[str] = mapped_column(String(20), default="recorded", server_default="recorded")
+    review_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    paper_key: Mapped[str | None] = mapped_column(String(40))
 
 class Question(Base):
     __tablename__ = "questions"
@@ -178,4 +184,73 @@ class SchoolPaperAttachment(Base):
     byte_size: Mapped[int] = mapped_column(Integer)
     # 仅私有存储定位；绝不进入 HTTP 响应（AC-SEC-01）。
     storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Erratum(Base):
+    """勘误记录：只追加，不修改原始题目内容（S1 原始内容不可变）。"""
+    __tablename__ = "errata"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"), index=True)
+    note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class QuestionSourceRegion(Base):
+    """题目到原件页码/区域的对应关系。"""
+    __tablename__ = "question_source_regions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"), index=True)
+    page: Mapped[int] = mapped_column(Integer)
+    bbox: Mapped[list | None] = mapped_column(JSON)
+
+class KnowledgeNode(Base):
+    """知识点稳定身份；名称/描述等随版本变化，节点 id 永不改变。"""
+    __tablename__ = "knowledge_nodes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    subject: Mapped[str] = mapped_column(String(20))
+    code: Mapped[str] = mapped_column(String(80), unique=True)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_nodes.id"))
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active/deprecated/merged/split
+    merged_into_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_nodes.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class KnowledgeNodeVersion(Base):
+    __tablename__ = "knowledge_node_versions"
+    __table_args__ = (UniqueConstraint("node_id", "version", name="uq_knowledge_node_version"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    node_id: Mapped[str] = mapped_column(ForeignKey("knowledge_nodes.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[str] = mapped_column(String(20), default="manual")  # manual/ai_suggested
+    review_status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class QuestionKnowledgeLink(Base):
+    """题目（可到小问）与知识点多对多关联；记录当时的知识点版本，历史不被覆盖。"""
+    __tablename__ = "question_knowledge_links"
+    __table_args__ = (UniqueConstraint("question_version_id", "sub_index", "node_id", name="uq_question_knowledge_link"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"), index=True)
+    sub_index: Mapped[int] = mapped_column(Integer, default=0)  # 0 表示整题
+    node_id: Mapped[str] = mapped_column(ForeignKey("knowledge_nodes.id"), index=True)
+    node_version: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(10), default="core")  # core/aux
+    evidence: Mapped[str | None] = mapped_column(Text)
+    review_status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class ResearchRun(Base):
+    """命题研究运行记录：区分统计分析与（未执行的）模型推理。"""
+    __tablename__ = "research_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    subject: Mapped[str] = mapped_column(String(20))
+    target_year: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))  # statistics/backtest
+    rule_version: Mapped[str] = mapped_column(String(40))
+    prompt_version: Mapped[str | None] = mapped_column(String(40))
+    model_used: Mapped[str | None] = mapped_column(String(80))
+    data_scope: Mapped[dict] = mapped_column(JSON)
+    output: Mapped[dict] = mapped_column(JSON)
+    review_status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
