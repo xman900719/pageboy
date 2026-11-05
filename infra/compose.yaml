@@ -1,3 +1,5 @@
+# 环境隔离：生产项目名固定，避免与开发侧目录名派生的默认项目名（infra）混淆。
+name: shutong-prod
 services:
   db:
     image: postgres:16-alpine
@@ -24,6 +26,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
       SHUTONG_TOKEN: ${SHUTONG_TOKEN:?set SHUTONG_TOKEN}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      SHUTONG_ENV: prod
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -38,4 +41,6 @@ services:
       retries: 3
 volumes:
   pgdata:
+    # 钉死既有卷名：旧项目名 infra 下创建的 infra_pgdata 即生产库，改项目名后必须继续使用它。
+    name: infra_pgdata
   private_files:

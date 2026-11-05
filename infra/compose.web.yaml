@@ -11,7 +11,7 @@ services:
   api:
     # 附件改宿主 bind mount：backup.sh 需在宿主直接 tar 附件目录（named volume 宿主不可见）。
     volumes:
-      - ./private-data/attachments:/var/lib/shutong/attachments
+      - ${SHUTONG_ATTACHMENTS_DIR:-./private-data/attachments}:/var/lib/shutong/attachments
   web:
     image: caddy:2-alpine
     restart: unless-stopped

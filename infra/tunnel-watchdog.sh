@@ -7,7 +7,9 @@
 # 不降级 schema、不触碰 db/api/附件；最坏情况是一次 api 之外的无害容器重建。
 set -uo pipefail
 
-INFRA=/media/xc/backup_ext4/code/pageboy/infra
+INFRA="$(cd "$(dirname "$0")" && pwd)"  # 随脚本所在检出目录，不绑定开发路径
+ENV_FILE="${ENV_FILE:-.env}"
+compose() { ( cd "$INFRA" && docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.local.yaml "$@" ); }
 LOG_DIR="$INFRA/.local/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/shutong-tunnel-watchdog.log"
@@ -22,7 +24,8 @@ if [[ -f "$STATE" ]]; then
   (( now - last < 900 )) && exit 0
 fi
 
-window=$(docker logs --since 15m infra-cloudflared-1 2>&1 | tail -200)
+cid=$(compose ps -q cloudflared 2>/dev/null)
+window=$([[ -n "$cid" ]] && docker logs --since 15m "$cid" 2>&1 | tail -200)
 if grep -q "Registered tunnel connection" <<<"$window"; then
   exit 0  # 窗口内有成功注册：隧道活着。
 fi
@@ -31,6 +34,6 @@ if ! grep -qE "Unable to establish connection with Cloudflare edge|Serve tunnel 
 fi
 
 echo "$(stamp) tunnel unhealthy (edge errors, no registration in 15m) -> recreate" >> "$LOG"
-( cd "$INFRA" && docker compose --env-file .env -f compose.yaml -f compose.local.yaml up -d --no-deps --force-recreate cloudflared >> "$LOG" 2>&1 )
+compose up -d --no-deps --force-recreate cloudflared >> "$LOG" 2>&1
 touch "$STATE"
 echo "$(stamp) recreated cloudflared" >> "$LOG"

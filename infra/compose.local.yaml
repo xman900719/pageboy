@@ -15,13 +15,13 @@ services:
       - "127.0.0.1:18000:8000"
     # 本机 bind mount 模式以宿主用户运行：容器写入的 0600 附件文件宿主可直接读取
     # （backup.sh 须 tar 附件）；VPS 模板沿用 Dockerfile 专用 uid + root 卷，不受此影响。
-    user: "1000:1000"
+    user: "${SHUTONG_UID:-1000}:${SHUTONG_GID:-1000}"
     environment:
       # ST-017：镜像标签透传进应用，/health/live 的 app_revision 因此可证明"哪个构建在服务"。
       SHUTONG_APP_REVISION: ${SHUTONG_API_TAG:-dev}
     volumes:
       # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
-      - ./private-data/attachments:/var/lib/shutong/attachments
+      - ${SHUTONG_ATTACHMENTS_DIR:-./private-data/attachments}:/var/lib/shutong/attachments
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
