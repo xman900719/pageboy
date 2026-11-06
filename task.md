@@ -73,3 +73,17 @@
   - [x] 8.5 验证隔离规则通过 (`bash scripts/check_env_isolation.sh` 全项 PASS)
   - [x] 8.6 宿主机提权割接执行与服务无缝切换 (`sudo bash infra/migrate-prod-root.sh`)
   - [x] 8.7 割接后全套健康检查与生产备份验证 (`/health/live`、`/health/ready`、`8180 Web`、`release.git ls-remote`)
+
+- [x] **阶段 9：开发与生产环境汇总说明与运维基准建设**
+  - [x] 9.1 编制《开发环境汇总与指南》(`docs/engineering/development-environment.md`)
+  - [x] 9.2 编制《生产环境汇总与运维指南》(`docs/operations/production-environment.md`)
+  - [x] 9.3 统一更新 `README.md` 与 `CODEX_START_HERE.md` 中的环境指令与指引
+  - [x] 9.4 同步更新 `docs/index.md` 索引并验证 Markdown 链接全通 (`scripts/check_docs.py`)
+  - [x] 9.5 运行全量质量门禁与隔离自检 (`make verify` + `check_env_isolation.sh`)
+
+- [x] **阶段 10：文档 Mermaid 图表静态预编译与离线直出能力建设**
+  - [x] 10.1 研发构建期无头 Chromium 离线矢量图生成脚本 (`scripts/render_diagrams.mjs`)
+  - [x] 10.2 提取并修正全库 7 处核心架构与时序图语法规范 (`docs/assets/diagrams/*.mmd` 与 `*.svg`)
+  - [x] 10.3 优化文档呈现（静态 SVG 直接渲染 + `<details>` 折叠保留 Mermaid 源码）
+  - [x] 10.4 移除 `zensical.toml` 产生外网阻塞的运行时配置，并升级 `Makefile` 依赖
+  - [x] 10.5 运行全量自动化门禁与静态严格构建 (`make verify` + `zensical build --strict`)

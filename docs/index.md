@@ -10,6 +10,8 @@
 - [双画像与学习闭环](design/learning-loop.md)
 - [四科语料增量](design/four-subject-corpus.md)
 - [接口契约](engineering/interfaces.md)
+- [开发环境汇总说明](engineering/development-environment.md)
+- [生产环境汇总说明](operations/production-environment.md)
 - [部署](operations/deployment.md)
 - [备份唯一策略](operations/backup-policy.md)
 - [恢复操作手册](operations/recovery-runbook.md)

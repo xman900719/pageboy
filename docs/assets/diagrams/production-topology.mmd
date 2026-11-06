@@ -1,0 +1,56 @@
+flowchart TB
+    subgraph 客户端接入 ["客户端接入"]
+        IPAD["学员 iPad 终端 (日常学习)"]
+        ADMIN_PC["审核员 PC (内网管理)"]
+    end
+
+    subgraph 接入安全与路由层 ["接入安全与路由层"]
+        TUNNEL["Cloudflare 隧道 (入站带 CF-Ray 标头)"]
+        LOCAL_NET["宿主机本地网络 (无 CF-Ray)"]
+        CADDY["宿主机 Caddy 反代服务 (端口 8180)\n【阻断: 外部 CF-Ray 访问 /admin*】"]
+    end
+
+    subgraph 生产环境隔离根目录 ["/media/xc/backup_ext4/prod-env/pageboy (用户 shutong-prod)"]
+        subgraph 代码与发布 ["代码与发布"]
+            RELEASE_GIT["单向裸仓库: release.git (属组 shutong-deploy, 710)"]
+            PROD_REPO["生产工作树: repo"]
+        end
+
+        subgraph 机密与数据 ["机密与数据"]
+            PROD_ENV["生产机密: env/prod.env (0600)"]
+            RESTIC_PWD["备份密钥: env/restic-password (0600)"]
+            ATTACHMENTS["持久试卷/音频附件: data/attachments (0700)"]
+        end
+
+        subgraph Docker 容器网络 ["Docker 容器网络 (项目名: shutong-prod)"]
+            API_CONT["FastAPI 容器 (端口 18000)\nshutong-api:api-<git短SHA>"]
+            PG_CONT[("PostgreSQL 16 数据库\n持久卷: infra_pgdata")]:::db
+        end
+
+        subgraph 定时任务与灾备 ["定时任务与灾备"]
+            BACKUP_TIMER["Systemd 定时器: shutong-backup.timer (每4小时)"]
+            BACKUP_SCRIPT["联合备份脚本: backup.sh"]
+        end
+    end
+
+    subgraph 异地云容灾与监控 ["异地云容灾与监控"]
+        R2_CLOUD[("Cloudflare R2 异地加密存储 (联合冷备)")]:::cloud
+        HC_IO["Healthchecks.io (静默心跳与死人开关告警)"]
+    end
+
+    IPAD --> TUNNEL --> CADDY
+    ADMIN_PC --> LOCAL_NET --> CADDY
+    CADDY -->|伺服静态 Web| PROD_REPO
+    CADDY -->|反代 /api| API_CONT
+    API_CONT --> PG_CONT
+    API_CONT --> ATTACHMENTS
+    PROD_ENV -.-> API_CONT
+    RELEASE_GIT --> PROD_REPO
+
+    BACKUP_TIMER --> BACKUP_SCRIPT
+    BACKUP_SCRIPT --> PG_CONT & ATTACHMENTS
+    BACKUP_SCRIPT --> R2_CLOUD
+    BACKUP_SCRIPT -->|Ping 200| HC_IO
+
+    classDef db fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef cloud fill:#bbf,stroke:#333,stroke-width:2px;

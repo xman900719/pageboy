@@ -1,0 +1,19 @@
+sequenceDiagram
+    autonumber
+    actor Dev as 开发者 (用户 xc)
+    participant Git as release.git (裸仓库)
+    actor Prod as 生产用户 (shutong-prod)
+    participant Stack as 生产容器栈 (Docker)
+    participant Caddy as Caddy 反代服务
+
+    Dev->>Git: git push /media/xc/backup_ext4/prod-env/pageboy/release.git HEAD:refs/heads/release
+    Note over Dev,Prod: 切换至生产用户
+    Prod->>Git: git pull (在 repo 目录下拉取更新)
+    Prod->>Stack: 执行 infra/deploy.sh --web
+    Note over Stack: 1. 重新构建前端 dist 产物
+    Note over Stack: 2. 构建 API 镜像 (打标签 shutong-api:api-<sha>)
+    Note over Stack: 3. 一次性容器执行 alembic upgrade head
+    Note over Stack: 4. 平滑替换 api 容器
+    Note over Stack: 5. 自动执行 4 项冒烟校验 (live/ready/subjects/web)
+    Stack-->>Prod: 输出 DEPLOY_OK
+    Prod->>Caddy: Caddy 自动读取更新后的 repo/apps/web/dist

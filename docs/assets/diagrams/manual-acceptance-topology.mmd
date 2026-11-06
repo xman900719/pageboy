@@ -1,0 +1,19 @@
+flowchart LR
+    subgraph Host["宿主机 (Host: 192.168.3.102)"]
+        direction TB
+        Build["1. 自动化门禁<br/>(pytest / vitest / build)"]
+        Backend["2. 临时后端 API<br/>(uvicorn :18765<br/>0.0.0.0 + SHUTONG_TOKEN)"]
+        Frontend["3. 前端生产预览<br/>(vite preview :4173<br/>0.0.0.0 + 同源代理)"]
+        Build --> Backend
+        Build --> Frontend
+    end
+
+    subgraph Sim["用于前端测试的模拟机 (模拟 iPadOS 环境)"]
+        direction TB
+        Browser["iPadOS WebKit/Safari 模拟环境<br/>(触控手势 / 810×1080 视口 / 虚拟键盘)"]
+        Tester["测试人 (Owner)"]
+        Tester -->|触控点击/滑动/作答| Browser
+    end
+
+    Browser -->|"http://192.168.3.102:4173"| Frontend
+    Frontend -->|"反向代理 /api/*"| Backend

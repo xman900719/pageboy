@@ -8,35 +8,41 @@
 1. 先读 [CODEX_START_HERE.md](CODEX_START_HERE.md)，然后遵守根目录 [AGENTS.md](AGENTS.md)。如果使用 Codex Chat，可直接粘贴 [PROMPT_FOR_CODEX.md](PROMPT_FOR_CODEX.md)。
 2. 按 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) 任务单逐个实现，不能跳过验收测试。
 3. 业务规则权威依据：[docs/design](docs/design)；契约：[contracts](contracts)；验收：[docs/quality/acceptance.md](docs/quality/acceptance.md)。
-4. 旧版方案及二次评估仅作溯源：[reference/legacy](reference/legacy)，**不是当前规范**。
+4. 环境汇总指引：开发规范见 [docs/engineering/development-environment.md](docs/engineering/development-environment.md)；生产运维见 [docs/operations/production-environment.md](docs/operations/production-environment.md)。
+5. 旧版方案及二次评估仅作溯源：[reference/legacy](reference/legacy)，**不是当前规范**。
 
 ## 本地开发（SQLite，无 Docker）
+
+> 完整开发规范、系统依赖、Vue 3 MPA 双入口及 iPadOS 模拟机验收硬门禁详见 [开发环境汇总与指南](docs/engineering/development-environment.md)。
 
 ```bash
 # Debian/Ubuntu：本地 PDF/图片解析依赖
 sudo apt-get install poppler-utils tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng
-cd services/api
-python3 -m venv .venv
+
+# Python 虚拟环境与依赖初始化 (强制使用 uv)
+uv venv .venv
 source .venv/bin/activate
-pip install -e '.[test]'
+uv pip install -e "services/api[test]"
+
+# 数据库迁移与本地服务启动 (必须监听 127.0.0.1 回环地址)
 export SHUTONG_TOKEN='replace-with-a-long-private-token'
-python -m alembic upgrade head
-uvicorn shutong.main:app --host 127.0.0.1 --port 8000
+uv run alembic -c services/api/alembic.ini upgrade head
+uv run uvicorn shutong.main:app --host 127.0.0.1 --port 8000
 ```
 
-另开终端：
+另开终端启动前端：
 
 ```bash
 cd apps/web
 npm install
-npm run dev
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-打开 `http://localhost:5173` 并输入相同的 `SHUTONG_TOKEN`。**仓库没有预置任何真实试卷**；可以使用后述虚构样例脚本导入测试题。
+打开 `http://127.0.0.1:5173`（学生端）或 `http://127.0.0.1:5173/admin.html`（审核端）并输入相同的 `SHUTONG_TOKEN`。**仓库没有预置任何真实试卷**；可以使用后述虚构样例脚本导入测试题。
 
 ```bash
 export SHUTONG_TOKEN='replace-with-a-long-private-token'
-python scripts/seed_demo.py
+uv run python scripts/seed_demo.py
 ```
 
 开发时 `api` 的 `DATABASE_URL` 不设置则使用项目运行目录下的 SQLite 文件。**SQLite 仅是本地开发回退方案，生产使用 PostgreSQL。**
@@ -44,10 +50,11 @@ python scripts/seed_demo.py
 ## 质量检查
 
 ```bash
-cd services/api && pytest -q && cd ../..
-python scripts/validate_contracts.py
-python scripts/check_docs.py
-python scripts/check_openapi.py
+uv run pytest -q services/api
+uv run python scripts/validate_contracts.py
+uv run python scripts/check_docs.py
+uv run python scripts/check_openapi.py
+cd apps/web && npm run test:unit
 cd apps/web && npm run build
 cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + preview:4173）
 cd apps/web && npm run test:e2e:ipad   # iPad（WebKit 仿真）通道：旅程+可访问性+720–980px 响应式断言
