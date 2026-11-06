@@ -12,7 +12,7 @@
 
 ## ST-003 私有导入 API
 
-已实现来源台账、原件上传/下载及 SHA-256 核对、本地 PDF 文本提取、PNG/JPEG OCR、扫描 PDF 自动 OCR 兜底、人工确认结构化草稿。所有接口仍须 owner Bearer Token；原件使用不透明文件名，存于 `SHUTONG_PRIVATE_DIR`，不映射静态目录，不返回存储路径。只接受 PDF/PNG/JPEG：最多 10 MiB、PDF 20 页、图片 2000 万像素；拒绝加密 PDF、类型不符与损坏文件。文本层 PDF 解析超时 20 秒，文本上限 200 KB。
+已实现来源台账、原件上传/下载及 SHA-256 核对、本地 PDF 文本提取、PNG/JPEG OCR、扫描 PDF（含仅带扫描水印/条码/页眉的伪文本层 PDF）自动 OCR 兜底、人工确认结构化草稿。所有接口仍须 owner Bearer Token；原件使用不透明文件名，存于 `SHUTONG_PRIVATE_DIR`（未设置时默认落盘在仓库内已忽略的 `services/api/private-data/attachments`），不映射静态目录，不返回存储路径。接受 PDF/PNG/JPEG/MP3/M4A：最多 25 MiB、PDF 40 页、图片 2000 万像素；拒绝加密 PDF、类型不符与损坏文件。文本层 PDF 解析超时 20 秒，文本上限 200 KB。
 
 | 操作 | 接口与约束 |
 |---|---|

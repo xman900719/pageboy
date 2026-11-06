@@ -14,7 +14,7 @@ import ConfirmImportForm from './ConfirmImportForm.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 
-const MAX_BYTES = 10 * 1024 * 1024
+const MAX_BYTES = 25 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'audio/mpeg', 'audio/mp4'])
 const EXT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
@@ -90,7 +90,7 @@ async function upload() {
     return
   }
   if (file.value.size > MAX_BYTES) {
-    uploadError.value = '附件超过 10 MiB 上限。'
+    uploadError.value = '附件超过 25 MiB 上限。'
     return
   }
   if (file.value.size === 0) {
@@ -144,14 +144,14 @@ async function parse(attachment: AttachmentOut) {
       <div class="note note-neutral" style="margin-bottom: 12px; font-size: 0.9rem;">
         <b>📄 试卷与教学资料提交规范指引</b>
         <ul style="margin: 6px 0 0 18px; padding: 0;">
-          <li><b>月考 / 单元检测卷</b>：请提交包含完整题面、选项与分值的整卷清晰原件或扫描件（PDF / PNG / JPG，单文件上限 10 MiB）。</li>
+          <li><b>月考 / 单元检测卷</b>：请提交包含完整题面、选项与分值的整卷清晰原件或扫描件（PDF / PNG / JPG，单文件上限 25 MiB）。</li>
           <li><b>英语听力试卷</b>：除试题文本扫描件外，请同时上传配套的 MP3 / M4A 录音音频，以支持听力播放组件关联。</li>
           <li><b>上传后操作流程</b>：上传成功后点击「解析」提取机读文本，随后在下方「逐题录入并确认导入」中录入各题干、题型与考点。</li>
         </ul>
       </div>
 
       <label for="attachment-file-input">
-        选择原始附件（PDF / PNG / JPG / MP3 / M4A，不超过 10 MiB）
+        选择原始附件（PDF / PNG / JPG / MP3 / M4A，不超过 25 MiB）
       </label>
       <input
         id="attachment-file-input"

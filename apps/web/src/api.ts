@@ -371,7 +371,7 @@ const API_CODE_TEXT: Record<string, string> = {
   /* 题库审核台（原文码缺映射时直接显示 code）。 */
   UPLOAD_HASH_MISMATCH: '附件校验失败：上传内容的哈希与预期不一致，请重新上传。',
   UNSUPPORTED_FILE_TYPE: '不支持的附件类型：仅接受 PDF / PNG / JPG / MP3 / M4A。',
-  INVALID_FILE_SIZE: '附件大小不符合要求（上限 10 MiB）。',
+  INVALID_FILE_SIZE: '附件大小不符合要求（上限 25 MiB）。',
   ATTACHMENT_STORAGE_UNAVAILABLE: '附件存储暂不可用，请稍后重试。',
   IMPORT_ALREADY_CONFIRMED: '该附件已确认导入过，不能再次解析或导入。',
   IMPORT_SOURCE_MISMATCH: '附件与题目来源不匹配，请检查录入内容。',

@@ -1541,7 +1541,7 @@ paths:
       - private content ingestion
   /api/admin/sources/{source_id}/attachments:
     post:
-      description: 原始二进制请求体；上限 10 MiB，不使用公开目录或外部下载 URL。
+      description: 原始二进制请求体；上限 25 MiB，不使用公开目录或外部下载 URL。
       operationId: upload_attachment_api_admin_sources__source_id__attachments_post
       parameters:
       - in: path

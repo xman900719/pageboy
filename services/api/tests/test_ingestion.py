@@ -197,6 +197,11 @@ def test_pdf_needs_ocr_only_when_extraction_has_no_visible_characters():
     from shutong.private_files import pdf_needs_ocr
     assert pdf_needs_ocr('') is True
     assert pdf_needs_ocr('  \n\t \x0c ') is True
+    assert pdf_needs_ocr('扫描全能王 创建 \x0c 扫描全能王 创建') is True
+    assert pdf_needs_ocr('帮 考 京 ： 号 众 公 \x0c 帮 考 京 ： 号 众 公') is True
+    assert pdf_needs_ocr('{#{QQABZYCAggAgAgAAAQACAwHgCgCQkhACACgOBBAYoEAAiBFABCA=}#}\x0c{#{QQABZYCAggAgAgAAAQACAwHgCgCQkhACACgOBBAYoEAAiBFABCA=}#}') is True
+    assert pdf_needs_ocr('··· ··\x0c·· ···') is True
+    assert pdf_needs_ocr('２０２３年北京市初中学业水平考试' + '\x0c' * 5) is True
     assert pdf_needs_ocr('SYNTHETIC TEST DATA') is False
     assert pdf_needs_ocr('  \x0c\n文本层\n ') is False
 
@@ -242,7 +247,7 @@ def test_text_layer_pdf_does_not_enter_ocr_fallback(client, auth, source):
 
 
 def test_scanned_pdf_page_cap_applies_at_upload(client, auth, source, tmp_path):
-    assert upload(client, auth, source, scanned_pdf(pages=21)).status_code == 422
+    assert upload(client, auth, source, scanned_pdf(pages=41)).status_code == 422
     assert not list((tmp_path / 'private').glob('*'))
 
 
@@ -282,9 +287,9 @@ def test_invalid_uploads_leave_no_files_or_rows(client, auth, source, tmp_path, 
     elif case == 'corrupt_pdf':
         kwargs['data'] = b'%PDF-1.4\ncorrupt'
     elif case == 'too_many_pages':
-        kwargs['data'] = synthetic_pdf(pages=21)
+        kwargs['data'] = synthetic_pdf(pages=41)
     elif case == 'too_large':
-        kwargs['data'] = b'x' * (10 * 1024 * 1024 + 1)
+        kwargs['data'] = b'x' * (25 * 1024 * 1024 + 1)
     assert upload(client, auth, source, **kwargs).status_code == expected
     assert not list((tmp_path / 'private').glob('*'))
     with database() as db:

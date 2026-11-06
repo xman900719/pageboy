@@ -4,11 +4,14 @@
 """
 from __future__ import annotations
 
+from .exam_2018_2023 import EXAM_2018_2023_PAPERS
+
 EXAM_2025_PAPERS: list[dict] = [
     {
         "subject": "math",
         "title": "2025年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2025,
+        "pdf_relpath": "2025年/2025北京中考数学_候选文件.pdf",
         "questions": [
             {
                 "index": 1,
@@ -146,6 +149,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2025年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2025,
+        "pdf_relpath": "2025年/2025北京中考物理_候选文件.pdf",
         "questions": [
             {
                 "index": 1,
@@ -318,6 +322,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2025年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2025,
+        "pdf_relpath": "2025年/2025北京中考英语_候选文件.pdf",
         "questions": [
             {
                 "index": 1,
@@ -450,6 +455,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2025年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2025,
+        "pdf_relpath": "2025年/2025北京中考语文_候选文件.pdf",
         "questions": [
             {
                 "index": 2,
@@ -584,3 +590,7 @@ EXAM_2025_PAPERS: list[dict] = [
         ],
     },
 ]
+
+# 2018-2023 年与 2025 年全部北京中考四科真题合集（共 7 年 × 4 科 = 28 套试卷）
+ALL_EXAM_PAPERS: list[dict] = EXAM_2018_2023_PAPERS + EXAM_2025_PAPERS
+

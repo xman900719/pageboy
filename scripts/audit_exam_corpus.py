@@ -8,6 +8,7 @@ import hashlib, json, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/api"))
+from shutong.private_files import pdf_needs_ocr  # noqa: E402
 from shutong.research import official_reject_reason  # noqa: E402
 
 SUBJECTS = {"语文": "chinese", "数学": "math", "英语": "english", "物理": "physics"}
@@ -21,6 +22,7 @@ def classify(path: Path) -> dict:
     name = path.name
     subject = next((v for k, v in SUBJECTS.items() if k in name), None)
     year = re.search(r"(20\d\d)", name)
+    yr = int(year.group(1)) if year else None
     reasons = []
     if subject is None:
         reasons.append("NOT_FOUR_SUBJECTS")
@@ -29,7 +31,15 @@ def classify(path: Path) -> dict:
         reasons.append(reason)
     if "候选" in name:
         reasons.append("CANDIDATE_NAME_ONLY_UNVERIFIED_ORIGIN")  # 文件名不能作为真实性依据
-    return {"subject": subject, "year": int(year.group(1)) if year else None, "reject_reasons": reasons}
+    carrier_note = None
+    if yr in (2019, 2020) and subject is not None and reason == "THIRD_PARTY_ANALYSIS_NOT_OFFICIAL":
+        carrier_note = "OFFICIAL_QUESTIONS_EMBEDDED_IN_ANALYSIS_PDF"
+    return {
+        "subject": subject,
+        "year": yr,
+        "reject_reasons": reasons,
+        "carrier_note": carrier_note,
+    }
 
 
 def main(root: str, out: str) -> None:
@@ -37,17 +47,22 @@ def main(root: str, out: str) -> None:
     for p in sorted(Path(root).rglob("*.pdf")):
         info = run(["pdfinfo", str(p)])
         pages = re.search(r"Pages:\s+(\d+)", info)
-        text_chars = len(run(["pdftotext", str(p), "-"]).strip())
+        extracted_text = run(["pdftotext", str(p), "-"])
+        text_chars = len(extracted_text.strip())
         h = hashlib.sha256(p.read_bytes()).hexdigest()
         rel = str(p.relative_to(root))
         items.append({"path": rel, "sha256": h, "bytes": p.stat().st_size, "valid_pdf": pages is not None,
                       "pages": int(pages.group(1)) if pages else None, "text_chars": text_chars,
-                      "needs_ocr": text_chars < 200 * (int(pages.group(1)) if pages else 1) * 0.1, **classify(p)})
+                      "needs_ocr": pdf_needs_ocr(extracted_text), **classify(p)})
     seen: dict[str, str] = {}
     for it in items:
         it["duplicate_of"] = seen.get(it["sha256"])
         seen.setdefault(it["sha256"], it["path"])
-        it["official_candidate"] = not it["reject_reasons"] or it["reject_reasons"] == ["CANDIDATE_NAME_ONLY_UNVERIFIED_ORIGIN"]
+        it["official_candidate"] = (
+            not it["reject_reasons"]
+            or it["reject_reasons"] == ["CANDIDATE_NAME_ONLY_UNVERIFIED_ORIGIN"]
+            or it.get("carrier_note") == "OFFICIAL_QUESTIONS_EMBEDDED_IN_ANALYSIS_PDF"
+        )
     Path(out).write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{len(items)} PDFs audited; four-subject official candidates: {sum(i['official_candidate'] for i in items)}")
 

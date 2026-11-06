@@ -12,8 +12,9 @@ import warnings
 from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
-MAX_BYTES = 10 * 1024 * 1024
-MAX_PAGES = 20
+DEFAULT_PRIVATE_DIR = Path(__file__).resolve().parents[1] / "private-data" / "attachments"
+MAX_BYTES = 25 * 1024 * 1024
+MAX_PAGES = 40
 MAX_PIXELS = 20_000_000
 MAX_TEXT_BYTES = 200_000
 MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4")
@@ -23,9 +24,17 @@ PDF_RENDER_TIMEOUT = 120
 PDF_OCR_PAGE_TIMEOUT = 60
 OCR_PAGE_MARKER = "\n\n—— 第 {page} 页（OCR 草稿）——\n"
 
+# 扫描件常见的软件水印、公众号页眉及阅卷扫描仪条码串模式
+_OCR_NOISE_RE = re.compile(
+    r"\{#\{[A-Za-z0-9+/=]+\}#\}|"
+    r"扫描全能王\s*创建|"
+    r"帮\s*考\s*京\s*[：:]\s*号\s*众\s*公|"
+    r"公\s*众\s*号\s*[：:]\s*京\s*考\s*帮"
+)
+
 
 def private_root():
-    return Path(os.getenv("SHUTONG_PRIVATE_DIR", "private-data/attachments")).resolve()
+    return Path(os.getenv("SHUTONG_PRIVATE_DIR", str(DEFAULT_PRIVATE_DIR))).resolve()
 
 
 def blob_path(key):
@@ -112,9 +121,15 @@ def load_blob(attachment):
 
 
 def pdf_needs_ocr(text):
-    """纯决策：pdftotext 结果无任何非空白字符即视为无文本层，需 OCR 兜底。
-    仅按整体空白判断，不做逐页/混合版式猜测——含文本层的 PDF 一律不降级 OCR。"""
-    return not text.strip()
+    """纯决策：剔除已知扫描器水印/条码及空白标点后无有效正文，或多页试卷仅含极短页眉时，视为无有效文本层并触发 OCR 兜底。
+    含真实文本层的 PDF 一律不降级 OCR。"""
+    cleaned = _OCR_NOISE_RE.sub("", text)
+    meaningful = re.sub(r"[\s·•.．_—\-]+", "", cleaned)
+    if not meaningful:
+        return True
+    if text.count("\x0c") >= 4 and len(meaningful) < 30:
+        return True
+    return False
 
 
 def ocr_pdf(path, directory):
