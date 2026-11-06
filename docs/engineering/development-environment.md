@@ -214,12 +214,16 @@ flowchart LR
 
 | 门禁指令 | 执行目录 | 验证范围与核心断言 |
 |---|---|---|
-| `PATH="$PWD/.venv/bin:$PATH" make verify` | 根目录 | 聚合门禁：<br>1. `api-test`：162 项后端业务单测全绿<br>2. `contracts`：JSON Schema 正反例校验<br>3. `docs`：Markdown 全量解析与相对链接检查<br>4. `openapi`：真实 API 路由与 committed openapi.yaml 快照强一致 |
+| `PATH="$PWD/.venv/bin:$PATH" make verify` | 根目录 | 聚合门禁：<br>1. `api-test`：162 项后端业务单测全绿<br>2. `contracts`：JSON Schema 正反例校验<br>3. `docs`：自动重绘 Mermaid 静态矢量图、Markdown 全量解析与相对链接检查<br>4. `openapi`：真实 API 路由与 committed openapi.yaml 快照强一致 |
 | `npm run test:unit` | `apps/web` | Vitest 驱动，测试 KaTeX 富文本拆分与中文本地化映射 |
 | `npm run build` | `apps/web` | `vue-tsc -b` 零类型报错，Vite 编译产物确保 `dist/index.html` 零 Admin 逻辑与表单泄露 |
 | `npm run test:e2e` | `apps/web` | Playwright Chromium 引擎，全自动化执行 J1~J9 完整用户旅程（含题库体检、会话恢复、附件导入与 WCAG A/AA 可访问性零违规） |
 | `npm run test:e2e:ipad` | `apps/web` | Playwright WebKit 引擎，iPad 视口仿真（720~980px 响应式断言、触控仿真） |
 | `bash scripts/check_env_isolation.sh` | 根目录 | 环境安全自检：无生产机密泄露、无外部非回环监听、无遗留真实附件 |
+
+### 文档图表自动化维护规范
+
+项目采用 Docs-as-Code 静态矢量图预编译方案。**后续新增或修改 Mermaid 图表时，仅需在 `docs/assets/diagrams/*.mmd` 中调整源文件，执行 `make docs` 即可全自动同步重绘 SVG**。文档中统一采用 `![图表说明](../assets/diagrams/*.svg)` 直接引用生成的静态矢量图，并在可折叠块（`<details>`）中保留原始 Mermaid 源码，确保在全平台（无网络/无 JS 插件环境、GitHub、VS Code 预览）均能秒级稳定直出。
 
 ---
 
