@@ -517,3 +517,19 @@ def test_source_question_versions_list_isolation_and_revisions(client, auth, sou
     same_question = sorted((row['version'], row['status']) for row in rows
                            if row['question_id'] == revised.json()['question_id'])
     assert same_question == [(1, 'published'), (2, 'draft')]
+
+
+def test_source_ledger_tolerates_local_scheme_source_url(client, auth, source):
+    """本地语料种子的 local:// 来源地址不得使读取接口 500；写入侧仍强制 HTTPS。"""
+    with database() as db:
+        review = m.SourceReview(source_document_id=source, exam_year=2025, source_url='local://exam_corpus/2025',
+                                acquired_at=__import__('datetime').date(2025, 1, 1), rights_status='unknown',
+                                rights_basis='虚构测试数据', applicable=True, applicability_note='虚构测试数据',
+                                reviewed_by='owner')
+        db.add(review)
+        db.commit()
+    res = client.get('/api/admin/sources', headers=auth)
+    assert res.status_code == 200
+    urls = [r['metadata']['source_url'] for s in res.json() for r in s['reviews']]
+    assert 'local://exam_corpus/2025' in urls
+    assert review_source(client, auth, source, source_url='http://insecure.example/x').status_code == 422

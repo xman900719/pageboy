@@ -689,6 +689,50 @@ components:
       - reviewed_by_human
       title: SourceReviewIn
       type: object
+    SourceReviewMetadataOut:
+      description: 读取侧元数据：来源地址允许 local:// 等非 http(s) 方案（本地语料种子），写入侧仍由 SourceReviewIn
+        强制 HTTPS。
+      properties:
+        acquired_at:
+          format: date
+          title: Acquired At
+          type: string
+        applicability_note:
+          title: Applicability Note
+          type: string
+        applicable:
+          title: Applicable
+          type: boolean
+        exam_year:
+          title: Exam Year
+          type: integer
+        reviewed_by_human:
+          title: Reviewed By Human
+          type: boolean
+        rights_basis:
+          title: Rights Basis
+          type: string
+        rights_status:
+          enum:
+          - unknown
+          - personal_use_reviewed
+          - licensed
+          title: Rights Status
+          type: string
+        source_url:
+          title: Source Url
+          type: string
+      required:
+      - exam_year
+      - source_url
+      - acquired_at
+      - rights_status
+      - rights_basis
+      - applicable
+      - applicability_note
+      - reviewed_by_human
+      title: SourceReviewMetadataOut
+      type: object
     SourceReviewRecordOut:
       properties:
         created_at:
@@ -699,7 +743,7 @@ components:
           title: Id
           type: string
         metadata:
-          $ref: '#/components/schemas/SourceReviewIn'
+          $ref: '#/components/schemas/SourceReviewMetadataOut'
         reviewed_by:
           title: Reviewed By
           type: string
