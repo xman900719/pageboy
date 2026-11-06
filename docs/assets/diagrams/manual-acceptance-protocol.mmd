@@ -1,0 +1,11 @@
+flowchart TD
+    Start["测试人开始核验主题 N"] --> Check{"核验是否发现阻断性Bug?"}
+    Check -- 发现阻断缺陷 --> Halt["测试人勾选: 【暂时中断核验，先修理Bug】"]
+    Halt --> BlockAfter["后续主题 N+1 自动判定为【前置阻塞未启动】"]
+    BlockAfter --> AgentFix["Agent 接管: 针对阻断现象精准修复 + 自动化复验"]
+    AgentFix --> Resume["Agent 重新拉起测试环境并提示恢复核验"]
+    Resume --> ReTest["测试人复验主题 N"]
+    ReTest --> Pass{"复验是否通过?"}
+    Pass -- 否 --> Halt
+    Pass -- 是 --> MarkPass["勾选【通过】，放行进入主题 N+1"]
+    Check -- 完全符合预期 --> MarkPass

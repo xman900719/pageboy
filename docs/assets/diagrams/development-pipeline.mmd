@@ -1,0 +1,6 @@
+flowchart LR
+    A["make verify (后端/契约/文档)"] --> B["npm run test:unit (前端单测)"]
+    B --> C["npm run build (构建与产物隔离)"]
+    C --> D["npm run test:e2e (Playwright J1-J9)"]
+    D --> E["npm run test:e2e:ipad (WebKit iPad 仿真)"]
+    E --> F["bash scripts/check_env_isolation.sh"]

@@ -1,0 +1,12 @@
+flowchart TB
+  WEB["React Web/PWA"] --> API["FastAPI + Owner Token"]
+  API --> APP["应用编排层"]
+  APP --> CNT["Content: 真题/来源/审核"]
+  APP --> PRC["Practice: 练习/曝光/作答"]
+  APP --> EVD["Evidence: 学校成绩/可信证据"]
+  APP --> GAP["Guidance: 目标/画像/差距/计划"]
+  CNT --> DB[("(PostgreSQL)")]
+  PRC --> DB
+  EVD --> DB
+  GAP -."纯领域函数".-> APP
+  APP --> STORAGE["私有原件目录/ST-003"]

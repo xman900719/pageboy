@@ -11,6 +11,11 @@
 
 根据工程契约，人工测试遵循**“宿主机运行服务与自动化，用于前端测试的模拟机执行 iPadOS 人机交互核验”**的拓扑结构：
 
+![验收准备与测试拓扑](../assets/diagrams/manual-acceptance-topology.svg)
+
+<details>
+<summary>点击查看 Mermaid 测试拓扑源码</summary>
+
 ```mermaid
 flowchart LR
     subgraph Host["宿主机 (Host: 192.168.3.102)"]
@@ -32,6 +37,7 @@ flowchart LR
     Browser -->|"http://192.168.3.102:4173"| Frontend
     Frontend -->|"反向代理 /api/*"| Backend
 ```
+</details>
 
 ### 1. 宿主机一键启动测试服务（推荐）
 
@@ -113,6 +119,11 @@ uv run python scripts/run_manual_test_env.py sim-landscape
 
 为坚守「先验收，后实施」与工程红线，人工测试执行严格的**串行放行与阻断先修机制**：
 
+![中断与先修Bug协议](../assets/diagrams/manual-acceptance-protocol.svg)
+
+<details>
+<summary>点击查看 Mermaid 协议流程源码</summary>
+
 ```mermaid
 flowchart TD
     Start["测试人开始核验主题 N"] --> Check{"核验是否发现阻断性Bug?"}
@@ -126,6 +137,7 @@ flowchart TD
     Pass -- 是 --> MarkPass["勾选【通过】，放行进入主题 N+1"]
     Check -- 完全符合预期 --> MarkPass
 ```
+</details>
 
 ### 1. 中断触发规则
 - **单项阻断即全线暂停**：若某个测试点未修复通过，**禁止强行进行后续测试点**（例如令牌门未通则无法测试练习，未见题刷新丢失则破坏曝光账本）；

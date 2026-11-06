@@ -11,7 +11,7 @@ ST-001~ST-018 已全部完成（本地 + 远端五作业 CI 全绿），AC-OPS-0
 ## 启动检查（顺序执行）
 
 1. `git status --short`，确认工作树干净；如为新解压文件夹，先 `git init`，建立首次提交，但**不自动推送**任何远端。
-2. 阅读 `AGENTS.md`、`docs/product/overview.md`、`docs/design/architecture.md`、`docs/design/data-model.md`、`docs/quality/acceptance.md`。
+2. 阅读 `AGENTS.md`、`docs/engineering/development-environment.md`、`docs/operations/production-environment.md`、`docs/product/overview.md`、`docs/design/architecture.md`、`docs/design/data-model.md`、`docs/quality/acceptance.md`。
 3. 安装当前 API/测试依赖后，从根目录执行 `PATH="$PWD/.venv/bin:$PATH" make verify`；迁移仅在明确隔离的临时库验证，禁止对未知 `DATABASE_URL` 直接执行升级。
 4. `python scripts/validate_contracts.py && python scripts/check_docs.py && python scripts/check_openapi.py`。
 5. `cd apps/web && npm ci && npm run build`；如果网络不可用，记录“未执行”，不要编造通过。
