@@ -13,6 +13,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -26,13 +27,15 @@ from shutong.database import make_engine, sessionmaker
 from shutong.corpus.taxonomy import TAXONOMY
 from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
 
-DEFAULT_CORPUS_DIR = Path("/media/xc/backup_ntfs/中考题库/北京中考真题")
+DEFAULT_CORPUS_DIR = Path("/media/xc/backup_ntfs/中考题库/北京中考真题-富尔题库")
+CONVERTED_CACHE_DIR = REPO_ROOT / ".cache" / "converted_docx"
 
 
 def seed_corpus(
     db_url: str | None = None,
     corpus_dir: Path | None = None,
     attach_pdfs: bool = False,
+    rebuild: bool = False,
 ) -> dict[str, int]:
     engine = make_engine(db_url)
     Session = sessionmaker(bind=engine, expire_on_commit=False)
@@ -48,6 +51,87 @@ def seed_corpus(
         "questions_existing": 0,
         "links_created": 0,
     }
+
+    if rebuild:
+        print("=== [0/2] 正在执行真题与附件彻底清理 (--rebuild) ===")
+        with Session() as session:
+            from sqlalchemy import delete, or_
+            # 1. 查找所有 official_exam 官方题源及旧演示题源
+            sources = session.scalars(
+                select(m.SourceDocument).where(
+                    or_(
+                        m.SourceDocument.source_class == "official_exam",
+                        m.SourceDocument.title.like("%中考%"),
+                        m.SourceDocument.title.like("%真题%"),
+                        m.SourceDocument.title.like("%虚构%"),
+                        m.SourceDocument.title.like("%演示%"),
+                    )
+                )
+            ).all()
+            source_ids = [s.id for s in sources]
+            
+            if source_ids:
+                # 级联查找关联的题目与版本
+                questions = session.scalars(select(m.Question).where(m.Question.source_document_id.in_(source_ids))).all()
+                q_ids = [q.id for q in questions]
+                
+                qvs = session.scalars(select(m.QuestionVersion).where(m.QuestionVersion.question_id.in_(q_ids))).all() if q_ids else []
+                qv_ids = [v.id for v in qvs]
+
+                exposures = session.scalars(select(m.Exposure).where(m.Exposure.question_id.in_(q_ids))).all() if q_ids else []
+                exp_ids = [e.id for e in exposures]
+
+                attempts = session.scalars(select(m.AnswerAttempt).where(m.AnswerAttempt.exposure_id.in_(exp_ids))).all() if exp_ids else []
+                att_ids = [a.id for a in attempts]
+
+                # 提取将被物理清理的 storage_keys
+                storage_keys = session.scalars(select(m.SourceAttachment.storage_key).where(m.SourceAttachment.source_document_id.in_(source_ids))).all()
+
+                print(f"  • 发现待彻底清理真题源: {len(source_ids)} 个，题目: {len(q_ids)} 道，版本: {len(qv_ids)} 个，附件: {len(storage_keys)} 个")
+
+                # 自底向上外键级联物理删除
+                if att_ids:
+                    session.execute(delete(m.SelfAssessment).where(m.SelfAssessment.attempt_id.in_(att_ids)))
+                    session.execute(delete(m.AnswerAttempt).where(m.AnswerAttempt.id.in_(att_ids)))
+                if exp_ids:
+                    session.execute(delete(m.Exposure).where(m.Exposure.id.in_(exp_ids)))
+                if qv_ids:
+                    session.execute(delete(m.QuestionKnowledgeLink).where(m.QuestionKnowledgeLink.question_version_id.in_(qv_ids)))
+                    session.execute(delete(m.ImportedQuestion).where(m.ImportedQuestion.question_version_id.in_(qv_ids)))
+                    session.execute(delete(m.QuestionSourceRegion).where(m.QuestionSourceRegion.question_version_id.in_(qv_ids)))
+                    session.execute(delete(m.Erratum).where(m.Erratum.question_version_id.in_(qv_ids)))
+                    session.execute(delete(m.QuestionVersion).where(m.QuestionVersion.id.in_(qv_ids)))
+                if q_ids:
+                    session.execute(delete(m.Question).where(m.Question.id.in_(q_ids)))
+                session.execute(delete(m.SourceAttachment).where(m.SourceAttachment.source_document_id.in_(source_ids)))
+                session.execute(delete(m.SourceReview).where(m.SourceReview.source_document_id.in_(source_ids)))
+                session.execute(delete(m.SourceDocument).where(m.SourceDocument.id.in_(source_ids)))
+                session.commit()
+
+                # 物理清理磁盘存储文件
+                att_dir = Path(os.environ.get("SHUTONG_PRIVATE_DIR") or files.DEFAULT_PRIVATE_DIR)
+                deleted_files = 0
+                if att_dir.is_dir():
+                    for key in storage_keys:
+                        f = att_dir / key
+                        if f.is_file():
+                            try:
+                                f.unlink()
+                                deleted_files += 1
+                            except Exception:
+                                pass
+                    # 孤儿扫描：检查数据库剩余全部有效 attachment key
+                    remaining_keys = set(session.scalars(select(m.SourceAttachment.storage_key)).all())
+                    for f in att_dir.iterdir():
+                        if f.is_file() and f.name not in remaining_keys:
+                            try:
+                                f.unlink()
+                                deleted_files += 1
+                            except Exception:
+                                pass
+                print(f"  ✓ 逻辑数据彻底删除完毕，物理附件已销毁 {deleted_files} 个文件")
+            else:
+                print("  ℹ️ 当前数据库无既有官方真题数据，无需逻辑清理。")
 
     with Session() as session:
         print("=== [1/2] 播种北京市义务教育新课标四科知识点库 (TAXONOMY) ===")
@@ -136,7 +220,7 @@ def seed_corpus(
                 ))
                 stats["sources_created"] += 1
 
-            # 2.1.b 可选挂载 PDF / DOCX 真题原件附件
+            # 2.1.b 可选挂载 PDF / DOCX 真题原件附件（富尔题库空白卷支持 .docx 及 .doc 无损转换）
             att: m.SourceAttachment | None = None
             if attach_pdfs and pdf_relpath and resolved_corpus_dir.is_dir():
                 pdf_file = resolved_corpus_dir / pdf_relpath
@@ -148,19 +232,35 @@ def seed_corpus(
                         )
                     )
                     if att is None:
-                        data = pdf_file.read_bytes()
-                        media_type = (
-                            files.DOCX_MEDIA_TYPE
-                            if pdf_file.suffix.lower() == ".docx"
-                            else "application/pdf"
-                        )
+                        # 若为 .doc 文件，读取预转换或动态转换的标准 .docx 字节
+                        if pdf_file.suffix.lower() == ".doc":
+                            cached_docx = CONVERTED_CACHE_DIR / Path(pdf_relpath).with_suffix(".docx")
+                            if cached_docx.is_file():
+                                data = cached_docx.read_bytes()
+                            else:
+                                import subprocess, tempfile
+                                with tempfile.TemporaryDirectory(dir=REPO_ROOT / ".cache") as tmpdir:
+                                    subprocess.run(["libreoffice", "--headless", "--convert-to", "docx", str(pdf_file), "--outdir", tmpdir], check=True, capture_output=True)
+                                    conv_file = Path(tmpdir) / f"{pdf_file.stem}.docx"
+                                    data = conv_file.read_bytes()
+                            media_type = files.DOCX_MEDIA_TYPE
+                            upload_filename = f"{pdf_file.stem}.docx"
+                        else:
+                            data = pdf_file.read_bytes()
+                            media_type = (
+                                files.DOCX_MEDIA_TYPE
+                                if pdf_file.suffix.lower() == ".docx"
+                                else "application/pdf"
+                            )
+                            upload_filename = pdf_file.name
+
                         files.validate_file(data, media_type)
                         digest = hashlib.sha256(data).hexdigest()
                         storage_key = files.write_blob(data)
                         att = m.SourceAttachment(
                             source_document_id=src.id,
                             owner_id="owner",
-                            filename=pdf_file.name,
+                            filename=upload_filename,
                             media_type=media_type,
                             sha256=digest,
                             byte_size=len(data),
@@ -284,7 +384,12 @@ def main():
     parser.add_argument(
         "--no-attachments",
         action="store_true",
-        help="仅灌入结构化真题与考点，不挂载 PDF 原件附件",
+        help="仅灌入结构化真题与考点，不挂载原件附件",
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="彻底清理既有真题与附件后重新完整灌入",
     )
     args = parser.parse_args()
 
@@ -292,6 +397,7 @@ def main():
         db_url=args.database_url,
         corpus_dir=args.corpus_dir,
         attach_pdfs=not args.no_attachments,
+        rebuild=args.rebuild,
     )
 
 

@@ -13,7 +13,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2018年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2018,
-        "pdf_relpath": "2018年/北京市(1)/2018北京市中考数学真题及答案.pdf",
+        "pdf_relpath": "2018年/2018年北京市中考数学真题及答案解析/2018年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -131,7 +131,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2018年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2018,
-        "pdf_relpath": "2018年/北京市(2)/2018北京市中考物理真题及答案.pdf",
+        "pdf_relpath": "2018年/2018年北京市中考物理真题及答案解析/2018年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -274,7 +274,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2018年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2018,
-        "pdf_relpath": "2018年/北京市(4)/2018北京市中考英语真题及答案.pdf",
+        "pdf_relpath": "2018年/2018年北京市中考英语真题及答案解析/2018年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -407,7 +407,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2018年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2018,
-        "pdf_relpath": "2018年/北京市(3)/2018北京市中考语文真题及答案.pdf",
+        "pdf_relpath": "2018年/2018年北京市中考语文真题及答案解析/2018年北京市中考语文真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -549,7 +549,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2019年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2019,
-        "pdf_relpath": "2019年/2019年北京市中考数学试卷逐题解析.pdf",
+        "pdf_relpath": "2019年/2019年北京市中考数学真题及答案解析/2019年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -672,7 +672,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2019年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2019,
-        "pdf_relpath": "2019年/2019年北京市中考物理试卷逐题解析.pdf",
+        "pdf_relpath": "2019年/2019年北京市中考物理真题及答案解析/2019年北京市中考物理真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -815,7 +815,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2019年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2019,
-        "pdf_relpath": "2019年/2019年北京市中考英语试卷逐题解析.pdf",
+        "pdf_relpath": "2019年/2019年北京市中考英语真题及答案解析/2019年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -948,7 +948,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2019年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2019,
-        "pdf_relpath": "2019年/2019年北京市中考语文考试逐题解析.pdf",
+        "pdf_relpath": "2019年/2019年北京市中考语文真题及答案解析/2019年北京市中考语文真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1085,7 +1085,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2020年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2020,
-        "pdf_relpath": "2020年/2020年北京市中考数学考试逐题解析.pdf",
+        "pdf_relpath": "2020年/2020年北京市中考数学真题及答案解析/2020年北京市中考数学真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1203,7 +1203,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2020年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2020,
-        "pdf_relpath": "2020年/2020年北京市中考物理考试逐题解析.pdf",
+        "pdf_relpath": "2020年/2020年北京市中考物理真题及答案解析/2020年北京市中考物理真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1341,7 +1341,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2020年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2020,
-        "pdf_relpath": "2020年/2020年北京市中考英语考试逐题解析.pdf",
+        "pdf_relpath": "2020年/2020年北京市中考英语真题及答案解析/2020年北京市中考英语真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1474,7 +1474,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2020年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2020,
-        "pdf_relpath": "2020年/2020年北京市中考语文考试逐题解析.pdf",
+        "pdf_relpath": "2020年/2020年北京市中考语文真题及答案解析/2020年北京市中考语文真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1616,7 +1616,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2021年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2021,
-        "pdf_relpath": "2021年/2021北京中考数学真题.pdf",
+        "pdf_relpath": "2021年/2021年北京市中考数学真题及答案解析/2021年北京市中考数学真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -1759,7 +1759,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2021年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2021,
-        "pdf_relpath": "2021年/2021北京中考物理真题.pdf",
+        "pdf_relpath": "2021年/2021年北京市中考物理真题及答案解析/2021年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -1892,7 +1892,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2021年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2021,
-        "pdf_relpath": "2021年/2021北京中考英语真题.pdf",
+        "pdf_relpath": "2021年/2021年北京市中考英语真题及答案解析/2021年北京市中考英语真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -2025,7 +2025,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2021年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2021,
-        "pdf_relpath": "2021年/2021北京中考语文真题及答案.pdf",
+        "pdf_relpath": "2021年/2021年北京市中考语文真题及答案解析/2021年北京市中考语文真题（空白卷）.doc",
         "questions": [
             {
                 "index": 1,
@@ -2157,7 +2157,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2022年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2022,
-        "pdf_relpath": "2022年/2022年北京中考数学真题及答案.pdf",
+        "pdf_relpath": "2022年/2022年北京市中考数学真题及答案解析/2022年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -2300,7 +2300,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2022年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2022,
-        "pdf_relpath": "2022年/2022年北京中考物理真题及答案.pdf",
+        "pdf_relpath": "2022年/2022年北京市中考物理真题及答案解析/2022年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -2453,7 +2453,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2022年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2022,
-        "pdf_relpath": "2022年/2022年北京中考英语真题及答案.pdf",
+        "pdf_relpath": "2022年/2022年北京市中考英语真题及答案解析/2022年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -2586,7 +2586,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2022年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2022,
-        "pdf_relpath": "2022年/2022年北京中考语文真题及答案.pdf",
+        "pdf_relpath": "2022年/2022年北京市中考语文真题及答案解析/2022年北京市中考语文真题（空白卷）.docx",
         "questions": [
             {
                 "index": 2,
@@ -2723,7 +2723,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2023年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2023,
-        "pdf_relpath": "2023年/2023北京数学试卷(PDF版).pdf",
+        "pdf_relpath": "2023年/2023年北京市中考数学真题及答案解析/2023年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -2871,7 +2871,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2023年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2023,
-        "pdf_relpath": "2023年/2023北京物理试卷+答案(PDF版).pdf",
+        "pdf_relpath": "2023年/2023年北京市中考物理真题及答案解析/2023年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -3024,7 +3024,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2023年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2023,
-        "pdf_relpath": "2023年/2023北京英语试卷+答案(图片版).pdf",
+        "pdf_relpath": "2023年/2023年北京市中考英语真题及答案解析/2023年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -3157,7 +3157,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2023年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2023,
-        "pdf_relpath": "2023年/2023北京语文试卷+答案(图片版).pdf",
+        "pdf_relpath": "2023年/2023年北京市中考语文真题及答案解析/2023年北京市中考语文真题（空白卷）.docx",
         "questions": [
             {
                 "index": 2,
@@ -3288,7 +3288,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2024年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2024,
-        "pdf_relpath": "2024/2024年北京市中考数学真题（空白卷）.docx",
+        "pdf_relpath": "2024年/2024年北京市中考数学真题及答案解析/2024年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -3431,7 +3431,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2024年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2024,
-        "pdf_relpath": "2024/2024年北京市中考物理真题（空白卷）.docx",
+        "pdf_relpath": "2024年/2024年北京市中考物理真题及答案解析/2024年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -3609,7 +3609,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2024年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2024,
-        "pdf_relpath": "2024/2024年北京市中考英语真题（空白卷）.docx",
+        "pdf_relpath": "2024年/2024年北京市中考英语真题及答案解析/2024年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -3742,7 +3742,7 @@ EXAM_2018_2023_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2024年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2024,
-        "pdf_relpath": "2024/2024年北京市中考语文真题（空白卷）.docx",
+        "pdf_relpath": "2024年/2024年北京市中考语文真题及答案解析/2024年北京市中考语文真题（空白卷）.docx",
         "questions": [
             {
                 "index": 2,

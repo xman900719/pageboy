@@ -59,6 +59,12 @@ def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, mo
         target.parent.mkdir(parents=True, exist_ok=True)
         if rel.endswith(".docx"):
             target.write_bytes(synthetic_docx(text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
+        elif rel.endswith(".doc"):
+            # 为 .doc 生成对应缓存的标准 .docx
+            target.write_bytes(b"SYNTHETIC TEST DATA DOC")
+            cache_target = REPO_ROOT / ".cache" / "converted_docx" / Path(rel).with_suffix(".docx")
+            cache_target.parent.mkdir(parents=True, exist_ok=True)
+            cache_target.write_bytes(synthetic_docx(text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
         else:
             target.write_bytes(synthetic_pdf(pages=1, text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
 

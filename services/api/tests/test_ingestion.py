@@ -304,7 +304,7 @@ def test_invalid_uploads_leave_no_files_or_rows(client, auth, source, tmp_path, 
     elif case == 'too_many_pages':
         kwargs['data'] = synthetic_pdf(pages=41)
     elif case == 'too_large':
-        kwargs['data'] = b'x' * (25 * 1024 * 1024 + 1)
+        kwargs['data'] = b'x' * (35 * 1024 * 1024 + 1)
     assert upload(client, auth, source, **kwargs).status_code == expected
     assert not list((tmp_path / 'private').glob('*'))
     with database() as db:

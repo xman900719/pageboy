@@ -11,7 +11,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "math",
         "title": "2025年北京市初中学业水平考试（中考）数学试卷",
         "exam_year": 2025,
-        "pdf_relpath": "2025年/2025北京中考数学_候选文件.pdf",
+        "pdf_relpath": "2025年/2025年北京市中考数学真题及答案解析/2025年北京市中考数学真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -149,7 +149,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "physics",
         "title": "2025年北京市初中学业水平考试（中考）物理试卷",
         "exam_year": 2025,
-        "pdf_relpath": "2025年/2025北京中考物理_候选文件.pdf",
+        "pdf_relpath": "2025年/2025年北京市中考物理真题及答案解析/2025年北京市中考物理真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -322,7 +322,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "english",
         "title": "2025年北京市初中学业水平考试（中考）英语试卷",
         "exam_year": 2025,
-        "pdf_relpath": "2025年/2025北京中考英语_候选文件.pdf",
+        "pdf_relpath": "2025年/2025年北京市中考英语真题及答案解析/2025年北京市中考英语真题（空白卷）.docx",
         "questions": [
             {
                 "index": 1,
@@ -455,7 +455,7 @@ EXAM_2025_PAPERS: list[dict] = [
         "subject": "chinese",
         "title": "2025年北京市初中学业水平考试（中考）语文试卷",
         "exam_year": 2025,
-        "pdf_relpath": "2025年/2025北京中考语文_候选文件.pdf",
+        "pdf_relpath": "2025年/2025年北京市中考语文真题及答案解析/2025年北京市中考语文真题（空白卷）.docx",
         "questions": [
             {
                 "index": 2,

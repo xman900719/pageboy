@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
 DEFAULT_PRIVATE_DIR = Path(__file__).resolve().parents[1] / "private-data" / "attachments"
-MAX_BYTES = 25 * 1024 * 1024
+MAX_BYTES = 35 * 1024 * 1024
 MAX_PAGES = 40
 MAX_PIXELS = 20_000_000
 MAX_TEXT_BYTES = 200_000
