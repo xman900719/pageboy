@@ -97,7 +97,7 @@ def question_body(source):
             'knowledge_ids': ['math.arithmetic'], 'max_points': 2}
 
 
-def test_pdf_import_requires_source_and_question_human_review(client, auth, source, tmp_path):
+def test_pdf_import_requires_source_and_question_human_review(client, auth, student_auth, source, tmp_path):
     data = synthetic_pdf()
     attached = upload(client, auth, source, data, expected_sha256=sha256(data).hexdigest())
     assert attached.status_code == 201
@@ -129,7 +129,7 @@ def test_pdf_import_requires_source_and_question_human_review(client, auth, sour
     assert client.post(f'/api/admin/questions/{version_id}/publish', headers=auth).status_code == 409
     assert review_source(client, auth, source).status_code == 201
     assert client.post(f'/api/admin/questions/{version_id}/publish', headers=auth).status_code == 200
-    assert client.get('/api/practice/next?subject=math', headers=auth).json()['question_version_id'] == version_id
+    assert client.get('/api/practice/next?subject=math', headers=student_auth).json()['question_version_id'] == version_id
     assert client.post(f'/api/admin/attachments/{attachment}/confirm', headers=auth, json=confirm).status_code == 409
     assert client.post(f'/api/admin/attachments/{attachment}/parse', headers=auth).status_code == 409
     ledger = client.get(f'/api/admin/sources/{source}', headers=auth)
@@ -195,7 +195,7 @@ def test_legacy_unbacked_source_hash_is_not_presented_as_verified(client, auth, 
 
 
 @pytest.mark.parametrize('media_type, filename', [('image/png', 'synthetic.png'), ('image/jpeg', 'synthetic.jpg')])
-def test_image_ocr_is_only_an_unreviewed_text_draft(client, auth, source, media_type, filename):
+def test_image_ocr_is_only_an_unreviewed_text_draft(client, auth, student_auth, source, media_type, filename):
     image = Image.new('RGB', (1000, 200), 'white')
     ImageDraw.Draw(image).text((20, 40), 'SYNTHETIC TEST DATA', fill='black', font=ImageFont.load_default(size=48))
     buffer = BytesIO()
@@ -205,7 +205,7 @@ def test_image_ocr_is_only_an_unreviewed_text_draft(client, auth, source, media_
     parsed = client.post(f"/api/admin/attachments/{attached.json()['id']}/parse", headers=auth)
     assert parsed.status_code == 200 and parsed.json()['status'] == 'parsed'
     assert 'SYNTHETIC' in parsed.json()['extracted_text'].upper()
-    assert client.get('/api/practice/next?subject=math', headers=auth).status_code == 404
+    assert client.get('/api/practice/next?subject=math', headers=student_auth).status_code == 404
 
 
 def test_pdf_needs_ocr_only_when_extraction_has_no_visible_characters():

@@ -37,8 +37,8 @@ def snapshot(record):
     return {column.key: getattr(record, column.key) for column in inspect(record).mapper.column_attrs}
 
 
-def test_training_rotates_through_pool(client, auth, published):
-    responses = [client.get('/api/practice/next?subject=math', headers=auth) for _ in range(6)]
+def test_training_rotates_through_pool(client, student_auth, published):
+    responses = [client.get('/api/practice/next?subject=math', headers=student_auth) for _ in range(6)]
     assert all(response.status_code == 200 for response in responses)
     items = [response.json() for response in responses]
     assert len({item['question_version_id'] for item in items[:5]}) == 5
@@ -48,49 +48,49 @@ def test_training_rotates_through_pool(client, auth, published):
     assert items[5]['unseen_at_exposure'] is False
 
 
-def test_evaluation_serves_each_unseen_question_once(client, auth, published):
+def test_evaluation_serves_each_unseen_question_once(client, student_auth, published):
     served = []
     for _ in range(5):
-        response = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth)
+        response = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth)
         assert response.status_code == 200
         item = response.json()
         assert item['unseen_at_exposure'] is True
         served.append(item['question_version_id'])
     assert len(set(served)) == 5
     assert set(served) == set(published)
-    exhausted = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth)
+    exhausted = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth)
     assert exhausted.status_code == 404
     assert exhausted.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
 
 
-def test_evaluation_excludes_question_seen_in_training(client, auth, published):
-    training = client.get('/api/practice/next?subject=math', headers=auth)
+def test_evaluation_excludes_question_seen_in_training(client, student_auth, published):
+    training = client.get('/api/practice/next?subject=math', headers=student_auth)
     assert training.status_code == 200
     q_a = training.json()['question_version_id']
     served = []
     for _ in range(4):
-        response = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth)
+        response = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth)
         assert response.status_code == 200
         item = response.json()
         assert item['question_version_id'] != q_a
         served.append(item['question_version_id'])
     assert q_a not in served
     assert set(served) == set(published) - {q_a}
-    exhausted = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth)
+    exhausted = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth)
     assert exhausted.status_code == 404
     assert exhausted.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
 
 
-def test_cross_version_exposure_keeps_question_seen(client, auth, db, question):
+def test_cross_version_exposure_keeps_question_seen(client, auth, student_auth, db, question):
     original, body = question
     v1 = original['id']
     publish(client, auth, v1)
-    first = client.get('/api/practice/next?subject=math', headers=auth)
+    first = client.get('/api/practice/next?subject=math', headers=student_auth)
     assert first.status_code == 200
     first_item = first.json()
     assert first_item['question_version_id'] == v1
     assert first_item['unseen_at_exposure'] is True
-    attempt = client.post('/api/practice/attempts', headers=auth, json={
+    attempt = client.post('/api/practice/attempts', headers=student_auth, json={
         'exposure_id': first_item['exposure_id'], 'client_attempt_id': 'v1-attempt', 'answer': 'B'})
     assert attempt.status_code == 201 and attempt.json()['earned_points'] == 2.0
     v1_exposure_snapshot = snapshot(db.get(m.Exposure, first_item['exposure_id']))
@@ -101,13 +101,13 @@ def test_cross_version_exposure_keeps_question_seen(client, auth, db, question):
     assert revision.status_code == 201
     v2 = revision.json()['id']
     publish(client, auth, v2)
-    assert client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth).status_code == 404
-    second = client.get('/api/practice/next?subject=math', headers=auth)
+    assert client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth).status_code == 404
+    second = client.get('/api/practice/next?subject=math', headers=student_auth)
     assert second.status_code == 200
     second_item = second.json()
     assert second_item['question_version_id'] == v2
     assert second_item['unseen_at_exposure'] is False
-    graded = client.post('/api/practice/attempts', headers=auth, json={
+    graded = client.post('/api/practice/attempts', headers=student_auth, json={
         'exposure_id': second_item['exposure_id'], 'client_attempt_id': 'v2-attempt',
         'answer': corrected['correct_answer']})
     assert graded.status_code == 201
@@ -119,7 +119,7 @@ def test_cross_version_exposure_keeps_question_seen(client, auth, db, question):
     assert v1_attempt_snapshot['earned_points'] == 2.0
 
 
-def test_unpublished_questions_are_never_served(client, auth):
+def test_unpublished_questions_are_never_served(client, auth, student_auth):
     source = client.post('/api/admin/sources', headers=auth, json={
         'title': '虚构测试数据：未发布题源', 'subject': 'math',
         'rights_status': 'personal_use_reviewed', 'verified': True,
@@ -130,15 +130,15 @@ def test_unpublished_questions_are_never_served(client, auth):
         'knowledge_ids': ['math.arithmetic'], 'max_points': 2,
     }).json()['id']
     assert client.post(f'/api/admin/questions/{version_id}/review', headers=auth).status_code == 200
-    training = client.get('/api/practice/next?subject=math', headers=auth)
+    training = client.get('/api/practice/next?subject=math', headers=student_auth)
     assert training.status_code == 404
     assert training.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
-    evaluation = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth)
+    evaluation = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth)
     assert evaluation.status_code == 404
     assert evaluation.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
 
 
-def test_knowledge_id_filter(client, auth, published):
+def test_knowledge_id_filter(client, auth, student_auth, published):
     source = client.post('/api/admin/sources', headers=auth, json={
         'title': '虚构测试数据：几何题源', 'subject': 'math',
         'rights_status': 'personal_use_reviewed', 'verified': True,
@@ -150,19 +150,19 @@ def test_knowledge_id_filter(client, auth, published):
     }).json()['id']
     publish(client, auth, extra)
     # 顺序上先取 evaluation：唯一几何题被 training 曝光后即失去未见资格，两种 purpose 才都能返回该题。
-    evaluation = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry&purpose=evaluation', headers=auth)
+    evaluation = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry&purpose=evaluation', headers=student_auth)
     assert evaluation.status_code == 200
     assert evaluation.json()['question_version_id'] == extra
-    training = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry', headers=auth)
+    training = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry', headers=student_auth)
     assert training.status_code == 200
     assert training.json()['question_version_id'] == extra
     for purpose in ('training', 'evaluation'):
-        missing = client.get(f'/api/practice/next?subject=math&knowledge_id=math.nonexistent&purpose={purpose}', headers=auth)
+        missing = client.get(f'/api/practice/next?subject=math&knowledge_id=math.nonexistent&purpose={purpose}', headers=student_auth)
         assert missing.status_code == 404
         assert missing.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
 
 
-def test_non_owner_exposure_not_visible(client, auth, published, db):
+def test_non_owner_exposure_not_visible(client, student_auth, published, db):
     version_id = published[0]
     question_id = db.scalar(select(m.QuestionVersion.question_id).where(m.QuestionVersion.id == version_id))
     foreign = m.Exposure(learner_id='someone-else', question_id=question_id,
@@ -170,7 +170,7 @@ def test_non_owner_exposure_not_visible(client, auth, published, db):
                          is_unseen_at_exposure=True)
     db.add(foreign)
     db.commit()
-    response = client.post('/api/practice/attempts', headers=auth, json={
+    response = client.post('/api/practice/attempts', headers=student_auth, json={
         'client_attempt_id': 'foreign-exposure-attempt', 'exposure_id': foreign.id, 'answer': 'B'})
     assert response.status_code == 404
 
@@ -181,12 +181,12 @@ def test_practice_endpoints_require_auth(client):
         'client_attempt_id': 'no-auth', 'exposure_id': 'missing', 'answer': 'B'}).status_code == 401
 
 
-def test_second_key_for_same_exposure_rejected(client, auth, db, published):
-    item = client.get('/api/practice/next?subject=math', headers=auth).json()
-    first = client.post('/api/practice/attempts', headers=auth, json={
+def test_second_key_for_same_exposure_rejected(client, student_auth, db, published):
+    item = client.get('/api/practice/next?subject=math', headers=student_auth).json()
+    first = client.post('/api/practice/attempts', headers=student_auth, json={
         'client_attempt_id': 'key-1', 'exposure_id': item['exposure_id'], 'answer': 'B'})
     assert first.status_code == 201
-    second = client.post('/api/practice/attempts', headers=auth, json={
+    second = client.post('/api/practice/attempts', headers=student_auth, json={
         'client_attempt_id': 'key-2', 'exposure_id': item['exposure_id'], 'answer': 'B'})
     assert second.status_code == 409
     assert second.json()['detail'] == 'EXPOSURE_ALREADY_SUBMITTED'
@@ -196,9 +196,9 @@ def test_second_key_for_same_exposure_rejected(client, auth, db, published):
     assert rows[0].id == first.json()['id']
 
 
-def test_hinted_evaluation_attempt_not_valid_unseen(client, auth, published):
-    item = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth).json()
-    response = client.post('/api/practice/attempts', headers=auth, json={
+def test_hinted_evaluation_attempt_not_valid_unseen(client, student_auth, published):
+    item = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth).json()
+    response = client.post('/api/practice/attempts', headers=student_auth, json={
         'client_attempt_id': 'hinted-1', 'exposure_id': item['exposure_id'],
         'answer': 'B', 'hints_used': True})
     assert response.status_code == 201

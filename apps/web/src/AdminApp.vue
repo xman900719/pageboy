@@ -9,7 +9,7 @@ import PoolHealthCard from './components/PoolHealthCard.vue'
 import SchoolExamCard from './components/admin/SchoolExamCard.vue'
 import Note from './components/Note.vue'
 
-const TOKEN_STORE_KEY = 'shutong.token'
+const TOKEN_STORE_KEY = 'shutong.admin_token'
 
 const token = ref('')
 const subject = ref<Subject>('math')
@@ -18,7 +18,7 @@ const notice = ref<NoticeData | null>(null)
 const poolHealth = ref<PoolHealth | null>(null)
 const poolLoading = ref(false)
 
-const client = computed(() => (token.value === '' ? null : createClient(token.value)))
+const client = computed(() => (token.value === '' ? null : createClient(token.value, 'admin')))
 
 function notify(text: string, tone: NoticeTone = 'info') {
   notice.value = { text, tone }
@@ -53,7 +53,7 @@ watch(
 onMounted(() => {
   const saved = localStorage.getItem(TOKEN_STORE_KEY)
   if (saved === null || saved === '') return
-  createClient(saved)
+  createClient(saved, 'admin')
     .verify()
     .then(() => {
       if (token.value !== '') return
@@ -66,7 +66,7 @@ onMounted(() => {
 })
 
 async function enter(nextToken: string, remember: boolean) {
-  const candidate = createClient(nextToken)
+  const candidate = createClient(nextToken, 'admin')
   await candidate.verify()
   if (remember) localStorage.setItem(TOKEN_STORE_KEY, nextToken)
   else localStorage.removeItem(TOKEN_STORE_KEY)

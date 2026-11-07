@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from . import models as m
-from .auth import require_owner
+from .auth import require_admin
 from .database import get_db
 from .research import RULE_VERSION, coverage_report, statistics, backtest, predict
 from .schemas import Subject
 
-router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_owner)])
+router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
 
 class NodeIn(BaseModel):

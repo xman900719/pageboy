@@ -17,7 +17,8 @@
  */
 import { test, expect, devices, type Page } from '@playwright/test'
 
-const TOKEN = 'test-journey-secret'
+const TOKEN = 'test-student-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
 const ipadMode = process.env.E2E_DEVICE === 'ipad'
 
 test.skip(!ipadMode, '仅 iPad 仿真通道运行（E2E_DEVICE=ipad）')
@@ -74,7 +75,7 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
 
   // 管理端工作台（/admin.html）：台账与工作区卡片只读加载后度量，无横向溢出。
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await expect(page.getByRole('region', { name: '题源台账' })).toBeVisible()

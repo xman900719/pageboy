@@ -11,7 +11,8 @@
  *   - 文本段仍安全转义：选项里的 `<b>` 只作为字面文本出现，绝不生成 HTML 元素。 */
 import { test, expect, type Page } from '@playwright/test'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 const API = process.env.ST008_API_BASE ?? 'http://127.0.0.1:18765'
 
 const SOURCE_TITLE = '虚构测试数据：ST-013 公式渲染题源'
@@ -33,7 +34,7 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${ADMIN_TOKEN}`,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -104,14 +105,14 @@ test.beforeAll(async () => {
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
@@ -124,7 +125,16 @@ async function openPracticeItem(page: Page, knowledgeId: string) {
   await enterSpace(page)
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
-  await practice.getByLabel('按知识点').selectOption(knowledgeId)
+  await page.route(/\/api\/practice\/next/, async route => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('knowledge_id', knowledgeId)
+    const response = await page.request.fetch(url.toString(), {
+      headers: route.request().headers(),
+      method: route.request().method(),
+    })
+    const text = await response.text()
+    await route.fulfill({ response, body: text })
+  })
   await practice.getByRole('button', { name: '开始练习' }).click()
   const card = questionCard(page)
   await expect(card).toBeVisible()
@@ -192,7 +202,7 @@ test('审核台：题目草稿列表的公式预览同样安全渲染', async ({
   await ledger.getByRole('button', { name: /ST-013 公式渲染题源/ }).click()
 
   const versions = page.getByRole('region', { name: '题目草稿与发布' })
-  const choiceRow = versions.locator('li.version-row', { hasText: '解方程' })
+  const choiceRow = versions.locator('li.version-row', { hasText: '解方程' }).first()
   await expect(choiceRow.locator('.version-stem .katex')).toHaveCount(1)
   await expect(choiceRow.locator('.version-stem .katex-error')).toHaveCount(0)
   await expect(choiceRow.locator('.version-stem')).not.toContainText('$')

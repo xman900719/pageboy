@@ -44,7 +44,7 @@ def math_pool(client, auth):
     return published_ids
 
 
-def test_math_vertical_loop(client, auth, db, math_pool):
+def test_math_vertical_loop(client, student_auth, db, math_pool):
     exposures_created = 0
     attempts_recorded = 0
 
@@ -55,7 +55,7 @@ def test_math_vertical_loop(client, auth, db, math_pool):
             path += f"&purpose={purpose}"
         if knowledge_id:
             path += f"&knowledge_id={knowledge_id}"
-        r = client.get(path, headers=auth)
+        r = client.get(path, headers=student_auth)
         assert r.status_code == 200, r.text
         exposures_created += 1
         return r.json()
@@ -64,24 +64,24 @@ def test_math_vertical_loop(client, auth, db, math_pool):
         nonlocal attempts_recorded
         r = client.post("/api/practice/attempts", json={
             "client_attempt_id": cid, "exposure_id": item["exposure_id"],
-            "answer": answer, "hints_used": hints}, headers=auth)
+            "answer": answer, "hints_used": hints}, headers=student_auth)
         assert r.status_code == 201, r.text
         attempts_recorded += 1
         return r.json()
 
     # 1) 目标
-    goal = client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100, "minutes_per_day": 15}, headers=auth)
+    goal = client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100, "minutes_per_day": 15}, headers=student_auth)
     assert goal.status_code == 201
 
     # 2) 空状态：缺证据 = 证据不足/不可比，不是错误，更不是 0 分
-    empty_profile = client.get("/api/guidance/profile?subject=math", headers=auth).json()
+    empty_profile = client.get("/api/guidance/profile?subject=math", headers=student_auth).json()
     assert empty_profile["knowledge"] == []
-    empty_plan = client.get("/api/guidance/plan?subject=math", headers=auth).json()
-    empty_steps = {s["knowledge_id"]: s for s in empty_plan["steps"]}
-    assert empty_steps["math.gap"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
-    assert empty_steps["math.ok"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
-    assert "observed_rate" not in empty_steps["math.gap"]  # 缺证据绝不能呈现为 0 分
-    empty_validation = client.get("/api/guidance/validation?subject=math", headers=auth)
+    empty_plan = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
+    empty_steps = {s["topic"]: s for s in empty_plan["steps"]}
+    assert empty_steps["基础运算与薄弱短板"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
+    assert empty_steps["核心知识达标模块"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
+    assert "observed_rate" not in empty_steps["基础运算与薄弱短板"]  # 缺证据绝不能呈现为 0 分
+    empty_validation = client.get("/api/guidance/validation?subject=math", headers=student_auth)
     assert empty_validation.status_code == 200  # 红：当前无该路由（404）；无证据 ≠ 错误
     assert empty_validation.json()["verdict"] == "CANNOT_COMPARE"
     assert empty_validation.json()["knowledge"] == []
@@ -91,22 +91,22 @@ def test_math_vertical_loop(client, auth, db, math_pool):
     for i in range(3):
         item = next_item(purpose="evaluation", knowledge_id="math.gap")
         assert item["unseen_at_exposure"] is True
-        assert item["knowledge_ids"] == ["math.gap"]
+        assert "knowledge_ids" not in item  # P0-1 学生接口杜绝暴露内部代号
         result = submit(f"diag-{i}", item, "A")
         assert result["earned_points"] == 0
         assert result["evaluation_valid_unseen"] is True  # 无提示 + 未见 + evaluation
         diag_ids.append(item["question_version_id"])
 
     # 4) 差距与计划：观察率 0 < 阈值 0.9 → KNOWLEDGE_GAP；对照知识点证据不足
-    plan = client.get("/api/guidance/plan?subject=math", headers=auth).json()
+    plan = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
     assert plan["planning_threshold"] == 0.9
-    steps = {s["knowledge_id"]: s for s in plan["steps"]}
-    gap = steps["math.gap"]
+    steps = {s["topic"]: s for s in plan["steps"]}
+    gap = steps["基础运算与薄弱短板"]
     assert gap["gap_type"] == "KNOWLEDGE_GAP"
     assert gap["action"] == "targeted_practice_then_unseen_evaluation"
     assert gap["observed_rate"] == 0  # 观察率 0 < 阈值 0.9
-    assert steps["math.ok"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
-    assert steps["math.ok"]["priority"] == 0
+    assert steps["核心知识达标模块"]["gap_type"] == "INSUFFICIENT_EVIDENCE"
+    assert steps["核心知识达标模块"]["priority"] == 0
 
     # 5) math.gap 复练：training 按（最少曝光优先）轮换、允许重复；完成 曝光+作答 循环即可
     for i in range(3):
@@ -125,16 +125,16 @@ def test_math_vertical_loop(client, auth, db, math_pool):
     assert set(retest_ids).isdisjoint(diag_ids)
 
     # 7) 复测判决：可比范围内 improved；不得给出分数预测；必须含免责声明
-    validation = client.get("/api/guidance/validation?subject=math", headers=auth)
+    validation = client.get("/api/guidance/validation?subject=math", headers=student_auth)
     assert validation.status_code == 200  # 红：当前 404
     report = validation.json()
     assert report["verdict"] == "IMPROVED_ON_COMPARABLE_SCOPE"
     assert report["comparable"] is True
     assert report["score_prediction"] is None
     assert report["disclaimer"]  # 非空免责声明
-    kids = {e["knowledge_id"]: e for e in report["knowledge"]}
-    assert set(kids) == {"math.gap"}  # math.ok / math.sparse 两端皆无证据 → 不列入
-    entry = kids["math.gap"]
+    kids = {e["topic"]: e for e in report["knowledge"]}
+    assert set(kids) == {"基础运算与薄弱短板"}  # math.ok / math.sparse 两端皆无证据 → 不列入
+    entry = kids["基础运算与薄弱短板"]
     assert entry["verdict"] == "improved"
     assert entry["baseline_rate"] == 0 and entry["retest_rate"] == 1
     assert entry["baseline_items"] == 3 and entry["retest_items"] == 3
@@ -144,11 +144,11 @@ def test_math_vertical_loop(client, auth, db, math_pool):
         item = next_item(purpose="evaluation", knowledge_id="math.ok")
         result = submit(f"contam-{i}", item, "A", hints=True)
         assert result["evaluation_valid_unseen"] is False  # 带提示 → 非独立，不得算作有效复测
-    contaminated = client.get("/api/guidance/validation?subject=math", headers=auth).json()
-    assert "math.ok" not in {e["knowledge_id"] for e in contaminated["knowledge"]}  # 视同缺席
+    contaminated = client.get("/api/guidance/validation?subject=math", headers=student_auth).json()
+    assert "核心知识达标模块" not in {e["topic"] for e in contaminated["knowledge"]}  # 视同缺席
     assert contaminated["verdict"] == "IMPROVED_ON_COMPARABLE_SCOPE"  # 总判决不受污染影响
-    contaminated_profile = client.get("/api/guidance/profile?subject=math", headers=auth).json()
-    assert "math.ok" not in {e["knowledge_id"] for e in contaminated_profile["knowledge"]}  # summarize 已过滤
+    contaminated_profile = client.get("/api/guidance/profile?subject=math", headers=student_auth).json()
+    assert "核心知识达标模块" not in {e["topic"] for e in contaminated_profile["knowledge"]}  # summarize 已过滤
 
     # 9) 复测侧不足反例：math.sparse 基线 3 条全对 + 复测仅 1 条 → cannot_compare(insufficient_retest)
     for i in range(3):
@@ -157,15 +157,19 @@ def test_math_vertical_loop(client, auth, db, math_pool):
         assert submit(f"sparse-base-{i}", item, "B")["evaluation_valid_unseen"] is True
     item = next_item(purpose="evaluation", knowledge_id="math.sparse")
     assert submit("sparse-retest-0", item, "B")["evaluation_valid_unseen"] is True
-    final = client.get("/api/guidance/validation?subject=math", headers=auth).json()
-    final_kids = {e["knowledge_id"]: e for e in final["knowledge"]}
-    assert set(final_kids) == {"math.gap", "math.sparse"}  # math.ok 仅有带提示证据 → 仍缺席
-    assert [e["knowledge_id"] for e in final["knowledge"]] == ["math.gap", "math.sparse"]  # knowledge 按 id 排序
-    sparse = final_kids["math.sparse"]
+    final = client.get("/api/guidance/validation?subject=math", headers=student_auth).json()
+    final_kids = {e["topic"]: e for e in final["knowledge"]}
+    assert set(final_kids) == {"基础运算与薄弱短板", "拓展提升考点"}  # math.ok 仅有带提示证据 → 仍缺席
+    assert [e["topic"] for e in final["knowledge"]] == ["基础运算与薄弱短板", "拓展提升考点"]  # knowledge 按 id 排序
+    sparse = final_kids["拓展提升考点"]
     assert sparse["verdict"] == "cannot_compare"
     assert sparse["reason"] == "insufficient_retest"  # 复测样本 1 < MIN_DISTINCT_ITEMS(3)
     assert final["verdict"] == "IMPROVED_ON_COMPARABLE_SCOPE"  # 总判决仍只由可比范围（math.gap）决定
     assert final["comparable"] is True
+
+    # 10) 全程无幻影写入：行数与练习接口实际调用次数逐一致
+    assert db.scalar(select(func.count()).select_from(m.Exposure)) == exposures_created
+    assert db.scalar(select(func.count()).select_from(m.AnswerAttempt)) == attempts_recorded
 
     # 10) 全程无幻影写入：行数与练习接口实际调用次数逐一致
     assert db.scalar(select(func.count()).select_from(m.Exposure)) == exposures_created

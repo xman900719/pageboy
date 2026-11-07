@@ -50,28 +50,28 @@ def submit_answer(client, auth, item, answer, key):
     return response.json()
 
 
-def test_attempts_list_reports_origins_and_self_assessment(client, auth):
-    source = make_source(client, auth, 'math', '虚构测试数据：溯源题源')
-    single = publish_question(client, auth, source, stem='虚构测试数据：1+1=?')
-    short = publish_question(client, auth, source,
+def test_attempts_list_reports_origins_and_self_assessment(client, admin_auth, student_auth):
+    source = make_source(client, admin_auth, 'math', '虚构测试数据：溯源题源')
+    single = publish_question(client, admin_auth, source, stem='虚构测试数据：1+1=?')
+    short = publish_question(client, admin_auth, source,
                              stem='虚构测试数据：解方程 x^2+2x+1=0，写出 x 的值', kind='short_answer',
                              options=[], correct_answer='x=-1', knowledge_ids=['math.arithmetic'], max_points=2)
-    subjective = publish_question(client, auth, source, stem='虚构测试数据：解答并写出过程：计算 3+5×2',
+    subjective = publish_question(client, admin_auth, source, stem='虚构测试数据：解答并写出过程：计算 3+5×2',
                                   kind='subjective', options=[], correct_answer='先算乘法：5×2=10；再算加法：3+10=13',
                                   knowledge_ids=['math.arithmetic'], max_points=3)
 
-    single_item = practice_next(client, auth)
+    single_item = practice_next(client, student_auth)
     assert single_item['question_version_id'] == single
-    single_attempt = submit_answer(client, auth, single_item, 'B', 'trace-single')
-    short_item = practice_next(client, auth)
+    single_attempt = submit_answer(client, student_auth, single_item, 'B', 'trace-single')
+    short_item = practice_next(client, student_auth)
     assert short_item['question_version_id'] == short
-    short_attempt = submit_answer(client, auth, short_item, '  X=-1  ', 'trace-short')
-    subjective_item = practice_next(client, auth)
+    short_attempt = submit_answer(client, student_auth, short_item, '  X=-1  ', 'trace-short')
+    subjective_item = practice_next(client, student_auth)
     assert subjective_item['question_version_id'] == subjective
-    subjective_attempt = submit_answer(client, auth, subjective_item, '3+5×2=13', 'trace-subjective')
+    subjective_attempt = submit_answer(client, student_auth, subjective_item, '3+5×2=13', 'trace-subjective')
 
     assessed = client.post(f"/api/practice/attempts/{subjective_attempt['id']}/self-assessment",
-                           headers=auth, json={'self_earned_points': 2})
+                           headers=student_auth, json={'self_earned_points': 2})
     assert assessed.status_code == 201
 
     # 他者作答行用于 owner 范围断言：列表绝不混入非本人的评分来源记录。
@@ -90,7 +90,7 @@ def test_attempts_list_reports_origins_and_self_assessment(client, auth):
         db.commit()
         foreign_id = foreign.id
 
-    response = client.get('/api/practice/attempts?subject=math', headers=auth)
+    response = client.get('/api/practice/attempts?subject=math', headers=student_auth)
     assert response.status_code == 200
     entries = response.json()
     assert len(entries) == 3
@@ -119,6 +119,6 @@ def test_attempts_list_reports_origins_and_self_assessment(client, auth):
     assert foreign_id not in {entry['id'] for entry in entries}
 
 
-def test_attempts_list_requires_auth_and_subject(client, auth):
+def test_attempts_list_requires_auth_and_subject(client, student_auth):
     assert client.get('/api/practice/attempts?subject=math').status_code == 401
-    assert client.get('/api/practice/attempts', headers=auth).status_code == 422
+    assert client.get('/api/practice/attempts', headers=student_auth).status_code == 422

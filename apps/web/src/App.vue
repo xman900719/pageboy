@@ -8,17 +8,16 @@ import HomeView from './views/HomeView.vue'
 import PracticeView from './views/PracticeView.vue'
 import DiagnosisView from './views/DiagnosisView.vue'
 
-/** 本机记住的令牌（ST-012）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
- *  值不出设备、不经网络传给任何第三方（verify 只是带 Authorization 的本服务请求）；
- *  退出即清除；令牌失效时自动清除并回到令牌门。默认行为不变：仅页面内存。 */
-const TOKEN_STORE_KEY = 'shutong.token'
+/** 本机记住的学生端令牌（P0-1 双凭据隔离）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
+ *  与管理端凭据（shutong.admin_token）彻底脱钩，防止凭据交叉复用。默认行为不变：仅页面内存。 */
+const TOKEN_STORE_KEY = 'shutong.student_token'
 
 const token = ref('')
 const subject = ref<Subject>('math')
 const view = ref<ViewId>('home')
 const notice = ref<NoticeData | null>(null)
 
-const client = computed(() => (token.value === '' ? null : createClient(token.value)))
+const client = computed(() => (token.value === '' ? null : createClient(token.value, 'student')))
 
 function notify(text: string, tone: NoticeTone = 'info') {
   notice.value = { text, tone }
@@ -31,7 +30,7 @@ function clearNotice() {
 onMounted(() => {
   const saved = localStorage.getItem(TOKEN_STORE_KEY)
   if (saved === null || saved === '') return
-  createClient(saved)
+  createClient(saved, 'student')
     .verify()
     .then(() => {
       if (token.value !== '') return
@@ -45,7 +44,7 @@ onMounted(() => {
 })
 
 async function enter(nextToken: string, remember: boolean) {
-  const candidate = createClient(nextToken)
+  const candidate = createClient(nextToken, 'student')
   await candidate.verify() // throws on invalid token; nothing is kept on failure
   if (remember) localStorage.setItem(TOKEN_STORE_KEY, nextToken)
   else localStorage.removeItem(TOKEN_STORE_KEY)

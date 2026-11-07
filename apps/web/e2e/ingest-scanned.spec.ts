@@ -12,7 +12,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 const API = process.env.ST008_API_BASE ?? 'http://127.0.0.1:18765'
 const PY_CMD = process.env.PY_CMD ?? '../../.venv/bin/python'
 
@@ -42,7 +43,7 @@ function buildScannedPdf(): Buffer {
 async function call<T = unknown>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()
@@ -76,14 +77,14 @@ test.beforeAll(async () => {
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
@@ -152,7 +153,15 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await enterSpace(page)
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
-  await practice.getByLabel('按知识点').selectOption(KID)
+  await page.route(/\/api\/practice\/next/, async route => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('knowledge_id', KID)
+    const response = await page.request.fetch(url.toString(), {
+      headers: route.request().headers(),
+      method: route.request().method(),
+    })
+    await route.fulfill({ response })
+  })
   await practice.getByRole('button', { name: '开始练习' }).click()
   const card = page.getByRole('region', { name: '题目' })
   await expect(card).toBeVisible()

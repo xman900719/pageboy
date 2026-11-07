@@ -29,6 +29,7 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: 'http://127.0.0.1:4173',
+    serviceWorkers: 'block',
     ...(ipad ? { ...devices['iPad (gen 7)'], browserName: 'webkit' as const } : {}),
   },
   globalSetup: './e2e/global-setup.ts',
@@ -47,7 +48,8 @@ export default defineConfig({
       timeout: 60_000,
       stdout: 'ignore',
       env: {
-        SHUTONG_TOKEN: 'test-journey-secret',
+        SHUTONG_ADMIN_TOKEN: 'test-admin-secret',
+        SHUTONG_STUDENT_TOKEN: 'test-student-secret',
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
         // shutong 包位于 services/api；相对路径按 webServer cwd（apps/web）解析。

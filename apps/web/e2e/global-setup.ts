@@ -15,13 +15,14 @@ import type { FullConfig } from '@playwright/test'
 
 // 端口 18765 与 playwright.config.ts 保持一致（8000 被无关常驻服务占用）。
 const API = process.env.ST008_API_BASE ?? 'http://127.0.0.1:18765'
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 
-async function call<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
+async function call<T = any>(path: string, method = 'GET', body?: unknown, token = ADMIN_TOKEN): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${token}`,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -35,7 +36,7 @@ async function waitForApi(): Promise<void> {
   const problems: string[] = []
   for (let i = 0; i < 60; i++) {
     try {
-      const res = await fetch(`${API}/health/live`, { headers: { Authorization: `Bearer ${TOKEN}` } })
+      const res = await fetch(`${API}/health/live`)
       if (res.ok) return
       problems.push(`HTTP ${res.status}: ${(await res.text()).slice(0, 120)}`)
     } catch (error) {
@@ -131,7 +132,7 @@ async function seed(): Promise<void> {
   mp3[3] = 0x03
   const uploadRes = await fetch(`${API}/api/admin/sources/${sourceB}/attachments?filename=${encodeURIComponent('虚构测试数据-听力.mp3')}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'audio/mpeg' },
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'audio/mpeg' },
     body: mp3,
   })
   if (!uploadRes.ok) throw new Error(`upload -> HTTP ${uploadRes.status}: ${(await uploadRes.text()).slice(0, 300)}`)
@@ -161,7 +162,7 @@ async function seed(): Promise<void> {
   await call(`/api/admin/questions/${listeningVersion}/publish`, 'POST')
 
   // 6) 目标：计划/诊断依赖目标存在（GOAL_REQUIRED），v1 由种子建立，J1 再经 UI 保存 v2。
-  await call('/api/goals', 'POST', { subject: 'math', target_points: 90, max_points: 100, minutes_per_day: 15 })
+  await call('/api/goals', 'POST', { subject: 'math', target_points: 90, max_points: 100, minutes_per_day: 15 }, STUDENT_TOKEN)
 }
 
 export default async function globalSetup(_config: FullConfig): Promise<void> {

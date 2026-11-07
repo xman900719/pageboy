@@ -7,14 +7,12 @@ import {
   type AttemptResult,
   type AttemptRow,
   type NextItem,
-  type PlanStep,
   type SelfAssessmentResult,
   type Subject,
 } from '../api'
 import { excerpt, fmtPoints, KIND_LABELS, SCORING_LABELS, shortTime } from '../copy'
 import QuestionCard from '../components/QuestionCard.vue'
 import type { NoticeTone } from '../components/Notice.vue'
-import { getKnowledgeLabel } from '../config/knowledge'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 type SessionEntry = { n: number; excerptText: string; outcome: string; tone: 'good' | 'mid' | 'wait' }
@@ -29,8 +27,6 @@ const item = ref<NextItem | null>(null)
 const busy = ref(false)
 const session = ref<SessionEntry[]>([])
 const history = ref<AttemptRow[] | null>(null)
-const steps = ref<PlanStep[] | null>(null)
-const knowledgeId = ref('')
 
 async function refreshHistory() {
   try {
@@ -44,14 +40,6 @@ watch(
   [() => props.client, () => props.subject],
   () => {
     void refreshHistory()
-    props.client
-      .plan(props.subject)
-      .then(plan => {
-        steps.value = plan.steps
-      })
-      .catch(() => {
-        steps.value = null
-      })
   },
   { immediate: true }
 )
@@ -59,7 +47,7 @@ watch(
 async function start() {
   busy.value = true
   try {
-    item.value = await props.client.nextItem(props.subject, 'training', knowledgeId.value || undefined)
+    item.value = await props.client.nextItem(props.subject, 'training')
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
       props.notify('暂无可练的题目：请先在管理端发布已审核题目。', 'caution')
@@ -108,18 +96,6 @@ function onSelfRecorded(_record: SelfAssessmentResult) {
       <button type="button" class="primary" @click="start" :disabled="busy">
         {{ busy ? '取题中…' : item ? '换一题（轮换取题）' : '开始练习' }}
       </button>
-      <label class="inline-select">
-        按知识点
-        <select v-if="steps" v-model="knowledgeId">
-          <option value="">全部知识点</option>
-          <option v-for="step in steps" :key="step.knowledge_id" :value="step.knowledge_id">
-            {{ getKnowledgeLabel(step.knowledge_id) }}
-          </option>
-        </select>
-        <select v-else disabled>
-          <option>全部知识点</option>
-        </select>
-      </label>
     </div>
     <ol v-if="session.length > 0" class="session-log">
       <li v-for="entry in session" :key="entry.n">

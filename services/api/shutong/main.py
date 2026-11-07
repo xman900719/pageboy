@@ -9,7 +9,8 @@ from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
-from .auth import require_owner
+from .auth import require_admin, require_student, require_owner
+from .topic_labels import get_topic_label, get_student_advice
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .fourcorpus import router as corpus_router
@@ -38,6 +39,14 @@ def ready(db: Session = Depends(get_db)):
     except Exception:
         raise HTTPException(503, detail="database unavailable")
     return {"status": "ready"}
+
+@app.get("/api/admin/verify")
+def verify_admin(owner: str = Depends(require_admin)):
+    return {"status": "ok", "role": "admin"}
+
+@app.get("/api/student/verify")
+def verify_student(student: str = Depends(require_student)):
+    return {"status": "ok", "role": "student"}
 
 @app.post("/api/admin/sources", status_code=201)
 def add_source(payload: SourceIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
@@ -124,12 +133,13 @@ def publish_question(version_id: str, owner: str = Depends(require_owner), db: S
     return {"id": v.id, "status": "published"}
 
 @app.get("/api/subjects")
-def subjects(owner: str = Depends(require_owner)):
+def subjects(student: str = Depends(require_student)):
     return ["math", "chinese", "english", "physics"]
 
 @app.get("/api/practice/next")
-def next_item(subject: Subject, purpose: str = Query(default="training", pattern="^(training|evaluation)$"), knowledge_id: str | None = None, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def next_item(subject: Subject, purpose: str = Query(default="training", pattern="^(training|evaluation)$"), knowledge_id: str | None = None, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """A returned question is immediately recorded as exposed. Evaluation requires unseen item."""
+    owner = student
     # 按逻辑题选择最新已发布版，较新的草稿不替代当前发布版。
     latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
     versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published").order_by(m.QuestionVersion.created_at, m.QuestionVersion.id)).scalars().all()
@@ -160,11 +170,12 @@ def next_item(subject: Subject, purpose: str = Query(default="training", pattern
             db.add(exp)
             db.commit()  # 复练曝光不受部分唯一索引约束；若仍失败则如实抛出，不吞错。
         db.refresh(exp)
-        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind, "group_context": v.group_context, "media_attachment_id": v.media_attachment_id, "options": v.options, "max_points": v.max_points, "subject": subject, "knowledge_ids": v.knowledge_ids}
+        return {"exposure_id": exp.id, "question_version_id": v.id, "purpose": purpose, "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind, "group_context": v.group_context, "media_attachment_id": v.media_attachment_id, "options": v.options, "max_points": v.max_points, "subject": subject}
     raise HTTPException(404, detail="NO_ELIGIBLE_QUESTION")
 
 @app.post("/api/practice/attempts", status_code=201)
-def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def submit_attempt(payload: AttemptIn, student: str = Depends(require_student), db: Session = Depends(get_db)):
+    owner = student
     def resolve_existing(existing):
         # 同幂等键复用：载荷（exposure_id/answer/hints_used）全同才承认已记录，返回已持久行的判定结果。
         if existing.exposure_id != payload.exposure_id or existing.answer != payload.answer or existing.hints_used != payload.hints_used:
@@ -207,8 +218,9 @@ def submit_attempt(payload: AttemptIn, owner: str = Depends(require_owner), db: 
     return {"id": attempt.id, "status": "recorded", "earned_points": earned, "max_points": v.max_points, "scoring_origin": origin, "evaluation_valid_unseen": exp.purpose == "evaluation" and exp.is_unseen_at_exposure and not payload.hints_used}
 
 @app.get("/api/practice/attempts/{attempt_id}/reference")
-def attempt_reference(attempt_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def attempt_reference(attempt_id: str, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """主观题参考答案：作答先行才可对答案（以 attempt 存在为门）；非主观不适用。"""
+    owner = student
     attempt = db.get(m.AnswerAttempt, attempt_id)
     if attempt is None or attempt.learner_id != owner:
         raise HTTPException(404, detail="attempt not found")
@@ -218,8 +230,9 @@ def attempt_reference(attempt_id: str, owner: str = Depends(require_owner), db: 
     return {"reference_answer": version.correct_answer, "max_points": version.max_points}
 
 @app.post("/api/practice/attempts/{attempt_id}/self-assessment", status_code=201)
-def record_self_assessment(attempt_id: str, payload: SelfAssessmentIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def record_self_assessment(attempt_id: str, payload: SelfAssessmentIn, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """主观自评为独立来源记录：不改写作答行，一次自评不可更新（INV-04），不进客观证据。"""
+    owner = student
     attempt = db.get(m.AnswerAttempt, attempt_id)
     if attempt is None or attempt.learner_id != owner:
         raise HTTPException(404, detail="attempt not found")
@@ -246,8 +259,9 @@ def record_self_assessment(attempt_id: str, payload: SelfAssessmentIn, owner: st
             "max_points": record.max_points, "scoring_origin": record.scoring_origin}
 
 @app.get("/api/practice/attempts")
-def list_attempts(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def list_attempts(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """评分来源溯源列表：作答行 origin 与自评记录并列可审计；自评不进 get_evidence/profile。"""
+    owner = student
     rows = db.execute(select(m.AnswerAttempt, m.QuestionVersion, m.Exposure)
                       .join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id)
                       .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
@@ -268,18 +282,18 @@ def list_attempts(subject: Subject, owner: str = Depends(require_owner), db: Ses
             for attempt, version, exposure in rows]
 
 @app.post("/api/school-exams", status_code=201)
-def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     record = m.SchoolExam(learner_id=owner, **payload.model_dump())
     db.add(record); db.commit(); db.refresh(record)
     return {"id": record.id, "status": "user_confirmed" if record.confirmed_by_user else "unconfirmed", "knowledge_evidence_created": False}
 
 @app.get("/api/school-exams")
-def get_school_exams(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def get_school_exams(subject: Subject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     exams = db.execute(select(m.SchoolExam).where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject).order_by(m.SchoolExam.exam_date.desc())).scalars().all()
     return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user} for e in exams]
 
 @app.post("/api/school-exams/{exam_id}/items", status_code=201)
-def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。"""
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
@@ -308,7 +322,7 @@ def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str =
             "evidence_created": sum(1 for r in records if r.confirmed_by_user)}
 
 @app.post("/api/school-exams/{exam_id}/items/{item_id}/confirm")
-def confirm_school_exam_item(exam_id: str, item_id: str, payload: SchoolItemConfirmIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def confirm_school_exam_item(exam_id: str, item_id: str, payload: SchoolItemConfirmIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """仅 ocr_draft 草稿可人工确认（可修正识别分）；确认后不可变（INV-04，改判须另建记录）。"""
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
@@ -333,7 +347,7 @@ def confirm_school_exam_item(exam_id: str, item_id: str, payload: SchoolItemConf
             "max_points": item.max_points, "scoring_origin": item.scoring_origin, "confirmed_by_user": item.confirmed_by_user}
 
 @app.get("/api/school-exams/{exam_id}")
-def get_school_exam_detail(exam_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """考试详情 + 逐题得分（含确认状态）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。"""
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
@@ -378,7 +392,7 @@ def save_school_paper(db, exam_id, owner, filename, media_type, data, expected_s
 async def upload_school_paper(exam_id: str, request: Request,
                               filename: str = Query(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f\x7f]+$"),
                               expected_sha256: str | None = Query(default=None, pattern="^[0-9a-f]{64}$"),
-                              owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+                              owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。"""
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in files.MEDIA_TYPES:
@@ -391,7 +405,8 @@ async def upload_school_paper(exam_id: str, request: Request,
     return await run_in_threadpool(save_school_paper, db, exam_id, owner, filename, media_type, bytes(data), expected_sha256)
 
 @app.post("/api/goals", status_code=201)
-def set_goal(payload: GoalIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def set_goal(payload: GoalIn, student: str = Depends(require_student), db: Session = Depends(get_db)):
+    owner = student
     next_version = (db.scalar(select(func.max(m.Goal.version)).where(m.Goal.learner_id == owner, m.Goal.subject == payload.subject)) or 0) + 1
     g = m.Goal(learner_id=owner, version=next_version, **payload.model_dump())
     db.add(g); db.commit(); db.refresh(g)
@@ -412,25 +427,68 @@ def get_evidence(db: Session, learner_id: str, subject: str):
     return result
 
 @app.get("/api/guidance/profile")
-def profile(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    return {"subject": subject, "model_version": MODEL_VERSION, "knowledge": summarize(get_evidence(db, owner, subject)), "score_prediction": None, "school_exam_scores_are_not_equated": True}
+def profile(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):
+    raw_knowledge = summarize(get_evidence(db, student, subject))
+    student_knowledge = [
+        {
+            "topic": get_topic_label(item["knowledge_id"]),
+            "sample_size": item["sample_size"],
+            "observed_rate": item["observed_rate"],
+            "evidence_status": item["evidence_status"],
+        }
+        for item in raw_knowledge
+    ]
+    return {"subject": subject, "model_version": MODEL_VERSION, "knowledge": student_knowledge, "score_prediction": None, "school_exam_scores_are_not_equated": True}
 
 @app.get("/api/guidance/plan")
-def plan(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    goal = db.execute(select(m.Goal).where(m.Goal.learner_id == owner, m.Goal.subject == subject).order_by(m.Goal.version.desc())).scalars().first()
+def plan(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):
+    goal = db.execute(select(m.Goal).where(m.Goal.learner_id == student, m.Goal.subject == subject).order_by(m.Goal.version.desc())).scalars().first()
     if goal is None:
         raise HTTPException(409, detail="GOAL_REQUIRED")
     knowledge = [x[0] for x in db.execute(select(m.QuestionVersion.knowledge_ids).join(m.Question).where(m.Question.subject == subject, m.QuestionVersion.status == "published")).all()]
     # knowledge above is a list of JSON lists; flatten without assuming a fixed taxonomy.
     known_ids = sorted({kid for item in knowledge for kid in item})
-    result = make_plan(summarize(get_evidence(db, owner, subject)), goal.target_points, goal.max_points, goal.minutes_per_day, known_ids)
-    return {"subject": subject, "goal_version": goal.version, **result}
+    raw_evidence = summarize(get_evidence(db, student, subject))
+    evidence_map = {item["knowledge_id"]: item for item in raw_evidence}
+    result = make_plan(raw_evidence, goal.target_points, goal.max_points, goal.minutes_per_day, known_ids)
+
+    student_steps = []
+    for s in result["steps"]:
+        kid = s["knowledge_id"]
+        topic = get_topic_label(kid)
+        sample_size = evidence_map.get(kid, {}).get("sample_size", 0)
+        observed = s.get("observed_rate")
+        advice = get_student_advice(s["gap_type"], topic, observed, result["planning_threshold"])
+        step_dict = {
+            "topic": topic,
+            "gap_type": s["gap_type"],
+            "action": s["action"],
+            "reason": s["reason"],
+            "advice": advice,
+            "priority": s["priority"],
+            "sample_size": sample_size,
+        }
+        if observed is not None:
+            step_dict["observed_rate"] = observed
+        student_steps.append(step_dict)
+
+    return {
+        "subject": subject,
+        "goal_version": goal.version,
+        "model_version": result["model_version"],
+        "target_mapping_status": result["target_mapping_status"],
+        "planning_threshold": result["planning_threshold"],
+        "minutes_per_day": result["minutes_per_day"],
+        "steps": student_steps,
+        "disclaimer": result["disclaimer"],
+    }
 
 @app.get("/api/practice/resume")
-def resume_item(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def resume_item(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """恢复本科目最近一个未作答的**诊断**曝光（iPad 刷新/重开/切后台后会话可续，未见题不空烧）。
     只读：不新建曝光、不改写历史；该曝光若已作答（或不存在）即返回 item=null。
     仅限 purpose=evaluation：训练取题无状态成本（轮换本身合规），诊断未见题才是稀缺资源。"""
+    owner = student
     exp = db.execute(select(m.Exposure)
                      .join(m.QuestionVersion, m.QuestionVersion.id == m.Exposure.question_version_id)
                      .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
@@ -445,12 +503,11 @@ def resume_item(subject: Subject, owner: str = Depends(require_owner), db: Sessi
     return {"item": {"exposure_id": exp.id, "question_version_id": v.id, "purpose": exp.purpose,
                      "unseen_at_exposure": exp.is_unseen_at_exposure, "stem": v.stem, "kind": v.kind,
                      "group_context": v.group_context, "media_attachment_id": v.media_attachment_id,
-                     "options": v.options, "max_points": v.max_points, "subject": subject,
-                     "knowledge_ids": v.knowledge_ids}}
+                     "options": v.options, "max_points": v.max_points, "subject": subject}}
 
 @app.get("/api/guidance/pool-health")
-def pool_health_endpoint(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    """题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
+def pool_health_endpoint(subject: Subject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """题池体检（管理员专属）：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
     查询形状刻意与 next_item 一致（最新发布版子查询），不引入第二套选题口径。"""
     latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
     versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published")).scalars().all()
@@ -460,8 +517,9 @@ def pool_health_endpoint(subject: Subject, owner: str = Depends(require_owner), 
     return {"subject": subject, **pool_health(entries)}
 
 @app.get("/api/guidance/validation")
-def validation(subject: Subject, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    """独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。"""
+def validation(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):
+    """独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。学生端响应移除内部知识点编号。"""
+    owner = student
     rows = db.execute(select(m.AnswerAttempt, m.QuestionVersion).join(m.Exposure, m.Exposure.id == m.AnswerAttempt.exposure_id).join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id).join(m.Question, m.Question.id == m.QuestionVersion.question_id).where(m.AnswerAttempt.learner_id == owner, m.Question.subject == subject, m.Exposure.purpose == "evaluation", m.Exposure.is_unseen_at_exposure.is_(True), m.AnswerAttempt.hints_used.is_(False), m.AnswerAttempt.earned_points.is_not(None), m.AnswerAttempt.scoring_origin == "reviewed_answer_key").order_by(m.AnswerAttempt.created_at, m.AnswerAttempt.id)).all()
     per_kid: dict[str, dict[str, Evidence]] = {}
     for a, v in rows:
@@ -474,4 +532,28 @@ def validation(subject: Subject, owner: str = Depends(require_owner), db: Sessio
         items = list(per_kid[kid].values())
         baseline.extend(items[:MIN_DISTINCT_ITEMS])
         retest.extend(items[MIN_DISTINCT_ITEMS:])
-    return {"subject": subject, **compare_validation(baseline, retest)}
+    raw_val = compare_validation(baseline, retest)
+    student_knowledge = []
+    for item in raw_val["knowledge"]:
+        entry = {
+            "topic": get_topic_label(item["knowledge_id"]),
+            "verdict": item["verdict"],
+            "baseline_items": item["baseline_items"],
+            "retest_items": item["retest_items"],
+        }
+        if "baseline_rate" in item:
+            entry["baseline_rate"] = item["baseline_rate"]
+        if "retest_rate" in item:
+            entry["retest_rate"] = item["retest_rate"]
+        if "reason" in item:
+            entry["reason"] = item["reason"]
+        student_knowledge.append(entry)
+    return {
+        "subject": subject,
+        "model_version": raw_val["model_version"],
+        "verdict": raw_val["verdict"],
+        "comparable": raw_val["comparable"],
+        "score_prediction": raw_val["score_prediction"],
+        "knowledge": student_knowledge,
+        "disclaimer": raw_val["disclaimer"],
+    }

@@ -2,7 +2,7 @@
 
 > **工程红线准则**：
 > 1. **执行拓扑分工**：所有前后端测试（单元测试、构建、自动化回归）在宿主机上完成；前端人工测试必须在**用于前端测试的模拟机（模拟 iPadOS 环境）**中运行与操作完成。
-> 2. **网络服务就绪**：交付人工核验前，宿主机必须启动网络监听（`--host 0.0.0.0`）的前后端测试服务并完成连通性探针检验，确保模拟机测试人能够即时打开测试界面。
+> 2. **网络服务就绪（严格回环监听）**：交付人工核验前，宿主机必须启动仅监听回环地址（`127.0.0.1`）的前后端测试服务并完成连通性探针检验，确保模拟机测试人能够即时打开测试界面。**根据 `AGENTS.md` 核心契约，严禁开发/测试服务监听 `0.0.0.0` 或局域网物理地址（真实 iPad 仅访问生产环境，防止内网非授权暴露）**。
 > 3. **选项式门禁**：前端每一次功能新增、交互调整或缺陷修改实现后，必须向测试人提供自适应选项式人工测试报告，**在每个人工测试点未全部获得测试人确认通过前，绝对禁止执行 git 提交**。
 
 ---
@@ -11,18 +11,13 @@
 
 根据工程契约，人工测试遵循**“宿主机运行服务与自动化，用于前端测试的模拟机执行 iPadOS 人机交互核验”**的拓扑结构：
 
-![验收准备与测试拓扑](../assets/diagrams/manual-acceptance-topology.svg)
-
-<details>
-<summary>点击查看 Mermaid 测试拓扑源码</summary>
-
 ```mermaid
 flowchart LR
-    subgraph Host["宿主机 (Host: 192.168.3.102)"]
+    subgraph Host["宿主机 (Host: 127.0.0.1)"]
         direction TB
-        Build["1. 自动化门禁<br/>(pytest / vitest / build)"]
-        Backend["2. 临时后端 API<br/>(uvicorn :18765<br/>0.0.0.0 + SHUTONG_TOKEN)"]
-        Frontend["3. 前端生产预览<br/>(vite preview :4173<br/>0.0.0.0 + 同源代理)"]
+        Build["1. 自动化门禁<br/>(pytest / vitest / playwright)"]
+        Backend["2. 临时后端 API<br/>(uvicorn :18765<br/>127.0.0.1 + 双凭据隔离)"]
+        Frontend["3. 前端生产预览<br/>(vite preview :4173<br/>127.0.0.1 + 同源代理)"]
         Build --> Backend
         Build --> Frontend
     end
@@ -34,17 +29,16 @@ flowchart LR
         Tester -->|触控点击/滑动/作答| Browser
     end
 
-    Browser -->|"http://192.168.3.102:4173"| Frontend
+    Browser -->|"http://127.0.0.1:4173"| Frontend
     Frontend -->|"反向代理 /api/*"| Backend
 ```
-</details>
 
 ### 1. 宿主机一键启动测试服务（推荐）
 
 项目提供了集环境自检、建表、种子数据注入与双服务拉起于一体的管理脚本：
 
 ```bash
-# 一键启动测试后端、注入种子数据并拉起前端预览（绑定 0.0.0.0）
+# 一键启动测试后端、注入种子数据并拉起前端预览（绑定 127.0.0.1 回环安全地址）
 uv run python scripts/run_manual_test_env.py start
 
 # 检查测试服务健康状态
@@ -56,18 +50,18 @@ uv run python scripts/run_manual_test_env.py stop
 
 #### 手动分步启动备选方式
 如需独立调试各服务：
-- **终端 1（后端）**：`SHUTONG_TOKEN=test-journey-secret uv run python -m uvicorn shutong.main:app --host 0.0.0.0 --port 18765`
-- **终端 2（前端）**：`cd apps/web && API_PROXY_TARGET=http://127.0.0.1:18765 npm run preview -- --host 0.0.0.0 --port 4173`
-- **探针自检**：`curl -I http://192.168.3.102:4173/` 与 `curl -H "Authorization: Bearer test-journey-secret" http://192.168.3.102:4173/api/subjects`
+- **终端 1（后端，双凭据隔离）**：`SHUTONG_STUDENT_TOKEN=test-student-secret SHUTONG_ADMIN_TOKEN=test-admin-secret uv run python -m uvicorn shutong.main:app --host 127.0.0.1 --port 18765`
+- **终端 2（前端，生产预览）**：`cd apps/web && API_PROXY_TARGET=http://127.0.0.1:18765 npm run preview -- --host 127.0.0.1 --port 4173`
+- **探针自检**：`curl -I http://127.0.0.1:4173/` 与 `curl -H "Authorization: Bearer test-student-secret" http://127.0.0.1:4173/api/student/verify`
 
 ---
 
 ### 2. iPadOS 模拟机具体使用与操作方式
 
-由于 Linux 宿主机原生不具备 Apple macOS 专有 Xcode 闭源模拟器，书童工程体系提供了三种等价且高度保真的**用于前端测试的 iPadOS 模拟机使用方式**：
+由于 Linux 宿主机原生不具备 Apple macOS 专有 Xcode 闭源模拟器，书童工程体系提供了两种等价且高度保真的**用于前端测试的 iPadOS 模拟机使用方式**（均通过回环安全地址 `127.0.0.1` 访问）：
 
 #### 方式 A：【一键调出】独立 iPadOS 模拟机图形窗口（最推荐）
-无需任何复杂配置，在终端直接运行：
+无需任何复杂配置，在宿主机桌面终端直接运行：
 ```bash
 # 1. 弹出 iPad (gen 7) 竖屏窗口 (810 × 1080)
 uv run python scripts/run_manual_test_env.py sim
@@ -82,8 +76,8 @@ uv run python scripts/run_manual_test_env.py sim-landscape
   - 测试完毕关闭窗口即可。
 
 #### 方式 B：【浏览器仿真】在现有浏览器 DevTools 中一键翻转屏幕
-测试人打开日常使用的桌面浏览器（Chrome / Edge / Chromium / Safari）：
-1. 访问测试入口：`http://127.0.0.1:4173`（或网络地址 `http://192.168.3.102:4173`）；
+测试人打开宿主机桌面浏览器（Chrome / Edge / Chromium）：
+1. 访问测试入口：`http://127.0.0.1:4173`；
 2. 按 `F12` 打开开发者工具，按快捷键 `Ctrl + Shift + M`（进入移动设备仿真工具栏）；
 3. 在顶部设备下拉菜单中选择 **「iPad」**（或 **iPad Air / iPad Mini**）；
 4. **一键横竖屏切换**：
@@ -92,11 +86,9 @@ uv run python scripts/run_manual_test_env.py sim-landscape
      页面立即翻转为 **横屏（1080 × 810）**，核验页面主体被 `.page` 的 `980px` 上限精确居中收束，两侧留白均匀。
 5. 页面自动开启触摸手势支持，可在此模式下进行全项核验。
 
-#### 方式 C：【独立系统模拟环境】外部仿真机或容器化环境
-若宿主机配置有专用的 Android/iOS 模拟机系统容器或网络仿真终端：
-- **访问入口**：`http://192.168.3.102:4173`（宿主机物理局域网 IP）
-- **备选网桥**：`http://172.17.0.1:4173`（NAT 网桥）
-- **测试令牌**：`test-journey-secret`
+- **测试凭据**：
+  - 学生端访问令牌：`test-student-secret`
+  - 管理端访问令牌：`test-admin-secret`
 
 ---
 
@@ -112,6 +104,7 @@ uv run python scripts/run_manual_test_env.py sim-landscape
 | **主题 4** | [04-diagnosis-and-resume.md](checklists/04-diagnosis-and-resume.md) | 未见题严肃纪律、**未答切后台/按 F5 刷新自动恢复未答题（ST-018，防空烧）** | 依赖【主题 1、2、3 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 | **主题 5** | [05-admin-and-formulas.md](checklists/05-admin-and-formulas.md) | 审核台 `v-model` 表单录入、**附件本地文件浏览与试卷规范指引**、**知识点配置化本地化**、KaTeX 复杂公式专业排版、非规范 `$` 纯文本安全回退 | 依赖【主题 1~4 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 | **主题 6** | [06-frontend-isolation.md](checklists/06-frontend-isolation.md) | 前端管理与使用功能物理强隔离、学生端纯净无审核与校考表单、管理端综合工作台、外网 Cloudflare 隧道 403 阻断 | 依赖【主题 1~5 通过】 | **[x] 已通过**（2026-11-06 测试人点选放行） |
+| **主题 7** | [07-p01-isolation.md](checklists/07-p01-isolation.md) | P0-1 权限与知识展示隔离边界验收（双凭据互斥拦截、学生端纯自然语言建议、无内部编码泄露、管理端审核完备） | 依赖【主题 1~6 通过】 | **[x] 已通过**（2026-11-07 测试人点选放行） |
 
 ---
 

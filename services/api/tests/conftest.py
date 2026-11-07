@@ -10,7 +10,9 @@ from shutong.main import app
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("SHUTONG_TOKEN", "test-only-secret")
+    monkeypatch.setenv("SHUTONG_ADMIN_TOKEN", "test-admin-secret")
+    monkeypatch.setenv("SHUTONG_STUDENT_TOKEN", "test-student-secret")
+    monkeypatch.setenv("SHUTONG_TOKEN", "test-admin-secret")
     engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     def override():
@@ -24,7 +26,15 @@ def client(monkeypatch):
 
 @pytest.fixture
 def auth():
-    return {"Authorization": "Bearer test-only-secret"}
+    return {"Authorization": "Bearer test-admin-secret"}
+
+@pytest.fixture
+def admin_auth():
+    return {"Authorization": "Bearer test-admin-secret"}
+
+@pytest.fixture
+def student_auth():
+    return {"Authorization": "Bearer test-student-secret"}
 
 @pytest.fixture
 def published(client, auth):

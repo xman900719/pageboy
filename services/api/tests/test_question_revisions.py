@@ -37,15 +37,15 @@ def snapshot(record):
     return {column.key: getattr(record, column.key) for column in inspect(record).mapper.column_attrs}
 
 
-def test_revision_preserves_history_and_uses_each_versions_answer_key(client, auth, db, question):
+def test_revision_preserves_history_and_uses_each_versions_answer_key(client, auth, student_auth, db, question):
     original, body = question
     old_id = original['id']
     publish(client, auth, old_id)
-    old_item = client.get('/api/practice/next?subject=math', headers=auth).json()
+    old_item = client.get('/api/practice/next?subject=math', headers=student_auth).json()
     attempt_body = {'exposure_id': old_item['exposure_id'], 'client_attempt_id': 'before-revision', 'answer': 'B'}
-    before = client.post('/api/practice/attempts', headers=auth, json=attempt_body)
+    before = client.post('/api/practice/attempts', headers=student_auth, json=attempt_body)
     assert before.status_code == 201 and before.json()['earned_points'] == 2
-    pending_item = client.get('/api/practice/next?subject=math', headers=auth).json()
+    pending_item = client.get('/api/practice/next?subject=math', headers=student_auth).json()
     records = [db.get(m.QuestionVersion, old_id), db.get(m.AnswerAttempt, before.json()['id']),
                db.get(m.Exposure, old_item['exposure_id']), db.get(m.Exposure, pending_item['exposure_id'])]
     history = [snapshot(record) for record in records]
@@ -59,31 +59,31 @@ def test_revision_preserves_history_and_uses_each_versions_answer_key(client, au
     assert revised['version'] == 2 and revised['status'] == 'draft'
     # 新草稿不能直接发布；审核期间旧发布版继续可用。
     assert client.post(f"/api/admin/questions/{revised['id']}/publish", headers=auth).status_code == 409
-    assert client.get('/api/practice/next?subject=math', headers=auth).json()['question_version_id'] == old_id
+    assert client.get('/api/practice/next?subject=math', headers=student_auth).json()['question_version_id'] == old_id
     db.expire_all()
     draft = db.get(m.QuestionVersion, revised['id'])
     assert draft.reviewed_by_human is False and draft.published_at is None
     assert draft.stem == corrected['stem'] and draft.correct_answer == 'A'
     assert draft.options == body['options'] and draft.knowledge_ids == ['math.addition']
     publish(client, auth, revised['id'])
-    newest = client.get('/api/practice/next?subject=math', headers=auth).json()
+    newest = client.get('/api/practice/next?subject=math', headers=student_auth).json()
     assert newest['question_version_id'] == revised['id']
     assert newest['stem'] == corrected['stem'] and newest['max_points'] == 3
-    assert newest['knowledge_ids'] == ['math.addition']
-    assert client.get('/api/practice/next?subject=math&knowledge_id=math.arithmetic', headers=auth).status_code == 404
+    assert 'knowledge_ids' not in newest
+    assert client.get('/api/practice/next?subject=math&knowledge_id=math.arithmetic', headers=student_auth).status_code == 404
     # 同一道逻辑题的更正不能恢复独立未见资格。
     assert newest['unseen_at_exposure'] is False
-    assert client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth).status_code == 404
-    after = client.post('/api/practice/attempts', headers=auth, json={
+    assert client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth).status_code == 404
+    after = client.post('/api/practice/attempts', headers=student_auth, json={
         'exposure_id': newest['exposure_id'], 'client_attempt_id': 'after-revision', 'answer': 'A',
     })
     assert after.status_code == 201 and after.json()['earned_points'] == 3
     # 发布新版本之后才提交的旧曝光，仍按原版答案和原版满分判分。
-    late = client.post('/api/practice/attempts', headers=auth, json={
+    late = client.post('/api/practice/attempts', headers=student_auth, json={
         'exposure_id': pending_item['exposure_id'], 'client_attempt_id': 'late-old-version', 'answer': 'B',
     })
     assert late.status_code == 201 and late.json()['earned_points'] == 2
-    replay = client.post('/api/practice/attempts', headers=auth, json=attempt_body)
+    replay = client.post('/api/practice/attempts', headers=student_auth, json=attempt_body)
     assert replay.json()['id'] == before.json()['id'] and replay.json()['earned_points'] == 2
     assert client.post(f'/api/admin/questions/{old_id}/review', headers=auth).status_code == 409
     assert client.post(f'/api/admin/questions/{old_id}/publish', headers=auth).status_code == 409
@@ -93,7 +93,7 @@ def test_revision_preserves_history_and_uses_each_versions_answer_key(client, au
     assert db.get(m.AnswerAttempt, late.json()['id']).question_version_id == old_id
 
 
-def test_revision_numbers_increase_even_when_revising_an_older_publication(client, auth, db, question):
+def test_revision_numbers_increase_even_when_revising_an_older_publication(client, auth, student_auth, db, question):
     original, body = question
     publish(client, auth, original['id'])
     ids = [original['id']]
@@ -106,7 +106,7 @@ def test_revision_numbers_increase_even_when_revising_an_older_publication(clien
     # 按版本号选最新发布版，而非草稿、发布时间或来源版本号。
     publish(client, auth, ids[2])
     publish(client, auth, ids[1])
-    fresh = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=auth).json()
+    fresh = client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth).json()
     assert fresh['question_version_id'] == ids[2] and fresh['unseen_at_exposure'] is True
     db.expire_all()
     assert db.scalars(select(m.QuestionVersion.version).order_by(m.QuestionVersion.version)).all() == [1, 2, 3]

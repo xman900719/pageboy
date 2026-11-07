@@ -19,6 +19,9 @@
 | AC-VAL-01 | 已曝光题不能作为未见题验证 | 部分唯一索引原子首曝 + 6 轮并发恰 3×200+5×404；跨版本已见并发全 404；[ST-004 证据](st-004-practice-session.md)，远端 CI 未验证 |
 | AC-VAL-02 | 不可比或证据不足不能宣称涨分 | compare_validation+validation 端点：不足即 cannot_compare/CANNOT_COMPARE，相等不宣称 improved，恒 score_prediction None+免责声明；[ST-005 证据](st-005-math-loop.md) |
 | AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 无任何字节读取路由；存储键不进响应/OpenAPI；与内容台账/题目草稿/发布/练习结构性隔离；[ST-006 证据](st-006-school-papers.md) |
+| AC-SEC-02 | 管理端与学生端凭据双向隔离授权 | 服务端双凭据鉴权（SHUTONG_ADMIN_TOKEN 与 SHUTONG_STUDENT_TOKEN 独立）；角色互斥调用返回 403，错误/缺失返回 401，未配置/相同返回 503；管理 API 必须经 require_admin 校验；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-ISO-01 | 学生 API 彻底剔除内部知识点数据 | 学生端接口（/api/practice/next, /api/guidance/*）彻底移除 knowledge_id(s) 与内部审核状态，收敛为服务端派生的自然语言 topic 与 advice；服务端纯函数派生，不破坏历史曝光与诊断可比性；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-ISO-02 | 学生前端收敛与知识标签包物理隔离 | 学生端完全移除知识点筛选与内部编码展示；knowledge-labels.json 仅管理端引用，学生端打包零泄露；LocalStorage 分别存储 shutong.student_token 与 shutong.admin_token；[P0-1 证据](checklists/07-p01-isolation.md) |
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **达成（2026-10-25，2026-11-03 再次实测）**：Cloudflare R2 异地备份 → 隔离环境完整恢复 DB+附件 → 端到端冒烟全绿（行数全等/附件字节级一致/练习可服务）；[演练记录](st-ops-01-offsite-restore.md)，[2026-11-03 演练](st-ops-01-offsite-restore-2026-11-03.md) |
 | AC-OPS-02 | 异地备份失败可观察并告警 | **达成（2026-10-25）**：healthchecks.io dead-man's switch——成功 ping（HTTP 200 实测）、>5h 静默即邮件告警（4h 周期+1h 宽限）；第三方基础设施=外部故障域；[演练记录](st-ops-01-offsite-restore.md) |
 

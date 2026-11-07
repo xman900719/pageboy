@@ -50,9 +50,9 @@ def test_knowledge_rows_sorted_and_stable():
 
 # ---------- 端点契约（隔离内存库；经 admin/practice 真实链路构造状态） ----------
 
-def test_pool_health_endpoint_reflects_exposures(client, auth, published):
+def test_pool_health_endpoint_reflects_exposures(client, auth, student_auth, published):
     # 5 题同属 math.arithmetic（published fixture）；取一题训练 → 该逻辑题曝光一次。
-    nxt = client.get("/api/practice/next?subject=math&purpose=training", headers=auth)
+    nxt = client.get("/api/practice/next?subject=math&purpose=training", headers=student_auth)
     assert nxt.status_code == 200
     r = client.get("/api/guidance/pool-health?subject=math", headers=auth)
     assert r.status_code == 200

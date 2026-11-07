@@ -35,7 +35,8 @@ ATTACHMENTS_DIR = TMP_DIR / "manual_attachments"
 
 API_PORT = 18765
 WEB_PORT = 4173
-TEST_TOKEN = "test-journey-secret"
+ADMIN_TOKEN = "test-admin-secret"
+STUDENT_TOKEN = "test-student-secret"
 
 
 def is_port_in_use(port: int) -> bool:
@@ -97,7 +98,8 @@ def start_env() -> int:
     api_log_path = TMP_DIR / "manual_api.log"
     api_log_file = open(api_log_path, "w", encoding="utf-8")
     api_env = os.environ.copy()
-    api_env["SHUTONG_TOKEN"] = TEST_TOKEN
+    api_env["SHUTONG_ADMIN_TOKEN"] = ADMIN_TOKEN
+    api_env["SHUTONG_STUDENT_TOKEN"] = STUDENT_TOKEN
     api_env["DATABASE_URL"] = f"sqlite:///{DB_FILE}"
     api_env["SHUTONG_PRIVATE_DIR"] = str(ATTACHMENTS_DIR)
     api_env["SHUTONG_ENV"] = "test"
@@ -163,7 +165,8 @@ import('./apps/web/e2e/global-setup.ts').then(async m => {
     print("✅ 测试服务已在宿主机就绪！（仅监听回环地址，真实 iPad 不可访问；iPad 只连生产）")
     print(f"📱 iPadOS 模拟机访问入口 (学生端):  http://127.0.0.1:{WEB_PORT}")
     print(f"🖥️ PC 桌面端访问入口 (管理端):     http://127.0.0.1:{WEB_PORT}/admin.html")
-    print(f"🔑 测试有效访问令牌:              {TEST_TOKEN}")
+    print(f"🔑 学生端访问令牌 (Student Token): {STUDENT_TOKEN}")
+    print(f"🔑 管理端访问令牌 (Admin Token):   {ADMIN_TOKEN}")
     print("==================================================================")
     print("测试人可直接在用于模拟 iPadOS 环境的模拟机中打开上述链接进行操作。")
     print("测试完成后，运行 `uv run python scripts/run_manual_test_env.py stop` 停止环境。")
@@ -231,7 +234,8 @@ def open_sim(landscape: bool = False) -> int:
     print(f"   - 模拟设备规格: {device_name}")
     print(f"   - 交互模式:     触控模拟 (Touch Simulation) + iPadOS Safari UA")
     print(f"   - 页面访问地址: http://127.0.0.1:{WEB_PORT}")
-    print(f"   - 测试有效令牌: {TEST_TOKEN}")
+    print(f"   - 学生端令牌:   {STUDENT_TOKEN}")
+    print(f"   - 管理端令牌:   {ADMIN_TOKEN}")
     print("==================================================================")
     print("💡 提示：")
     print("   - 窗口关闭后将自动返回控制台。")

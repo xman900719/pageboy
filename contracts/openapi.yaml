@@ -1739,6 +1739,31 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Set Source Status
+  /api/admin/verify:
+    get:
+      operationId: verify_admin_api_admin_verify_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Verify Admin
   /api/goals:
     post:
       operationId: set_goal_api_goals_post
@@ -1808,7 +1833,7 @@ paths:
       summary: Plan
   /api/guidance/pool-health:
     get:
-      description: '题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
+      description: '题池体检（管理员专属）：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
 
         查询形状刻意与 next_item 一致（最新发布版子查询），不引入第二套选题口径。'
       operationId: pool_health_endpoint_api_guidance_pool_health_get
@@ -1883,7 +1908,7 @@ paths:
       summary: Profile
   /api/guidance/validation:
     get:
-      description: 独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。
+      description: 独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。学生端响应移除内部知识点编号。
       operationId: validation_api_guidance_validation_get
       parameters:
       - in: query
@@ -2407,6 +2432,31 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Upload School Paper
+  /api/student/verify:
+    get:
+      operationId: verify_student_api_student_verify_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Verify Student
   /api/subjects:
     get:
       operationId: subjects_api_subjects_get

@@ -26,7 +26,6 @@ export interface NextItem {
   options: string[]
   max_points: number
   subject: Subject
-  knowledge_ids: string[]
 }
 
 export interface AttemptResult {
@@ -52,10 +51,11 @@ export interface SelfAssessmentResult {
 }
 
 export interface PlanStep {
-  knowledge_id: string
+  topic: string
   gap_type: GapType
   action: string
   reason: string
+  advice?: string
   priority: number
   observed_rate?: number
 }
@@ -72,16 +72,19 @@ export interface Plan {
 }
 
 export interface ProfileEntry {
-  knowledge_id: string
+  topic: string
+  status?: string
   sample_size: number
-  observed_rate: number
-  evidence_status: string
+  observed_rate?: number
+  score_rate?: number
+  evidence_status?: string
+  advice?: string
 }
 
 export type ValidationVerdict = 'CANNOT_COMPARE' | 'IMPROVED_ON_COMPARABLE_SCOPE' | 'NO_OBSERVED_IMPROVEMENT'
 
 export interface KnowledgeComparison {
-  knowledge_id: string
+  topic: string
   verdict: 'improved' | 'no_improvement' | 'cannot_compare'
   baseline_rate?: number
   retest_rate?: number
@@ -276,7 +279,7 @@ export interface Client {
   publishQuestion(versionId: string): Promise<unknown>
 }
 
-export function createClient(token: string): Client {
+export function createClient(token: string, role: 'student' | 'admin' = 'student'): Client {
   // 统一请求与错误解析：detail 字符串原样保留（409 等业务码由 describeError 如实呈现）。
   const request = async (path: string, init: RequestInit = {}): Promise<unknown> => {
     const res = await fetch(path, {
@@ -306,7 +309,7 @@ export function createClient(token: string): Client {
     }) as Promise<T>
 
   return {
-    verify: () => call<unknown>('/api/subjects'),
+    verify: () => call<unknown>(role === 'admin' ? '/api/admin/verify' : '/api/student/verify'),
     nextItem: (subject, purpose, knowledgeId) =>
       call<NextItem>(`/api/practice/next?subject=${subject}&purpose=${purpose}${knowledgeId ? `&knowledge_id=${encodeURIComponent(knowledgeId)}` : ''}`),
     resume: subject => call<{ item: NextItem | null }>(`/api/practice/resume?subject=${subject}`),
@@ -392,6 +395,7 @@ const API_CODE_TEXT: Record<string, string> = {
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return '访问令牌无效或已过期，请重新输入。'
+    if (error.status === 403) return '凭据权限不足或使用了错误的角色凭据（如学生凭据访问管理端）。'
     return API_CODE_TEXT[error.code] ?? error.code
   }
   if (error instanceof TypeError) return '无法连接服务器，请检查网络连接后重试。'

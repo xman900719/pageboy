@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from . import models as m
-from .auth import require_owner
+from .auth import require_admin
 from .content import create_question_draft
 from .database import get_db
 from . import private_files as files
@@ -45,7 +45,7 @@ def review_data(review):
 
 
 @router.get("/sources/{source_id}", response_model=SourceDetailOut)
-def source_details(source_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def source_details(source_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     source = source_or_404(db, source_id)
     reviews = db.scalars(select(m.SourceReview).where(m.SourceReview.source_document_id == source_id).order_by(m.SourceReview.created_at, m.SourceReview.id)).all()
     attachments = db.scalars(select(m.SourceAttachment).where(m.SourceAttachment.source_document_id == source_id, m.SourceAttachment.owner_id == owner).order_by(m.SourceAttachment.created_at, m.SourceAttachment.id)).all()
@@ -57,13 +57,13 @@ def source_details(source_id: str, owner: str = Depends(require_owner), db: Sess
 
 
 @router.get("/sources", response_model=list[SourceDetailOut])
-def source_ledger(owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def source_ledger(owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     sources = db.scalars(select(m.SourceDocument).order_by(m.SourceDocument.created_at, m.SourceDocument.id)).all()
     return [source_details(source.id, owner, db) for source in sources]
 
 
 @router.get("/sources/{source_id}/questions", response_model=list[QuestionVersionOut])
-def list_source_question_versions(source_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def list_source_question_versions(source_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """审核台只读列表：按题源回读全部版本（含草稿）的内容与状态，供人工审核 UI 回显。
     不新增字节读取路由；存储键不进响应（QuestionVersionOut 无此字段）。"""
     source_or_404(db, source_id)
@@ -75,7 +75,7 @@ def list_source_question_versions(source_id: str, owner: str = Depends(require_o
 
 
 @router.post("/sources/{source_id}/review", status_code=201, response_model=SourceReviewRecordOut)
-def review_source(source_id: str, payload: SourceReviewIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def review_source(source_id: str, payload: SourceReviewIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     source = source_or_404(db, source_id)
     source.exam_year = payload.exam_year
     source.source_url = str(payload.source_url)
@@ -124,7 +124,7 @@ def save_attachment(db, source_id, owner, filename, media_type, data, expected_s
 async def upload_attachment(source_id: str, request: Request,
                             filename: str = Query(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f\x7f]+$"),
                             expected_sha256: str | None = Query(default=None, pattern="^[0-9a-f]{64}$"),
-                            owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+                            owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """原始二进制请求体；上限 25 MiB，不使用公开目录或外部下载 URL。"""
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in files.MEDIA_TYPES:
@@ -138,19 +138,19 @@ async def upload_attachment(source_id: str, request: Request,
 
 
 @router.get("/attachments/{attachment_id}", response_model=AttachmentOut)
-def get_attachment(attachment_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def get_attachment(attachment_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     return attachment_data(db, attachment_or_404(db, attachment_id, owner))
 
 
 @router.get("/attachments/{attachment_id}/download", response_class=Response)
-def download_attachment(attachment_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def download_attachment(attachment_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     attachment = attachment_or_404(db, attachment_id, owner)
     return Response(files.load_blob(attachment), media_type=attachment.media_type,
                     headers={"Content-Disposition": "attachment", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
 @router.post("/attachments/{attachment_id}/parse", response_model=AttachmentOut)
-def parse_attachment(attachment_id: str, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def parse_attachment(attachment_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     attachment = attachment_or_404(db, attachment_id, owner)
     data = files.load_blob(attachment)
     if attachment.status == "confirmed":
@@ -172,7 +172,7 @@ def parse_attachment(attachment_id: str, owner: str = Depends(require_owner), db
 
 
 @router.post("/attachments/{attachment_id}/confirm", status_code=201, response_model=AttachmentOut)
-def confirm_import(attachment_id: str, payload: ImportConfirmationIn, owner: str = Depends(require_owner), db: Session = Depends(get_db)):
+def confirm_import(attachment_id: str, payload: ImportConfirmationIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     attachment = attachment_or_404(db, attachment_id, owner)
     files.load_blob(attachment)
     if any(question.source_document_id != attachment.source_document_id for question in payload.questions):
