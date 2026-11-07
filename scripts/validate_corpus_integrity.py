@@ -12,10 +12,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "services" / "api"))
 
+from shutong import private_files as files
 from shutong.corpus.taxonomy import TAXONOMY
-from shutong.corpus.exam_2025 import EXAM_2025_PAPERS
+from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
 
 REQUIRED_SUBJECTS = {"math", "physics", "english", "chinese"}
+REQUIRED_YEARS = {2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
+DEFAULT_CORPUS_DIR = Path("/media/xc/backup_ntfs/中考题库/北京中考真题-富尔题库")
+CONVERTED_CACHE_DIR = REPO_ROOT / ".cache" / "converted_docx"
 
 def validate_taxonomy() -> set[str]:
     print("=== [1/4] 检验知识点体系结构 (TAXONOMY) ===")
@@ -75,23 +79,36 @@ def validate_knowledge_labels(all_codes: set[str]) -> None:
 
 
 def validate_exam_papers(known_codes: set[str]) -> None:
-    print("\n=== [3/4] 检验 2025 年北京中考四科真题数据包 (exam_2025.py) ===")
-    seen_paper_subjects = set()
+    print("\n=== [3/4] 检验 2018-2025 年北京中考四科真题数据包 ===")
+    seen_year_subjects: set[tuple[int, str]] = set()
     total_questions = 0
+    check_pdfs = DEFAULT_CORPUS_DIR.is_dir()
 
-    for paper in EXAM_2025_PAPERS:
+    for paper in ALL_EXAM_PAPERS:
         subject = paper["subject"]
         title = paper["title"]
         year = paper["exam_year"]
+        pdf_relpath = paper.get("pdf_relpath", "")
         questions = paper["questions"]
         
         assert subject in REQUIRED_SUBJECTS, f"未知科目：{subject}"
-        assert subject not in seen_paper_subjects, f"试卷科目重复：{subject}"
-        seen_paper_subjects.add(subject)
+        assert year in REQUIRED_YEARS, f"未知或不在计划内的年份：{year}"
+        assert (year, subject) not in seen_year_subjects, f"试卷年份+科目重复：({year}, {subject})"
+        seen_year_subjects.add((year, subject))
         
-        assert year == 2025, f"年份错误：{year}"
-        assert "2025" in title and "北京" in title, f"标题未标明 2025 北京中考：{title}"
-        assert len(questions) >= 10, f"{subject} 试卷题目过少：仅 {len(questions)} 题"
+        assert str(year) in title and "北京" in title, f"标题未标明 {year} 北京中考：{title}"
+        assert pdf_relpath.endswith((".pdf", ".docx", ".doc")) and str(year) in pdf_relpath, f"原件相对路径不合法：{pdf_relpath}"
+        if check_pdfs:
+            pdf_file = DEFAULT_CORPUS_DIR / pdf_relpath
+            assert pdf_file.is_file(), f"未找到对应的真题原件：{pdf_file}"
+            if pdf_relpath.endswith(".doc"):
+                cached = CONVERTED_CACHE_DIR / Path(pdf_relpath).with_suffix(".docx")
+                assert cached.is_file(), f"未找到已转换的标准 DOCX 附件：{cached}"
+                files.validate_file(cached.read_bytes(), files.DOCX_MEDIA_TYPE)
+            else:
+                expected_mime = files.DOCX_MEDIA_TYPE if pdf_relpath.endswith(".docx") else "application/pdf"
+                files.validate_file(pdf_file.read_bytes(), expected_mime)
+        assert len(questions) >= 10, f"{year} {subject} 试卷题目过少：仅 {len(questions)} 题"
         
         seen_indices = set()
         seen_stems = set()
@@ -108,50 +125,51 @@ def validate_exam_papers(known_codes: set[str]) -> None:
             evidence = q["evidence"]
 
             # 题号与题干互异性
-            assert idx not in seen_indices, f"{subject} 试卷存在重复题号：{idx}"
+            assert idx not in seen_indices, f"{year} {subject} 试卷存在重复题号：{idx}"
             seen_indices.add(idx)
 
             clean_stem = re.sub(r"\s+", "", stem)
-            assert clean_stem not in seen_stems, f"{subject} 试卷第 {idx} 题题干重复！"
+            assert clean_stem not in seen_stems, f"{year} {subject} 试卷第 {idx} 题题干重复！"
             seen_stems.add(clean_stem)
 
             # 题型与选项合法性
-            assert kind in ["single_choice", "short_answer", "subjective"], f"{subject} 第 {idx} 题题型非法：{kind}"
+            assert kind in ["single_choice", "short_answer", "subjective"], f"{year} {subject} 第 {idx} 题题型非法：{kind}"
             if kind == "single_choice":
-                assert len(options) == 4, f"{subject} 第 {idx} 题单选选项数不为 4：{options}"
+                assert len(options) == 4, f"{year} {subject} 第 {idx} 题单选选项数不为 4：{options}"
                 prefixes = [opt[:2] for opt in options]
-                assert prefixes == ["A.", "B.", "C.", "D."], f"{subject} 第 {idx} 题选项前缀非法：{prefixes}"
-                assert len(set(options)) == 4, f"{subject} 第 {idx} 题选项存在重复内容：{options}"
-                assert correct_answer in ["A", "B", "C", "D"], f"{subject} 第 {idx} 题单选答案不在 A-D 范围：{correct_answer}"
+                assert prefixes == ["A.", "B.", "C.", "D."], f"{year} {subject} 第 {idx} 题选项前缀非法：{prefixes}"
+                assert len(set(options)) == 4, f"{year} {subject} 第 {idx} 题选项存在重复内容：{options}"
+                assert correct_answer in ["A", "B", "C", "D"], f"{year} {subject} 第 {idx} 题单选答案不在 A-D 范围：{correct_answer}"
             elif kind == "short_answer":
-                assert len(options) == 0, f"{subject} 第 {idx} 题简答题不应有选项：{options}"
-                assert len(str(correct_answer).strip()) > 0, f"{subject} 第 {idx} 题标准答案为空"
+                assert len(options) == 0, f"{year} {subject} 第 {idx} 题简答题不应有选项：{options}"
+                assert len(str(correct_answer).strip()) > 0, f"{year} {subject} 第 {idx} 题标准答案为空"
 
             # 分值验证
-            assert points > 0, f"{subject} 第 {idx} 题分值必须为正数：{points}"
+            assert points > 0, f"{year} {subject} 第 {idx} 题分值必须为正数：{points}"
             paper_score += points
 
             # 知识点关联验证
-            assert len(k_codes) >= 1, f"{subject} 第 {idx} 题未挂载任何知识点"
+            assert len(k_codes) >= 1, f"{year} {subject} 第 {idx} 题未挂载任何知识点"
             for c in k_codes:
-                assert c in known_codes, f"{subject} 第 {idx} 题挂载了未在课标树中定义的考点：{c}"
+                assert c in known_codes, f"{year} {subject} 第 {idx} 题挂载了未在课标树中定义的考点：{c}"
 
             # 溯源与真实证据链
-            assert "2025" in evidence and "北京" in evidence, f"{subject} 第 {idx} 题证据未指明出处：{evidence}"
+            assert str(year) in evidence and "北京" in evidence, f"{year} {subject} 第 {idx} 题证据未指明出处：{evidence}"
 
             # KaTeX 语法静态有效性扫描
             inline_math = re.findall(r"\$([^\$]+)\$", stem)
             for expr in inline_math:
-                assert expr.count("{") == expr.count("}"), f"{subject} 第 {idx} 题 LaTeX 花括号不平衡：${expr}$"
-                assert expr.count("(") == expr.count(")"), f"{subject} 第 {idx} 题圆括号不平衡：${expr}$"
-                assert expr.count("[") == expr.count("]"), f"{subject} 第 {idx} 题方括号不平衡：${expr}$"
-                assert "\\\\" not in expr or "\\frac" in expr or "\\begin" in expr, f"{subject} 第 {idx} 题存在异常转义"
+                assert expr.count("{") == expr.count("}"), f"{year} {subject} 第 {idx} 题 LaTeX 花括号不平衡：${expr}$"
+                assert expr.count("(") == expr.count(")"), f"{year} {subject} 第 {idx} 题圆括号不平衡：${expr}$"
+                assert expr.count("[") == expr.count("]"), f"{year} {subject} 第 {idx} 题方括号不平衡：${expr}$"
+                assert "\\\\" not in expr or "\\frac" in expr or "\\begin" in expr, f"{year} {subject} 第 {idx} 题存在异常转义"
 
         total_questions += len(questions)
-        print(f"✓ 2025 北京中考 {subject:7s} 核验通过：{len(questions):2d} 道真题，分值小计 {paper_score:.1f} 分，公式与考点 100% 规范")
+        print(f"✓ {year} 北京中考 {subject:7s} 核验通过：{len(questions):2d} 道真题，分值小计 {paper_score:.1f} 分，公式与考点 100% 规范")
 
-    assert seen_paper_subjects == REQUIRED_SUBJECTS, f"试卷缺少科目：{REQUIRED_SUBJECTS - seen_paper_subjects}"
-    print(f"\n✓ 四科试卷总计 {total_questions} 道 2025 北京中考全真试题，全部通过强断言质检")
+    expected_pairs = {(y, s) for y in REQUIRED_YEARS for s in REQUIRED_SUBJECTS}
+    assert seen_year_subjects == expected_pairs, f"试卷缺少或多余年份+科目：{expected_pairs ^ seen_year_subjects}"
+    print(f"\n✓ 全部 {len(ALL_EXAM_PAPERS)} 套四科试卷总计 {total_questions} 道北京中考全真试题，全部通过强断言质检")
 
 
 def validate_corpus_isolation() -> None:

@@ -72,7 +72,14 @@ class AttachmentOut(BaseModel):
     id: str
     source_document_id: str
     filename: str
-    media_type: Literal["application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4"]
+    media_type: Literal[
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/png",
+        "image/jpeg",
+        "audio/mpeg",
+        "audio/mp4",
+    ]
     sha256: str = Field(pattern="^[0-9a-f]{64}$")
     byte_size: int = Field(gt=0)
     status: Literal["uploaded", "parsed", "needs_manual_input", "confirmed"]
@@ -100,9 +107,20 @@ class QuestionVersionOut(BaseModel):
     group_context: str | None
     media_attachment_id: str | None
 
+class SourceReviewMetadataOut(BaseModel):
+    """读取侧元数据：来源地址允许 local:// 等非 http(s) 方案（本地语料种子），写入侧仍由 SourceReviewIn 强制 HTTPS。"""
+    exam_year: int
+    source_url: str
+    acquired_at: date
+    rights_status: Literal["unknown", "personal_use_reviewed", "licensed"]
+    rights_basis: str
+    applicable: bool
+    applicability_note: str
+    reviewed_by_human: bool
+
 class SourceReviewRecordOut(BaseModel):
     id: str
-    metadata: SourceReviewIn
+    metadata: SourceReviewMetadataOut
     reviewed_by: str
     created_at: datetime
 

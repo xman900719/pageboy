@@ -49,6 +49,21 @@ def scanned_pdf(pages=1, text='SYNTHETIC TEST DATA'):
     return buffer.getvalue()
 
 
+def synthetic_docx(text='SYNTHETIC TEST DATA: 2024 DOCX QUESTION'):
+    """运行时生成合法最小 .docx（ZIP 内含 word/document.xml），绝不使用真实原卷。"""
+    import zipfile
+    buf = BytesIO()
+    doc_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>'
+        '</w:document>'
+    )
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('word/document.xml', doc_xml.encode('utf-8'))
+    return buf.getvalue()
+
+
 @pytest.fixture
 def source(client, auth, tmp_path, monkeypatch):
     monkeypatch.setenv('SHUTONG_PRIVATE_DIR', str(tmp_path / 'private'))
@@ -197,6 +212,11 @@ def test_pdf_needs_ocr_only_when_extraction_has_no_visible_characters():
     from shutong.private_files import pdf_needs_ocr
     assert pdf_needs_ocr('') is True
     assert pdf_needs_ocr('  \n\t \x0c ') is True
+    assert pdf_needs_ocr('扫描全能王 创建 \x0c 扫描全能王 创建') is True
+    assert pdf_needs_ocr('帮 考 京 ： 号 众 公 \x0c 帮 考 京 ： 号 众 公') is True
+    assert pdf_needs_ocr('{#{QQABZYCAggAgAgAAAQACAwHgCgCQkhACACgOBBAYoEAAiBFABCA=}#}\x0c{#{QQABZYCAggAgAgAAAQACAwHgCgCQkhACACgOBBAYoEAAiBFABCA=}#}') is True
+    assert pdf_needs_ocr('··· ··\x0c·· ···') is True
+    assert pdf_needs_ocr('２０２３年北京市初中学业水平考试' + '\x0c' * 5) is True
     assert pdf_needs_ocr('SYNTHETIC TEST DATA') is False
     assert pdf_needs_ocr('  \x0c\n文本层\n ') is False
 
@@ -242,7 +262,7 @@ def test_text_layer_pdf_does_not_enter_ocr_fallback(client, auth, source):
 
 
 def test_scanned_pdf_page_cap_applies_at_upload(client, auth, source, tmp_path):
-    assert upload(client, auth, source, scanned_pdf(pages=21)).status_code == 422
+    assert upload(client, auth, source, scanned_pdf(pages=41)).status_code == 422
     assert not list((tmp_path / 'private').glob('*'))
 
 
@@ -282,9 +302,9 @@ def test_invalid_uploads_leave_no_files_or_rows(client, auth, source, tmp_path, 
     elif case == 'corrupt_pdf':
         kwargs['data'] = b'%PDF-1.4\ncorrupt'
     elif case == 'too_many_pages':
-        kwargs['data'] = synthetic_pdf(pages=21)
+        kwargs['data'] = synthetic_pdf(pages=41)
     elif case == 'too_large':
-        kwargs['data'] = b'x' * (10 * 1024 * 1024 + 1)
+        kwargs['data'] = b'x' * (35 * 1024 * 1024 + 1)
     assert upload(client, auth, source, **kwargs).status_code == expected
     assert not list((tmp_path / 'private').glob('*'))
     with database() as db:
@@ -517,3 +537,49 @@ def test_source_question_versions_list_isolation_and_revisions(client, auth, sou
     same_question = sorted((row['version'], row['status']) for row in rows
                            if row['question_id'] == revised.json()['question_id'])
     assert same_question == [(1, 'published'), (2, 'draft')]
+
+
+def test_source_ledger_tolerates_local_scheme_source_url(client, auth, source):
+    """本地语料种子的 local:// 来源地址不得使读取接口 500；写入侧仍强制 HTTPS。"""
+    with database() as db:
+        review = m.SourceReview(source_document_id=source, exam_year=2025, source_url='local://exam_corpus/2025',
+                                acquired_at=__import__('datetime').date(2025, 1, 1), rights_status='unknown',
+                                rights_basis='虚构测试数据', applicable=True, applicability_note='虚构测试数据',
+                                reviewed_by='owner')
+        db.add(review)
+        db.commit()
+    res = client.get('/api/admin/sources', headers=auth)
+    assert res.status_code == 200
+    urls = [r['metadata']['source_url'] for s in res.json() for r in s['reviews']]
+    assert 'local://exam_corpus/2025' in urls
+    assert review_source(client, auth, source, source_url='http://insecure.example/x').status_code == 422
+
+
+def test_docx_upload_parse_and_invalid_rejection(client, auth, source):
+    """验证 Word .docx 原件上传、正文解析（python-docx-xml）与损坏/伪造 .docx 拒绝。"""
+    from shutong.private_files import DOCX_MEDIA_TYPE
+    import zipfile
+
+    # 正例：合法 .docx 上传并解析成功
+    data = synthetic_docx('虚构测试数据：2024年数学第1题 x^2 - 4x + c = 0')
+    res = upload(client, auth, source, data=data, media_type=DOCX_MEDIA_TYPE, filename='synthetic-2024.docx')
+    assert res.status_code == 201
+    att_id = res.json()['id']
+    parsed = client.post(f'/api/admin/attachments/{att_id}/parse', headers=auth)
+    assert parsed.status_code == 200
+    assert parsed.json()['status'] == 'parsed'
+    assert parsed.json()['parser_version'] == 'python-docx-xml'
+    assert '虚构测试数据：2024年数学第1题' in parsed.json()['extracted_text']
+
+    # 反例 1：非 ZIP 伪装成 .docx -> 422 FILE_TYPE_MISMATCH
+    bad_magic = upload(client, auth, source, data=b'not a zip file', media_type=DOCX_MEDIA_TYPE, filename='bad.docx')
+    assert bad_magic.status_code == 422
+    assert bad_magic.json()['detail'] == 'FILE_TYPE_MISMATCH'
+
+    # 反例 2：合法 ZIP 但缺少 word/document.xml -> 422 INVALID_DOCX
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        zf.writestr('other.txt', b'hello')
+    no_doc = upload(client, auth, source, data=buf.getvalue(), media_type=DOCX_MEDIA_TYPE, filename='nodoc.docx')
+    assert no_doc.status_code == 422
+    assert no_doc.json()['detail'] == 'INVALID_DOCX'

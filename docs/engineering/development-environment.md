@@ -139,7 +139,7 @@ uv pip install -e "services/api[test]"
   ```
 
 ### 4.3 数据库管理与迁移
-本地开发默认使用 SQLite 数据库（自动生成于项目当前目录，如 `shutong-dev.sqlite3`，零环境依赖）：
+本地开发默认使用 SQLite 数据库（固定为 `services/api/shutong-dev.sqlite3`，与启动目录无关，零环境依赖）：
 ```bash
 # 执行数据库迁移到最新版 (Head)
 uv run alembic -c services/api/alembic.ini upgrade head

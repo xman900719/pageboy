@@ -125,7 +125,7 @@ async def upload_attachment(source_id: str, request: Request,
                             filename: str = Query(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f\x7f]+$"),
                             expected_sha256: str | None = Query(default=None, pattern="^[0-9a-f]{64}$"),
                             owner: str = Depends(require_owner), db: Session = Depends(get_db)):
-    """原始二进制请求体；上限 10 MiB，不使用公开目录或外部下载 URL。"""
+    """原始二进制请求体；上限 25 MiB，不使用公开目录或外部下载 URL。"""
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in files.MEDIA_TYPES:
         raise HTTPException(415, detail="UNSUPPORTED_FILE_TYPE")

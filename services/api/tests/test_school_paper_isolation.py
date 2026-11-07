@@ -94,7 +94,7 @@ def test_paper_upload_stream_cap_and_hash_mismatch(client, auth, private_dir):
     # Gate 整改（MINOR#1）：413 流式上限与 UPLOAD_HASH_MISMATCH 是学校端点独有的重复代码路径，
     # 不得只依赖 test_ingestion.py 的同型覆盖。
     exam_id = make_exam(client, auth)
-    oversized = upload_paper(client, auth, exam_id, data=b"x" * (10 * 1024 * 1024 + 1))
+    oversized = upload_paper(client, auth, exam_id, data=b"x" * (35 * 1024 * 1024 + 1))
     assert oversized.status_code == 413 and oversized.json()["detail"] == "INVALID_FILE_SIZE"
     png = png_bytes()
     mismatch = upload_paper(client, auth, exam_id, data=png, expected_sha256="0" * 64)

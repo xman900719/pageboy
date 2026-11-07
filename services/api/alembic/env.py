@@ -3,11 +3,11 @@ import os
 from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from shutong.database import Base
+from shutong.database import Base, DEFAULT_DATABASE_URL
 from shutong import models  # noqa: F401
 config = context.config
 target_metadata = Base.metadata
-url = os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
 
 def run_migrations_offline():
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})

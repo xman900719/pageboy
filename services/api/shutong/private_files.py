@@ -8,24 +8,36 @@ import subprocess
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 import warnings
+import xml.etree.ElementTree as ET
+import zipfile
 
 from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
-MAX_BYTES = 10 * 1024 * 1024
-MAX_PAGES = 20
+DEFAULT_PRIVATE_DIR = Path(__file__).resolve().parents[1] / "private-data" / "attachments"
+MAX_BYTES = 35 * 1024 * 1024
+MAX_PAGES = 40
 MAX_PIXELS = 20_000_000
 MAX_TEXT_BYTES = 200_000
-MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4")
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4", DOCX_MEDIA_TYPE)
 
 PDF_RENDER_DPI = 150
 PDF_RENDER_TIMEOUT = 120
 PDF_OCR_PAGE_TIMEOUT = 60
 OCR_PAGE_MARKER = "\n\n—— 第 {page} 页（OCR 草稿）——\n"
 
+# 扫描件常见的软件水印、公众号页眉及阅卷扫描仪条码串模式
+_OCR_NOISE_RE = re.compile(
+    r"\{#\{[A-Za-z0-9+/=]+\}#\}|"
+    r"扫描全能王\s*创建|"
+    r"帮\s*考\s*京\s*[：:]\s*号\s*众\s*公|"
+    r"公\s*众\s*号\s*[：:]\s*京\s*考\s*帮"
+)
+
 
 def private_root():
-    return Path(os.getenv("SHUTONG_PRIVATE_DIR", "private-data/attachments")).resolve()
+    return Path(os.getenv("SHUTONG_PRIVATE_DIR", str(DEFAULT_PRIVATE_DIR))).resolve()
 
 
 def blob_path(key):
@@ -62,6 +74,16 @@ def validate_file(data, media_type):
         pages = re.search(r"^Pages:\s+(\d+)", info, re.MULTILINE)
         if not pages or not 1 <= int(pages[1]) <= MAX_PAGES or re.search(r"^Encrypted:\s+yes", info, re.MULTILINE):
             raise HTTPException(422, detail="UNSUPPORTED_PDF")
+    elif media_type == DOCX_MEDIA_TYPE:
+        if not data.startswith(b"PK\x03\x04"):
+            raise HTTPException(422, detail="FILE_TYPE_MISMATCH")
+        try:
+            with zipfile.ZipFile(BytesIO(data)) as archive:
+                if "word/document.xml" not in archive.namelist():
+                    raise ValueError("missing word/document.xml")
+                ET.fromstring(archive.read("word/document.xml"))
+        except (zipfile.BadZipFile, ET.ParseError, KeyError, ValueError):
+            raise HTTPException(422, detail="INVALID_DOCX")
     elif media_type in ("audio/mpeg", "audio/mp4"):
         # 仅魔数校验（mp3：ID3 或 0xFF Ex/Fx 帧头；mp4/m4a：偏移 4 处 ftyp），不引入时长/码率解析。
         if media_type == "audio/mpeg":
@@ -112,9 +134,15 @@ def load_blob(attachment):
 
 
 def pdf_needs_ocr(text):
-    """纯决策：pdftotext 结果无任何非空白字符即视为无文本层，需 OCR 兜底。
-    仅按整体空白判断，不做逐页/混合版式猜测——含文本层的 PDF 一律不降级 OCR。"""
-    return not text.strip()
+    """纯决策：剔除已知扫描器水印/条码及空白标点后无有效正文，或多页试卷仅含极短页眉时，视为无有效文本层并触发 OCR 兜底。
+    含真实文本层的 PDF 一律不降级 OCR。"""
+    cleaned = _OCR_NOISE_RE.sub("", text)
+    meaningful = re.sub(r"[\s·•.．_—\-]+", "", cleaned)
+    if not meaningful:
+        return True
+    if text.count("\x0c") >= 4 and len(meaningful) < 30:
+        return True
+    return False
 
 
 def ocr_pdf(path, directory):
@@ -134,7 +162,74 @@ def ocr_pdf(path, directory):
     return "".join(pages).strip()
 
 
+def _decode_mtef_ole(raw: bytes) -> str:
+    """从 Word MathType OLE 二进制对象中提取可读公式文本（最佳努力提取，仍须人工核对）。"""
+    pos = raw.find("Equation Native".encode("utf-16le"))
+    if pos == -1:
+        return ""
+    size = int.from_bytes(raw[pos + 0x78 : pos + 0x7C], "little")
+    idx = 0
+    while True:
+        p = raw.find(b"\x1c\x00\x00\x00\x02\x00", idx)
+        if p == -1:
+            break
+        if raw[p + 28 : p + 30] == b"\x05\x01":
+            mtef = raw[p + 28 : p + size]
+            out = []
+            i = 12
+            while i < len(mtef) - 2:
+                b = mtef[i]
+                if 0x81 <= b <= 0x97:
+                    ch = int.from_bytes(mtef[i + 1 : i + 3], "little")
+                    if 0x20 <= ch <= 0x2FFF and ch not in (0x2F01, 0x2F44, 0x0501):
+                        out.append(chr(ch))
+                        i += 3
+                        continue
+                i += 1
+            return "".join(out)[1:] if len(out) > 1 else "".join(out)
+        idx = p + 1
+    return ""
+
+
+def extract_docx_text(data: bytes) -> str:
+    """从 .docx 压缩包中提取段落文本与内嵌公式文本。"""
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            rel_map: dict[str, str] = {}
+            if "word/_rels/document.xml.rels" in archive.namelist():
+                rels = ET.fromstring(archive.read("word/_rels/document.xml.rels"))
+                rel_map = {r.attrib.get("Id", ""): r.attrib.get("Target", "") for r in rels}
+            doc = ET.fromstring(archive.read("word/document.xml"))
+            names = set(archive.namelist())
+            paragraphs: list[str] = []
+            for para in doc.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+                parts: list[str] = []
+                for elem in para.iter():
+                    if elem.tag.endswith("}t") and elem.text:
+                        parts.append(elem.text)
+                    elif elem.tag.endswith("}OLEObject"):
+                        rid = elem.attrib.get(
+                            "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id", ""
+                        )
+                        target = rel_map.get(rid, "")
+                        if target and f"word/{target}" in names:
+                            eq = _decode_mtef_ole(archive.read(f"word/{target}"))
+                            if eq:
+                                parts.append(f"${eq}$")
+                line = "".join(parts).strip()
+                if line:
+                    paragraphs.append(line)
+            return "\n".join(paragraphs)
+    except (zipfile.BadZipFile, ET.ParseError, KeyError):
+        raise HTTPException(422, detail="DOCUMENT_PROCESSING_FAILED")
+
+
 def parse_text(data, media_type):
+    if media_type == DOCX_MEDIA_TYPE:
+        text = extract_docx_text(data).strip()
+        if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
+            raise HTTPException(422, detail="EXTRACTED_TEXT_TOO_LARGE")
+        return text, "python-docx-xml"
     with TemporaryDirectory(prefix="pageboy-parse-") as directory:
         path = Path(directory) / ("input.pdf" if media_type == "application/pdf" else "input.image")
         path.write_bytes(data)
