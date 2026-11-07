@@ -167,3 +167,29 @@ def test_student_api_data_isolation_cleanliness(client, admin_auth, student_auth
     for item in val_data["knowledge"]:
         assert "knowledge_id" not in item, "阶段对比接口严禁暴露内部 knowledge_id"
         assert "topic" in item, "阶段对比接口必须提供自然语言领域主题"
+
+    # 6. 学生端取题禁止使用 knowledge_id 参数筛选（F02 整改断言）
+    rej_res = client.get("/api/practice/next?subject=math&knowledge_id=math.arithmetic", headers=student_auth)
+    assert rej_res.status_code == 400
+    assert "KNOWLEDGE_FILTER_FORBIDDEN" in rej_res.json()["detail"]
+
+
+def test_topic_labels_unknown_kid_safety():
+    """F01 整改断言：未知或未登记知识点绝不回传内部代号或英文，且不同未知点保持区分映射。"""
+    from shutong.topic_labels import get_topic_label
+
+    t1 = get_topic_label("unknown.math.secret_subtopic_a")
+    t2 = get_topic_label("unknown.math.secret_subtopic_b")
+    t1_again = get_topic_label("unknown.math.secret_subtopic_a")
+
+    # 1. 绝对不包含内部代号前缀、英文单词或点号
+    assert "." not in t1 and "." not in t2
+    assert "secret" not in t1.lower() and "subtopic" not in t2.lower()
+    assert "math" not in t1.lower() and "math" not in t2.lower()
+
+    # 2. 映射幂等一致
+    assert t1 == t1_again
+
+    # 3. 不同未知代号分配不同考点名，避免同名冲突合并
+    assert t1 != t2
+

@@ -9,8 +9,7 @@ import PoolHealthCard from './components/PoolHealthCard.vue'
 import SchoolExamCard from './components/admin/SchoolExamCard.vue'
 import Note from './components/Note.vue'
 
-const TOKEN_STORE_KEY = 'shutong.admin_token'
-
+// P0-1 安全整改：管理端令牌仅当前页面内存保存，不再写入 localStorage，杜绝同源本地持久化串用风险
 const token = ref('')
 const subject = ref<Subject>('math')
 const view = ref<AdminViewId>('ledger')
@@ -51,31 +50,29 @@ watch(
 )
 
 onMounted(() => {
-  const saved = localStorage.getItem(TOKEN_STORE_KEY)
-  if (saved === null || saved === '') return
-  createClient(saved, 'admin')
-    .verify()
-    .then(() => {
-      if (token.value !== '') return
-      notify('已用本机记住的令牌自动进入管理台。', 'success')
-      token.value = saved
-    })
-    .catch(() => {
-      localStorage.removeItem(TOKEN_STORE_KEY)
-    })
+  // 清理废弃旧键与历史可能残留的管理端本地存储，确保仅当前会话内存持有
+  try {
+    localStorage.removeItem('shutong.token')
+    localStorage.removeItem('shutong.admin_token')
+  } catch {
+    // 忽略受沙箱环境限制的异常
+  }
 })
 
-async function enter(nextToken: string, remember: boolean) {
+async function enter(nextToken: string, _remember?: boolean) {
   const candidate = createClient(nextToken, 'admin')
   await candidate.verify()
-  if (remember) localStorage.setItem(TOKEN_STORE_KEY, nextToken)
-  else localStorage.removeItem(TOKEN_STORE_KEY)
+  // 严格仅保留在当前页面响应式内存中，不写入 localStorage
   token.value = nextToken
-  notify('已进入综合管理工作台。', 'success')
+  notify('已进入综合管理工作台（管理凭据仅内存保存）。', 'success')
 }
 
 function signOut() {
-  localStorage.removeItem(TOKEN_STORE_KEY)
+  try {
+    localStorage.removeItem('shutong.admin_token')
+  } catch {
+    // 忽略异常
+  }
   token.value = ''
   notice.value = null
 }
@@ -166,7 +163,7 @@ function signOut() {
       </div>
     </main>
 
-    <Gate v-else :on-enter="enter" />
+    <Gate v-else :on-enter="enter" :allow-remember="false" />
 
     <footer>开发管理版 · 演示数据均为虚构测试数据 · 仅供管理与审核使用</footer>
     <Notice :notice="notice" @close="clearNotice" />

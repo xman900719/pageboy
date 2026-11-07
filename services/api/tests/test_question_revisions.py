@@ -70,7 +70,7 @@ def test_revision_preserves_history_and_uses_each_versions_answer_key(client, au
     assert newest['question_version_id'] == revised['id']
     assert newest['stem'] == corrected['stem'] and newest['max_points'] == 3
     assert 'knowledge_ids' not in newest
-    assert client.get('/api/practice/next?subject=math&knowledge_id=math.arithmetic', headers=student_auth).status_code == 404
+    assert client.get('/api/practice/next?subject=math&knowledge_id=math.arithmetic', headers=student_auth).status_code == 400
     # 同一道逻辑题的更正不能恢复独立未见资格。
     assert newest['unseen_at_exposure'] is False
     assert client.get('/api/practice/next?subject=math&purpose=evaluation', headers=student_auth).status_code == 404

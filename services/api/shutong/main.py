@@ -139,11 +139,14 @@ def subjects(student: str = Depends(require_student)):
 @app.get("/api/practice/next")
 def next_item(subject: Subject, purpose: str = Query(default="training", pattern="^(training|evaluation)$"), knowledge_id: str | None = None, student: str = Depends(require_student), db: Session = Depends(get_db)):
     """A returned question is immediately recorded as exposed. Evaluation requires unseen item."""
+    # P0-1 隔离整改：学生端取题接口禁止使用内部 knowledge_id 筛选参数，杜绝内部知识点代号反向探测
+    if knowledge_id is not None:
+        raise HTTPException(status_code=400, detail="KNOWLEDGE_FILTER_FORBIDDEN: 学生端接口禁止使用内部知识点参数筛选")
     owner = student
     # 按逻辑题选择最新已发布版，较新的草稿不替代当前发布版。
     latest = select(m.QuestionVersion.question_id, func.max(m.QuestionVersion.version).label("version")).where(m.QuestionVersion.status == "published").group_by(m.QuestionVersion.question_id).subquery()
     versions = db.execute(select(m.QuestionVersion).join(m.Question).join(latest, (m.QuestionVersion.question_id == latest.c.question_id) & (m.QuestionVersion.version == latest.c.version)).where(m.Question.subject == subject, m.QuestionVersion.status == "published").order_by(m.QuestionVersion.created_at, m.QuestionVersion.id)).scalars().all()
-    candidates = [v for v in versions if not knowledge_id or knowledge_id in v.knowledge_ids]
+    candidates = list(versions)
     # 曝光计数按逻辑题批量聚合。此查询必须渲染出字面 token `GROUP BY exposures.question_id`——
     # test_practice_concurrency.py 的 is_exposure_read 钩子按它匹配以制造受控竞争窗，勿改写查询形状。
     counts = dict(db.execute(select(m.Exposure.question_id, func.count()).where(m.Exposure.learner_id == owner).group_by(m.Exposure.question_id)).all())

@@ -27,7 +27,7 @@ def math_pool(client, auth):
         "title": "虚构测试数据：数学纵向闭环题源", "subject": "math",
         "rights_status": "personal_use_reviewed", "verified": True}, headers=auth).json()["id"]
     published_ids = {}
-    for knowledge_id, count, label in (("math.gap", 9, "短板"), ("math.ok", 8, "对照"), ("math.sparse", 4, "稀疏")):
+    for knowledge_id, count, label in (("math.gap", 9, "短板"), ("math.ok", 3, "对照"), ("math.sparse", 4, "稀疏")):
         ids = []
         for i in range(count):
             q = client.post("/api/admin/questions", json={
@@ -48,13 +48,11 @@ def test_math_vertical_loop(client, student_auth, db, math_pool):
     exposures_created = 0
     attempts_recorded = 0
 
-    def next_item(purpose=None, knowledge_id=None):
+    def next_item(purpose=None):
         nonlocal exposures_created
         path = "/api/practice/next?subject=math"
         if purpose:
             path += f"&purpose={purpose}"
-        if knowledge_id:
-            path += f"&knowledge_id={knowledge_id}"
         r = client.get(path, headers=student_auth)
         assert r.status_code == 200, r.text
         exposures_created += 1
@@ -89,7 +87,7 @@ def test_math_vertical_loop(client, student_auth, db, math_pool):
     # 3) math.gap 诊断：3 道未见 evaluation，全部答错（正确答案 'B'，作答 'A'）
     diag_ids = []
     for i in range(3):
-        item = next_item(purpose="evaluation", knowledge_id="math.gap")
+        item = next_item(purpose="evaluation")
         assert item["unseen_at_exposure"] is True
         assert "knowledge_ids" not in item  # P0-1 学生接口杜绝暴露内部代号
         result = submit(f"diag-{i}", item, "A")
@@ -110,13 +108,13 @@ def test_math_vertical_loop(client, student_auth, db, math_pool):
 
     # 5) math.gap 复练：training 按（最少曝光优先）轮换、允许重复；完成 曝光+作答 循环即可
     for i in range(3):
-        item = next_item(knowledge_id="math.gap")
+        item = next_item()
         submit(f"train-{i}", item, "B")
 
     # 6) math.gap 复测：3 道全新未见 evaluation，全部答对；与诊断题集不相交（曝光纪律保证不复用旧题）
     retest_ids = []
     for i in range(3):
-        item = next_item(purpose="evaluation", knowledge_id="math.gap")
+        item = next_item(purpose="evaluation")
         assert item["unseen_at_exposure"] is True
         result = submit(f"retest-{i}", item, "B")
         assert result["earned_points"] == 2
@@ -141,7 +139,7 @@ def test_math_vertical_loop(client, student_auth, db, math_pool):
 
     # 8) 提示污染反例：math.ok 带 hints_used=true 的 evaluation 作答不进比较样本
     for i in range(3):
-        item = next_item(purpose="evaluation", knowledge_id="math.ok")
+        item = next_item(purpose="evaluation")
         result = submit(f"contam-{i}", item, "A", hints=True)
         assert result["evaluation_valid_unseen"] is False  # 带提示 → 非独立，不得算作有效复测
     contaminated = client.get("/api/guidance/validation?subject=math", headers=student_auth).json()
@@ -152,10 +150,10 @@ def test_math_vertical_loop(client, student_auth, db, math_pool):
 
     # 9) 复测侧不足反例：math.sparse 基线 3 条全对 + 复测仅 1 条 → cannot_compare(insufficient_retest)
     for i in range(3):
-        item = next_item(purpose="evaluation", knowledge_id="math.sparse")
+        item = next_item(purpose="evaluation")
         assert item["unseen_at_exposure"] is True
         assert submit(f"sparse-base-{i}", item, "B")["evaluation_valid_unseen"] is True
-    item = next_item(purpose="evaluation", knowledge_id="math.sparse")
+    item = next_item(purpose="evaluation")
     assert submit("sparse-retest-0", item, "B")["evaluation_valid_unseen"] is True
     final = client.get("/api/guidance/validation?subject=math", headers=student_auth).json()
     final_kids = {e["topic"]: e for e in final["knowledge"]}

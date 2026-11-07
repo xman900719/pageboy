@@ -31,6 +31,10 @@ SYNTHETIC_MAP: dict[str, str] = {
 }
 
 
+# 未登记考点的安全中性分配缓存（同一进程生命周期稳定，不泄露内部代号字符串，不同未知考点区分编号）
+_UNKNOWN_KID_CACHE: dict[str, str] = {}
+
+
 def get_topic_label(kid: str | None) -> str:
     """将内部知识点代号转换为面向学生的纯正自然语言领域主题名称。"""
     if not kid:
@@ -39,9 +43,11 @@ def get_topic_label(kid: str | None) -> str:
         return TAXONOMY_MAP[kid]
     if kid in SYNTHETIC_MAP:
         return SYNTHETIC_MAP[kid]
-    # 对未登记考点进行友好中文清洗，严格过滤英文前缀与点号，绝不暴露内部系统代号
-    clean = kid.split(".")[-1].replace("_", " ").title()
-    return f"{clean}考点"
+    # 对未登记考点生成安全中性中文考点名，绝不反射内部 ID 字符串（杜绝英文标识或系统内部路径泄露）
+    if kid not in _UNKNOWN_KID_CACHE:
+        idx = len(_UNKNOWN_KID_CACHE) + 1
+        _UNKNOWN_KID_CACHE[kid] = f"拓展实践考点 {idx}"
+    return _UNKNOWN_KID_CACHE[kid]
 
 
 def get_student_advice(gap_type: str, topic: str, observed_rate: float | None = None, threshold: float | None = None) -> str:

@@ -138,7 +138,8 @@ def test_unpublished_questions_are_never_served(client, auth, student_auth):
     assert evaluation.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
 
 
-def test_knowledge_id_filter(client, auth, student_auth, published):
+def test_knowledge_id_filter_rejected(client, auth, student_auth, published, db):
+    """P0-1 边界：学生端禁止使用 knowledge_id 参数筛选，必须返回 400 且严禁创建曝光记录。"""
     source = client.post('/api/admin/sources', headers=auth, json={
         'title': '虚构测试数据：几何题源', 'subject': 'math',
         'rights_status': 'personal_use_reviewed', 'verified': True,
@@ -149,17 +150,30 @@ def test_knowledge_id_filter(client, auth, student_auth, published):
         'knowledge_ids': ['math.geometry'], 'max_points': 2,
     }).json()['id']
     publish(client, auth, extra)
-    # 顺序上先取 evaluation：唯一几何题被 training 曝光后即失去未见资格，两种 purpose 才都能返回该题。
+
+    # 记录当前已存在的曝光数
+    exposures_before = db.scalars(select(m.Exposure)).all()
+    count_before = len(exposures_before)
+
+    # 1. 提交合法存在的内部知识点参数 -> 400 明确拒绝
     evaluation = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry&purpose=evaluation', headers=student_auth)
-    assert evaluation.status_code == 200
-    assert evaluation.json()['question_version_id'] == extra
+    assert evaluation.status_code == 400
+    assert "KNOWLEDGE_FILTER_FORBIDDEN" in evaluation.json()["detail"]
+
     training = client.get('/api/practice/next?subject=math&knowledge_id=math.geometry', headers=student_auth)
-    assert training.status_code == 200
-    assert training.json()['question_version_id'] == extra
+    assert training.status_code == 400
+    assert "KNOWLEDGE_FILTER_FORBIDDEN" in training.json()["detail"]
+
+    # 2. 提交不存在的知识点代号 -> 同样 400 拒绝，杜绝借 404 反向探测内部考点有效性
     for purpose in ('training', 'evaluation'):
         missing = client.get(f'/api/practice/next?subject=math&knowledge_id=math.nonexistent&purpose={purpose}', headers=student_auth)
-        assert missing.status_code == 404
-        assert missing.json()['detail'] == 'NO_ELIGIBLE_QUESTION'
+        assert missing.status_code == 400
+        assert "KNOWLEDGE_FILTER_FORBIDDEN" in missing.json()["detail"]
+
+    # 3. 核心安全不变项：拒绝发生在落库之前，数据库严禁生成任何 Exposure 记录
+    db.expire_all()
+    exposures_after = db.scalars(select(m.Exposure)).all()
+    assert len(exposures_after) == count_before, "被拒绝的内部筛选请求绝不应创建曝光记录"
 
 
 def test_non_owner_exposure_not_visible(client, student_auth, published, db):

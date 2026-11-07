@@ -1,18 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { describeError } from '../api'
 
-const TOKEN_STORE_KEY = 'shutong.token'
-
-const props = defineProps<{
-  onEnter: (token: string, remember: boolean) => Promise<void>
-}>()
+const props = withDefaults(
+  defineProps<{
+    onEnter: (token: string, remember: boolean) => Promise<void>
+    allowRemember?: boolean
+  }>(),
+  {
+    allowRemember: true,
+  }
+)
 
 const value = ref('')
 const busy = ref(false)
 const error = ref('')
 const visible = ref(false)
-const remember = ref(localStorage.getItem(TOKEN_STORE_KEY) !== null)
+// 默认不勾选，学生端必须由用户主动勾选才持久化；管理端不支持记住
+const remember = ref(false)
+
+onMounted(() => {
+  // 清理废弃的旧版全局凭据键，避免历史管理员凭据残留
+  try {
+    localStorage.removeItem('shutong.token')
+  } catch {
+    // 忽略异常
+  }
+})
 
 async function pasteToken() {
   try {
@@ -36,7 +50,7 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    await props.onEnter(value.value.trim(), remember.value)
+    await props.onEnter(value.value.trim(), props.allowRemember ? remember.value : false)
   } catch (e) {
     error.value = describeError(e)
   } finally {
@@ -88,13 +102,16 @@ async function submit() {
             </button>
           </span>
         </label>
-        <div class="confirm-box gate-remember">
+        <div v-if="allowRemember" class="confirm-box gate-remember">
           <input
             id="gate-remember"
             type="checkbox"
             v-model="remember"
           />
-          <label htmlFor="gate-remember">在本机记住令牌（私有设备：冷启动免输入；退出即清除）</label>
+          <label for="gate-remember">在本机记住令牌（私有设备：冷启动免输入；退出即清除）</label>
+        </div>
+        <div v-else class="gate-remember gate-admin-memory-notice">
+          <small class="muted">管理凭据安全策略：仅在当前页面内存持有，不支持本机持久化记住。</small>
         </div>
         <p v-if="error" class="form-error">{{ error }}</p>
         <button type="submit" class="primary" :disabled="busy">
@@ -102,7 +119,8 @@ async function submit() {
         </button>
       </form>
       <ul class="gate-notes">
-        <li>令牌默认只保留在当前页面内存；仅当你显式勾选「在本机记住令牌」后才写入本机存储（仅限个人私有设备，不会经网络传给第三方），退出即清除。</li>
+        <li v-if="allowRemember">令牌默认只保留在当前页面内存；仅当你显式勾选「在本机记住令牌」后才写入本机存储（仅限个人私有设备，不会经网络传给第三方），退出即清除。</li>
+        <li v-else>综合管理工作台管理令牌仅保存在当前页面响应式内存中，关闭或刷新页面后自动失效，杜绝持久化存储风险。</li>
         <li>私有单人工具：练习记录、学校试卷与个人信息不会被公开传播。</li>
         <li>只有管理员人工审核发布的题目才会出现；当前演示数据均为虚构测试数据。</li>
       </ul>

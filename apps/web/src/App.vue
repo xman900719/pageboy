@@ -28,6 +28,12 @@ function clearNotice() {
 }
 
 onMounted(() => {
+  // 清理废弃的旧版全局凭据键，避免历史管理员凭据残留
+  try {
+    localStorage.removeItem('shutong.token')
+  } catch {
+    // 忽略异常
+  }
   const saved = localStorage.getItem(TOKEN_STORE_KEY)
   if (saved === null || saved === '') return
   createClient(saved, 'student')
@@ -53,7 +59,12 @@ async function enter(nextToken: string, remember: boolean) {
 }
 
 function signOut() {
-  localStorage.removeItem(TOKEN_STORE_KEY) // 退出 = 完整登出：本机记住的令牌一并清除
+  try {
+    localStorage.removeItem('shutong.token')
+    localStorage.removeItem(TOKEN_STORE_KEY) // 退出 = 完整登出：本机记住的令牌一并清除
+  } catch {
+    // 忽略异常
+  }
   token.value = ''
   notice.value = null
 }

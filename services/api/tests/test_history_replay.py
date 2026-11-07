@@ -21,7 +21,7 @@ def test_rule_change_rederives_without_touching_history(client, student_auth, db
     # 经练习流产生真实 AnswerAttempt/Exposure 行：math.arithmetic 上 3 道 evaluation，答案混合（A/A/B）。
     assert client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100, "minutes_per_day": 15}, headers=student_auth).status_code == 201
     for i, answer in enumerate(["A", "A", "B"]):
-        item = client.get("/api/practice/next?subject=math&purpose=evaluation&knowledge_id=math.arithmetic", headers=student_auth).json()
+        item = client.get("/api/practice/next?subject=math&purpose=evaluation", headers=student_auth).json()
         r = client.post("/api/practice/attempts", json={"client_attempt_id": f"replay-{i}", "exposure_id": item["exposure_id"], "answer": answer}, headers=student_auth)
         assert r.status_code == 201
     original_model_version = guidance.MODEL_VERSION

@@ -345,8 +345,11 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
 /* ---------- J6 本机记住令牌（PWA 冷启动免输入） ---------- */
 
 test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令牌如实拦截', async ({ page }) => {
-  // 勾选「在本机记住令牌」进入：令牌写入本机存储（显式选配，默认仅内存）。
   await page.goto('/')
+  // 默认不预勾选，杜绝未经用户主动授权的隐式持久化
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
+
+  // 用户主动勾选「在本机记住令牌」进入：令牌写入本机存储（显式选配，默认仅内存）。
   await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByLabel(/在本机记住令牌/).check()
   await page.getByRole('button', { name: '进入' }).click()
@@ -364,6 +367,8 @@ test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令�
   await page.getByRole('button', { name: '退出' }).click()
   await expect(page.getByLabel('访问令牌')).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+  // 登出后重回令牌门：勾选框保持默认未勾选
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
 
   // 反例：本机残留失效令牌 → verify 失败即如实清除，绝不放行。
   await page.evaluate(t => localStorage.setItem('shutong.student_token', t), 'stale-token')
@@ -371,13 +376,48 @@ test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令�
   await expect(page.getByLabel('访问令牌')).toBeVisible()
   await expect.poll(() => page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
 
-  // 清除后令牌门照常可用：显式取消勾选进入 → 不落任何存储（既有偏好可随时撤销）。
-  // 注意：勾选框按「上次选择」预勾（存储残留过令牌即视为偏好记住），故必须显式取消。
+  // 清除后令牌门照常可用：未主动勾选进入 → 绝不持久化到 localStorage
   await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
-  await page.getByLabel(/在本机记住令牌/).uncheck()
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+})
+
+test('J6b 凭据门禁安全整改：废弃旧键清理、未主动勾选不持久化、管理端隐藏记住选项', async ({ page }) => {
+  // 1. 学生端：注入废弃的旧版全局凭据 shutong.token，访问后自动清理
+  await page.goto('/')
+  await page.evaluate(() => localStorage.setItem('shutong.token', 'legacy-admin-token'))
+  await page.reload()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  // 2. 学生端默认不预勾选，不勾选直接进入不持久化
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+  await page.getByRole('button', { name: '退出' }).click()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+
+  // 3. 管理端：隐藏「在本机记住令牌」选项，显示仅内存安全说明
+  await page.goto('/admin.html')
+  await page.evaluate(() => localStorage.setItem('shutong.token', 'legacy-admin-token'))
+  await page.reload()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+  await expect(page.getByLabel(/在本机记住令牌/)).toHaveCount(0)
+  await expect(page.getByText('管理凭据安全策略：仅在当前页面内存持有，不支持本机持久化记住。')).toBeVisible()
+
+  // 4. 管理端正常登录与退出，管理凭据全生命周期零 localStorage 残留
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.admin_token'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  await page.getByRole('button', { name: '退出' }).click()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.admin_token'))).toBeNull()
 })
 
 /* ---------- J9 会话续答（ST-018）：刷新/重开不空烧未见题 ---------- */

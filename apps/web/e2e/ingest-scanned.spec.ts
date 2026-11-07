@@ -53,13 +53,13 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
 
 test.beforeAll(async () => {
   // 幂等：worker 超时重启会重跑 beforeAll，按标题复用题源避免重复种子。
-  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources')
+  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources?subject=chinese')
   const reused = existing.find(item => item.source.title === SOURCE_TITLE)
   const source = reused
     ? reused.id
     : (await call<{ id: string }>('/api/admin/sources', 'POST', {
         title: SOURCE_TITLE,
-        subject: 'math',
+        subject: 'chinese',
         rights_status: 'licensed',
         verified: true,
       })).id
@@ -91,6 +91,8 @@ async function enterAdminSpace(page: Page): Promise<void> {
 
 test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确认导入→审核发布→练习渲染公式', async ({ page }) => {
   await enterAdminSpace(page)
+  // 切换至语文科目（专属于 J8 扫描件摄取与题库，避免污染数学纵向闭环）
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '语文' }).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })
@@ -149,19 +151,11 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await draftRow.getByRole('button', { name: '发布' }).click()
   await expect(page.getByRole('status')).toContainText('题目已发布')
 
-  // ⑥ 进入学生练习区按该知识点取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
+  // ⑥ 进入学生练习区按语文科目取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
   await enterSpace(page)
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '语文' }).click()
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
-  await page.route(/\/api\/practice\/next/, async route => {
-    const url = new URL(route.request().url())
-    url.searchParams.set('knowledge_id', KID)
-    const response = await page.request.fetch(url.toString(), {
-      headers: route.request().headers(),
-      method: route.request().method(),
-    })
-    await route.fulfill({ response })
-  })
   await practice.getByRole('button', { name: '开始练习' }).click()
   const card = page.getByRole('region', { name: '题目' })
   await expect(card).toBeVisible()
