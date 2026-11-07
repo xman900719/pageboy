@@ -72,7 +72,14 @@ class AttachmentOut(BaseModel):
     id: str
     source_document_id: str
     filename: str
-    media_type: Literal["application/pdf", "image/png", "image/jpeg", "audio/mpeg", "audio/mp4"]
+    media_type: Literal[
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/png",
+        "image/jpeg",
+        "audio/mpeg",
+        "audio/mp4",
+    ]
     sha256: str = Field(pattern="^[0-9a-f]{64}$")
     byte_size: int = Field(gt=0)
     status: Literal["uploaded", "parsed", "needs_manual_input", "confirmed"]

@@ -17,7 +17,7 @@ from shutong.corpus.taxonomy import TAXONOMY
 from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
 
 REQUIRED_SUBJECTS = {"math", "physics", "english", "chinese"}
-REQUIRED_YEARS = {2018, 2019, 2020, 2021, 2022, 2023, 2025}
+REQUIRED_YEARS = {2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
 DEFAULT_CORPUS_DIR = Path("/media/xc/backup_ntfs/中考题库/北京中考真题")
 
 def validate_taxonomy() -> set[str]:
@@ -78,7 +78,7 @@ def validate_knowledge_labels(all_codes: set[str]) -> None:
 
 
 def validate_exam_papers(known_codes: set[str]) -> None:
-    print("\n=== [3/4] 检验 2018-2023 及 2025 年北京中考四科真题数据包 ===")
+    print("\n=== [3/4] 检验 2018-2025 年北京中考四科真题数据包 ===")
     seen_year_subjects: set[tuple[int, str]] = set()
     total_questions = 0
     check_pdfs = DEFAULT_CORPUS_DIR.is_dir()
@@ -96,11 +96,12 @@ def validate_exam_papers(known_codes: set[str]) -> None:
         seen_year_subjects.add((year, subject))
         
         assert str(year) in title and "北京" in title, f"标题未标明 {year} 北京中考：{title}"
-        assert pdf_relpath.endswith(".pdf") and str(year) in pdf_relpath, f"PDF 相对路径不合法：{pdf_relpath}"
+        assert pdf_relpath.endswith((".pdf", ".docx")) and str(year) in pdf_relpath, f"原件相对路径不合法：{pdf_relpath}"
         if check_pdfs:
             pdf_file = DEFAULT_CORPUS_DIR / pdf_relpath
-            assert pdf_file.is_file(), f"未找到对应的 PDF 真题原件：{pdf_file}"
-            files.validate_file(pdf_file.read_bytes(), "application/pdf")
+            assert pdf_file.is_file(), f"未找到对应的真题原件：{pdf_file}"
+            expected_mime = files.DOCX_MEDIA_TYPE if pdf_relpath.endswith(".docx") else "application/pdf"
+            files.validate_file(pdf_file.read_bytes(), expected_mime)
         assert len(questions) >= 10, f"{year} {subject} 试卷题目过少：仅 {len(questions)} 题"
         
         seen_indices = set()

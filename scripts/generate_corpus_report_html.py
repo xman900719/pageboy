@@ -97,20 +97,20 @@ DIAGRAMS = [
         "id": "diag-1",
         "title": "图 1：书童权威真题与知识点库全局资产总览图",
         "tag": "资产全貌",
-        "desc": "展示书童题库与知识点库的全局架构，清晰呈现 81 个课标考点与 2018-2023 及 2025 年共 28 套（304 道）北京中考全真试题的学科分流。",
+        "desc": "展示书童题库与知识点库的全局架构，清晰呈现 81 个课标考点与 2018-2025 年共 32 套（350 道）北京中考全真试题的学科分流。",
         "code": """flowchart LR
     Root["书童权威真题与知识点库"] --> Tax["四科标准知识点库<br/>(共 81 个课标节点)"]
-    Root --> Exam["2018-2023 & 2025 北京中考全真试题库<br/>(共 28 套试卷 · 304 道精校全真题)"]
+    Root --> Exam["2018-2025 北京中考全真试题库<br/>(共 32 套试卷 · 350 道精校全真题)"]
 
     Tax --> M_T["数学：24 个考点"]
     Tax --> P_T["物理：21 个考点"]
     Tax --> E_T["英语：18 个考点"]
     Tax --> C_T["语文：18 个考点"]
 
-    Exam --> M_Q["数学真题：7 卷 78 题"]
-    Exam --> P_Q["物理真题：7 卷 72 题"]
-    Exam --> E_Q["英语真题：7 卷 84 题"]
-    Exam --> C_Q["语文真题：7 卷 70 题"]
+    Exam --> M_Q["数学真题：8 卷 90 题"]
+    Exam --> P_Q["物理真题：8 卷 84 题"]
+    Exam --> E_Q["英语真题：8 卷 96 题"]
+    Exam --> C_Q["语文真题：8 卷 80 题"]
 """
     },
     {
@@ -628,8 +628,8 @@ def generate_html():
                 </div>
                 <div class="metric-card">
                     <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">2018-2025北京真题</div>
-                    <div class="mt-2 text-2xl font-black text-blue-600">304 <span class="text-sm font-normal text-slate-600">道 (28卷)</span></div>
-                    <div class="text-xs text-slate-500 mt-1">数78·物72·英84·语70</div>
+                    <div class="mt-2 text-2xl font-black text-blue-600">350 <span class="text-sm font-normal text-slate-600">道 (32卷)</span></div>
+                    <div class="text-xs text-slate-500 mt-1">数90·物84·英96·语80</div>
                 </div>
                 <div class="metric-card">
                     <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">新课标知识点节点</div>
@@ -686,26 +686,26 @@ def generate_html():
                         <tbody>
                             <tr>
                                 <td class="font-bold text-purple-700">数学 (math)</td>
-                                <td class="text-center font-mono">78 题 (7卷)</td>
-                                <td class="text-center font-mono font-bold text-emerald-600">78 题 (100%)</td>
+                                <td class="text-center font-mono">90 题 (8卷)</td>
+                                <td class="text-center font-mono font-bold text-emerald-600">90 题 (100%)</td>
                                 <td class="text-center"><span class="badge badge-success">TRUE</span></td>
                             </tr>
                             <tr>
                                 <td class="font-bold text-orange-700">物理 (physics)</td>
-                                <td class="text-center font-mono">72 题 (7卷)</td>
-                                <td class="text-center font-mono font-bold text-emerald-600">72 题 (100%)</td>
-                                <td class="text-center"><span class="badge badge-success">TRUE</span></td>
-                            </tr>
-                            <tr>
-                                <td class="font-bold text-teal-700">英语 (english)</td>
-                                <td class="text-center font-mono">84 题 (7卷)</td>
+                                <td class="text-center font-mono">84 题 (8卷)</td>
                                 <td class="text-center font-mono font-bold text-emerald-600">84 题 (100%)</td>
                                 <td class="text-center"><span class="badge badge-success">TRUE</span></td>
                             </tr>
                             <tr>
+                                <td class="font-bold text-teal-700">英语 (english)</td>
+                                <td class="text-center font-mono">96 题 (8卷)</td>
+                                <td class="text-center font-mono font-bold text-emerald-600">96 题 (100%)</td>
+                                <td class="text-center"><span class="badge badge-success">TRUE</span></td>
+                            </tr>
+                            <tr>
                                 <td class="font-bold text-rose-700">语文 (chinese)</td>
-                                <td class="text-center font-mono">70 题 (7卷)</td>
-                                <td class="text-center font-mono font-bold text-emerald-600">70 题 (100%)</td>
+                                <td class="text-center font-mono">80 题 (8卷)</td>
+                                <td class="text-center font-mono font-bold text-emerald-600">80 题 (100%)</td>
                                 <td class="text-center"><span class="badge badge-success">TRUE</span></td>
                             </tr>
                         </tbody>

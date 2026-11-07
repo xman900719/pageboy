@@ -8,7 +8,7 @@ import hashlib, json, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/api"))
-from shutong.private_files import pdf_needs_ocr  # noqa: E402
+from shutong.private_files import DOCX_MEDIA_TYPE, extract_docx_text, pdf_needs_ocr, validate_file  # noqa: E402
 from shutong.research import official_reject_reason  # noqa: E402
 
 SUBJECTS = {"语文": "chinese", "数学": "math", "英语": "english", "物理": "physics"}
@@ -44,16 +44,48 @@ def classify(path: Path) -> dict:
 
 def main(root: str, out: str) -> None:
     items = []
-    for p in sorted(Path(root).rglob("*.pdf")):
-        info = run(["pdfinfo", str(p)])
-        pages = re.search(r"Pages:\s+(\d+)", info)
-        extracted_text = run(["pdftotext", str(p), "-"])
-        text_chars = len(extracted_text.strip())
-        h = hashlib.sha256(p.read_bytes()).hexdigest()
-        rel = str(p.relative_to(root))
-        items.append({"path": rel, "sha256": h, "bytes": p.stat().st_size, "valid_pdf": pages is not None,
-                      "pages": int(pages.group(1)) if pages else None, "text_chars": text_chars,
-                      "needs_ocr": pdf_needs_ocr(extracted_text), **classify(p)})
+    root_path = Path(root)
+    all_files = sorted(
+        p for p in root_path.rglob("*")
+        if p.is_file() and p.suffix.lower() in (".pdf", ".docx")
+    )
+    for p in all_files:
+        raw = p.read_bytes()
+        h = hashlib.sha256(raw).hexdigest()
+        rel = str(p.relative_to(root_path))
+        if p.suffix.lower() == ".pdf":
+            info = run(["pdfinfo", str(p)])
+            pages = re.search(r"Pages:\s+(\d+)", info)
+            extracted_text = run(["pdftotext", str(p), "-"])
+            text_chars = len(extracted_text.strip())
+            items.append({
+                "path": rel,
+                "sha256": h,
+                "bytes": len(raw),
+                "valid_pdf": pages is not None,
+                "pages": int(pages.group(1)) if pages else None,
+                "text_chars": text_chars,
+                "needs_ocr": pdf_needs_ocr(extracted_text),
+                **classify(p),
+            })
+        else:
+            try:
+                validate_file(raw, DOCX_MEDIA_TYPE)
+                extracted_text = extract_docx_text(raw)
+                valid_docx = True
+            except Exception:
+                extracted_text = ""
+                valid_docx = False
+            items.append({
+                "path": rel,
+                "sha256": h,
+                "bytes": len(raw),
+                "valid_docx": valid_docx,
+                "pages": None,
+                "text_chars": len(extracted_text.strip()),
+                "needs_ocr": False,
+                **classify(p),
+            })
     seen: dict[str, str] = {}
     for it in items:
         it["duplicate_of"] = seen.get(it["sha256"])
@@ -64,7 +96,7 @@ def main(root: str, out: str) -> None:
             or it.get("carrier_note") == "OFFICIAL_QUESTIONS_EMBEDDED_IN_ANALYSIS_PDF"
         )
     Path(out).write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{len(items)} PDFs audited; four-subject official candidates: {sum(i['official_candidate'] for i in items)}")
+    print(f"{len(items)} files audited; four-subject official candidates: {sum(i['official_candidate'] for i in items)}")
 
 
 if __name__ == "__main__":

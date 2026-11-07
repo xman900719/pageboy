@@ -22,7 +22,7 @@ def test_validate_corpus_integrity_script():
 
 
 def test_seed_real_corpus_and_idempotency(tmp_path):
-    """验证 seed_real_corpus 工具能安全向数据库写入知识点与 2018-2023 及 2025 真题，且具备幂等性。"""
+    """验证 seed_real_corpus 工具能安全向数据库写入知识点与 2018-2025 真题，且具备幂等性。"""
     from scripts.seed_real_corpus import seed_corpus
     db_file = tmp_path / "test-seed.sqlite3"
     url = f"sqlite+pysqlite:///{db_file}"
@@ -34,22 +34,22 @@ def test_seed_real_corpus_and_idempotency(tmp_path):
     
     first_run = seed_corpus(db_url=url)
     assert first_run["nodes_created"] == 81
-    assert first_run["sources_created"] == 28
-    assert first_run["questions_published"] == 304
-    assert first_run["links_created"] >= 304
+    assert first_run["sources_created"] == 32
+    assert first_run["questions_published"] == 350
+    assert first_run["links_created"] >= 350
     
     second_run = seed_corpus(db_url=url)
     assert second_run["nodes_created"] == 0
     assert second_run["questions_published"] == 0
-    assert second_run["questions_existing"] == 304
+    assert second_run["questions_existing"] == 350
 
 
 def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, monkeypatch):
-    """验证开启 attach_pdfs=True 时为全部 28 套试卷挂载原件附件并建立 ImportedQuestion 溯源。"""
+    """验证开启 attach_pdfs=True 时为全部 32 套试卷挂载原件附件（28 份 PDF + 4 份 DOCX）并建立 ImportedQuestion 溯源。"""
     from scripts.seed_real_corpus import seed_corpus
     from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
     from shutong.ingestion import require_import_integrity
-    from test_ingestion import synthetic_pdf
+    from test_ingestion import synthetic_docx, synthetic_pdf
 
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "priv"))
     corpus_dir = tmp_path / "corpus"
@@ -57,7 +57,10 @@ def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, mo
         rel = paper["pdf_relpath"]
         target = corpus_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(synthetic_pdf(pages=1, text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
+        if rel.endswith(".docx"):
+            target.write_bytes(synthetic_docx(text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
+        else:
+            target.write_bytes(synthetic_pdf(pages=1, text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
 
     db_file = tmp_path / "test-seed-pdf.sqlite3"
     url = f"sqlite+pysqlite:///{db_file}"
@@ -65,9 +68,9 @@ def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, mo
     Base.metadata.create_all(engine)
 
     stats = seed_corpus(db_url=url, corpus_dir=corpus_dir, attach_pdfs=True)
-    assert stats["sources_created"] == 28
-    assert stats["attachments_linked"] == 28
-    assert stats["questions_published"] == 304
+    assert stats["sources_created"] == 32
+    assert stats["attachments_linked"] == 32
+    assert stats["questions_published"] == 350
 
     # 幂等复跑不重复创建附件
     second = seed_corpus(db_url=url, corpus_dir=corpus_dir, attach_pdfs=True)
@@ -75,7 +78,7 @@ def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, mo
 
     with Session(engine) as session:
         qvs = session.scalars(select(m.QuestionVersion)).all()
-        assert len(qvs) == 304
+        assert len(qvs) == 350
         for qv in qvs:
             require_import_integrity(session, qv)
     engine.dispose()
@@ -128,12 +131,12 @@ def test_clean_demo_data_removes_only_demo(tmp_path):
     assert counts["questions"] == 1
     assert counts["question_versions"] == 1
 
-    # 验证真实真题毫发无损（仍为 28 个真实题源、304 道真实试题）
+    # 验证真实真题毫发无损（仍为 32 个真实题源、350 道真实试题）
     with Session(engine) as session:
         real_sources = session.scalars(select(m.SourceDocument).where(m.SourceDocument.source_class == "official_exam")).all()
-        assert len(real_sources) == 28
+        assert len(real_sources) == 32
 
         real_questions = session.scalars(select(m.Question).join(m.SourceDocument).where(m.SourceDocument.source_class == "official_exam")).all()
-        assert len(real_questions) == 304
+        assert len(real_questions) == 350
 
     engine.dispose()

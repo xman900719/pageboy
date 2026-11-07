@@ -188,7 +188,13 @@ export interface AttachmentOut {
   id: string
   source_document_id: string
   filename: string
-  media_type: 'application/pdf' | 'image/png' | 'image/jpeg' | 'audio/mpeg' | 'audio/mp4'
+  media_type:
+    | 'application/pdf'
+    | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    | 'image/png'
+    | 'image/jpeg'
+    | 'audio/mpeg'
+    | 'audio/mp4'
   sha256: string
   byte_size: number
   status: AttachmentStatus
@@ -370,7 +376,8 @@ const API_CODE_TEXT: Record<string, string> = {
   REFERENCE_NOT_APPLICABLE: '该题型没有参考答案。',
   /* 题库审核台（原文码缺映射时直接显示 code）。 */
   UPLOAD_HASH_MISMATCH: '附件校验失败：上传内容的哈希与预期不一致，请重新上传。',
-  UNSUPPORTED_FILE_TYPE: '不支持的附件类型：仅接受 PDF / PNG / JPG / MP3 / M4A。',
+  UNSUPPORTED_FILE_TYPE: '不支持的附件类型：仅接受 PDF / DOCX / PNG / JPG / MP3 / M4A。',
+  INVALID_DOCX: 'Word 文档（.docx）损坏或缺少有效正文结构，请检查文件后重新上传。',
   INVALID_FILE_SIZE: '附件大小不符合要求（上限 25 MiB）。',
   ATTACHMENT_STORAGE_UNAVAILABLE: '附件存储暂不可用，请稍后重试。',
   IMPORT_ALREADY_CONFIRMED: '该附件已确认导入过，不能再次解析或导入。',

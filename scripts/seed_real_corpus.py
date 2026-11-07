@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""安全、幂等灌入四科标准知识点库与 2018-2023 及 2025 年北京中考全真试题工具。
-支持直接连接数据库（SQLite 或 PostgreSQL），保证数据完整性、合规标记、PDF 原件附件与双向考点关联。
+"""安全、幂等灌入四科标准知识点库与 2018-2025 年北京中考全真试题工具。
+支持直接连接数据库（SQLite 或 PostgreSQL），保证数据完整性、合规标记、PDF/DOCX 原件附件与双向考点关联。
 
 用法：
     # 灌入开发数据库（自动挂载真题 PDF 原件附件）
@@ -96,7 +96,7 @@ def seed_corpus(
         session.commit()
         print(f"✓ 知识点库播种完成：新增 {stats['nodes_created']} 个，既有 {stats['nodes_existing']} 个，全部节点已就绪")
 
-        print("\n=== [2/2] 播种 2018-2023 及 2025 年北京中考四科全真试题 (ALL_EXAM_PAPERS) ===")
+        print("\n=== [2/2] 播种 2018-2025 年北京中考四科全真试题 (ALL_EXAM_PAPERS) ===")
         for paper in ALL_EXAM_PAPERS:
             subject = paper["subject"]
             title = paper["title"]
@@ -136,7 +136,7 @@ def seed_corpus(
                 ))
                 stats["sources_created"] += 1
 
-            # 2.1.b 可选挂载 PDF 真题原件附件
+            # 2.1.b 可选挂载 PDF / DOCX 真题原件附件
             att: m.SourceAttachment | None = None
             if attach_pdfs and pdf_relpath and resolved_corpus_dir.is_dir():
                 pdf_file = resolved_corpus_dir / pdf_relpath
@@ -149,14 +149,19 @@ def seed_corpus(
                     )
                     if att is None:
                         data = pdf_file.read_bytes()
-                        files.validate_file(data, "application/pdf")
+                        media_type = (
+                            files.DOCX_MEDIA_TYPE
+                            if pdf_file.suffix.lower() == ".docx"
+                            else "application/pdf"
+                        )
+                        files.validate_file(data, media_type)
                         digest = hashlib.sha256(data).hexdigest()
                         storage_key = files.write_blob(data)
                         att = m.SourceAttachment(
                             source_document_id=src.id,
                             owner_id="owner",
                             filename=pdf_file.name,
-                            media_type="application/pdf",
+                            media_type=media_type,
                             sha256=digest,
                             byte_size=len(data),
                             storage_key=storage_key,

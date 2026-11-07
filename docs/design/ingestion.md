@@ -12,7 +12,7 @@
 
 ## ST-003 私有导入 API
 
-已实现来源台账、原件上传/下载及 SHA-256 核对、本地 PDF 文本提取、PNG/JPEG OCR、扫描 PDF（含仅带扫描水印/条码/页眉的伪文本层 PDF）自动 OCR 兜底、人工确认结构化草稿。所有接口仍须 owner Bearer Token；原件使用不透明文件名，存于 `SHUTONG_PRIVATE_DIR`（未设置时默认落盘在仓库内已忽略的 `services/api/private-data/attachments`），不映射静态目录，不返回存储路径。接受 PDF/PNG/JPEG/MP3/M4A：最多 25 MiB、PDF 40 页、图片 2000 万像素；拒绝加密 PDF、类型不符与损坏文件。文本层 PDF 解析超时 20 秒，文本上限 200 KB。
+已实现来源台账、原件上传/下载及 SHA-256 核对、本地 PDF 文本提取、Word `.docx` XML 正文及内嵌 MathType OLE 公式解析、PNG/JPEG OCR、扫描 PDF（含仅带扫描水印/条码/页眉的伪文本层 PDF）自动 OCR 兜底、人工确认结构化草稿。所有接口仍须 owner Bearer Token；原件使用不透明文件名，存于 `SHUTONG_PRIVATE_DIR`（未设置时默认落盘在仓库内已忽略的 `services/api/private-data/attachments`），不映射静态目录，不返回存储路径。接受 PDF/DOCX/PNG/JPEG/MP3/M4A：最多 25 MiB、PDF 40 页、图片 2000 万像素；拒绝加密 PDF、缺少或损坏 `word/document.xml` 的伪造 DOCX、类型不符与损坏文件。文本层 PDF 解析超时 20 秒，文本上限 200 KB。
 
 | 操作 | 接口与约束 |
 |---|---|
@@ -20,7 +20,7 @@
 | 原件 | `POST /api/admin/sources/{source_id}/attachments?filename=synthetic.pdf`，原始二进制请求体和对应 Content-Type，可带 `expected_sha256`；新附件使来源审批失效 |
 | 人工来源评估 | `POST /api/admin/sources/{source_id}/review`，登记年份、HTTPS 来源链接、获取日期、权限依据、适用性说明与人工确认；不下载远程 URL |
 | 私有查询/下载 | `GET /api/admin/attachments/{attachment_id}`、同路径 `/download`；下载校验原件哈希 |
-| 文本草稿 | `POST /api/admin/attachments/{attachment_id}/parse`，PDF 用 Poppler、图片用本地 Tesseract `chi_sim+eng`，记录解析器版本，不调用外部模型；无文本层的 PDF 走 pdftoppm 渲染 + 逐页 OCR 兜底（页码标记草稿，仍须人工核对） |
+| 文本草稿 | `POST /api/admin/attachments/{attachment_id}/parse`，PDF 用 Poppler、DOCX 用内置安全 ZIP+XML 解析（`python-docx-xml`）、图片用本地 Tesseract `chi_sim+eng`，记录解析器版本，不调用外部模型；无文本层的 PDF 走 pdftoppm 渲染 + 逐页 OCR 兜底（页码标记草稿，仍须人工核对） |
 | 人工确认 | `POST /api/admin/attachments/{attachment_id}/confirm`，提交 `confirmed_by_human=true` 与同来源的 1–100 个完整 `QuestionIn`；单事务创建草稿和原件追溯关系 |
 
 来源登记的 `SourceIn.sha256` 不能作为未经字节核对的可信原件哈希：若在 `POST /api/admin/sources` 中直接提交该字段，返回 422。须在附件上传时由服务端计算，并可用上传请求的 `expected_sha256` 核对。来源级哈希对应首次成功上传的附件，之后的补充附件保留各自 SHA256；历史来源若没有任何已上传附件，单独填写的哈希不构成已核验原件证据。文件上传成功本身不意味着题目已结构化入库。

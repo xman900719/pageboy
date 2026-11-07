@@ -49,6 +49,21 @@ def scanned_pdf(pages=1, text='SYNTHETIC TEST DATA'):
     return buffer.getvalue()
 
 
+def synthetic_docx(text='SYNTHETIC TEST DATA: 2024 DOCX QUESTION'):
+    """运行时生成合法最小 .docx（ZIP 内含 word/document.xml），绝不使用真实原卷。"""
+    import zipfile
+    buf = BytesIO()
+    doc_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>'
+        '</w:document>'
+    )
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('word/document.xml', doc_xml.encode('utf-8'))
+    return buf.getvalue()
+
+
 @pytest.fixture
 def source(client, auth, tmp_path, monkeypatch):
     monkeypatch.setenv('SHUTONG_PRIVATE_DIR', str(tmp_path / 'private'))
@@ -538,3 +553,33 @@ def test_source_ledger_tolerates_local_scheme_source_url(client, auth, source):
     urls = [r['metadata']['source_url'] for s in res.json() for r in s['reviews']]
     assert 'local://exam_corpus/2025' in urls
     assert review_source(client, auth, source, source_url='http://insecure.example/x').status_code == 422
+
+
+def test_docx_upload_parse_and_invalid_rejection(client, auth, source):
+    """验证 Word .docx 原件上传、正文解析（python-docx-xml）与损坏/伪造 .docx 拒绝。"""
+    from shutong.private_files import DOCX_MEDIA_TYPE
+    import zipfile
+
+    # 正例：合法 .docx 上传并解析成功
+    data = synthetic_docx('虚构测试数据：2024年数学第1题 x^2 - 4x + c = 0')
+    res = upload(client, auth, source, data=data, media_type=DOCX_MEDIA_TYPE, filename='synthetic-2024.docx')
+    assert res.status_code == 201
+    att_id = res.json()['id']
+    parsed = client.post(f'/api/admin/attachments/{att_id}/parse', headers=auth)
+    assert parsed.status_code == 200
+    assert parsed.json()['status'] == 'parsed'
+    assert parsed.json()['parser_version'] == 'python-docx-xml'
+    assert '虚构测试数据：2024年数学第1题' in parsed.json()['extracted_text']
+
+    # 反例 1：非 ZIP 伪装成 .docx -> 422 FILE_TYPE_MISMATCH
+    bad_magic = upload(client, auth, source, data=b'not a zip file', media_type=DOCX_MEDIA_TYPE, filename='bad.docx')
+    assert bad_magic.status_code == 422
+    assert bad_magic.json()['detail'] == 'FILE_TYPE_MISMATCH'
+
+    # 反例 2：合法 ZIP 但缺少 word/document.xml -> 422 INVALID_DOCX
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        zf.writestr('other.txt', b'hello')
+    no_doc = upload(client, auth, source, data=buf.getvalue(), media_type=DOCX_MEDIA_TYPE, filename='nodoc.docx')
+    assert no_doc.status_code == 422
+    assert no_doc.json()['detail'] == 'INVALID_DOCX'

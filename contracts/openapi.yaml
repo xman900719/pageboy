@@ -30,6 +30,7 @@ components:
         media_type:
           enum:
           - application/pdf
+          - application/vnd.openxmlformats-officedocument.wordprocessingml.document
           - image/png
           - image/jpeg
           - audio/mpeg
@@ -1582,6 +1583,10 @@ paths:
             schema:
               format: binary
               type: string
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema:
+              format: binary
+              type: string
           audio/mp4:
             schema:
               format: binary
@@ -2365,6 +2370,10 @@ paths:
       requestBody:
         content:
           application/pdf:
+            schema:
+              format: binary
+              type: string
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
             schema:
               format: binary
               type: string
