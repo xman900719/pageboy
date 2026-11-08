@@ -46,9 +46,11 @@ flowchart TB
 
     classDef db fill:#f9f,stroke:#333,stroke-width:2px;
 ```
+
 </details>
 
 ### 开发核心红线
+
 1. **全链路回环绑定**：本地开发与测试服务（8000、18765、4173、5173）**必须且只能监听回环地址 `127.0.0.1`**，严禁绑定 `0.0.0.0` 或局域网物理 IP。真实 iPad 仅被允许通过安全隧道访问生产环境，严禁直连开发测试端口。
 2. **纯粹业务计算隔离**：`services/api/shutong/learning/guidance.py` 必须保持纯函数计算，严禁依赖 HTTP、数据库 ORM、OCR 或外部模型 SDK。
 3. **真实数据禁入**：开发树（包括 `private-data/`）仅允许使用程序生成的**虚构测试数据**，绝对禁止检入真实北京中考真题原卷、真实学生试卷扫描件、学生个人信息或任何真实生产机密。
@@ -59,17 +61,17 @@ flowchart TB
 
 本地开发要求 64 位 Linux 操作系统（推荐 Ubuntu 22.04+ 或 Debian 12+）。
 
-| 组件 | 版本要求 | 用途说明 | 安装 / 检查方式 |
-|---|---|---|---|
-| **Linux OS** | Linux 6.x+ | 宿主机操作系统 | `uname -srm` |
-| **Python** | 3.11+ (推荐 3.14) | 后端运行时 | `python3 --version` |
-| **uv** | 0.13.0+ | Python 依赖管理与脚本执行规范 | `uv --version` 或 `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| **Node.js** | 20.x+ LTS | 前端构建与运行环境 | `node -v` |
-| **npm** | 10.x+ | 前端包管理器 | `npm -v` |
-| **Poppler** | 最新 | PDF 转换为高清晰度图片 (`pdftoppm`) | `sudo apt-get install poppler-utils` |
-| **Tesseract OCR** | 5.x+ | 扫描件试卷自动文本识别引擎 | `sudo apt-get install tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng` |
-| **Docker & Compose** | 24.x+ | 运行临时隔离 PostgreSQL 验证迁移与并发 | `docker compose version` (开发用户为 rootless 或非系统 docker 组) |
-| **Playwright 浏览器** | 1.64+ | 自动化 E2E 与 iPadOS WebKit 仿真 | `npx playwright install chromium webkit && sudo npx playwright install-deps` |
+| 组件                   | 版本要求            | 用途说明                       | 安装 / 检查方式                                                                    |
+| -------------------- | --------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| **Linux OS**         | Linux 6.x+      | 宿主机操作系统                    | `uname -srm`                                                                 |
+| **Python**           | 3.11+ (推荐 3.14) | 后端运行时                      | `python3 --version`                                                          |
+| **uv**               | 0.13.0+         | Python 依赖管理与脚本执行规范         | `uv --version` 或 `curl -LsSf https://astral.sh/uv/install.sh \| sh`          |
+| **Node.js**          | 20.x+ LTS       | 前端构建与运行环境                  | `node -v`                                                                    |
+| **npm**              | 10.x+           | 前端包管理器                     | `npm -v`                                                                     |
+| **Poppler**          | 最新              | PDF 转换为高清晰度图片 (`pdftoppm`) | `sudo apt-get install poppler-utils`                                         |
+| **Tesseract OCR**    | 5.x+            | 扫描件试卷自动文本识别引擎              | `sudo apt-get install tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng` |
+| **Docker & Compose** | 24.x+           | 运行临时隔离 PostgreSQL 验证迁移与并发  | `docker compose version` (开发用户为 rootless 或非系统 docker 组)                      |
+| **Playwright 浏览器**   | 1.64+           | 自动化 E2E 与 iPadOS WebKit 仿真 | `npx playwright install chromium webkit && sudo npx playwright install-deps` |
 
 ---
 
@@ -114,7 +116,9 @@ pageboy/
 根据全局工程规范，Python 项目必须统一使用 `uv` 进行依赖管理与脚本执行，避免裸用 `pip`。
 
 ### 4.1 虚拟环境初始化
+
 在仓库根目录下创建并激活专有虚拟环境：
+
 ```bash
 # 创建虚拟环境
 uv venv .venv
@@ -127,19 +131,24 @@ uv pip install -e "services/api[test]"
 ```
 
 ### 4.2 依赖安装与执行命令
+
 - **新增第三方库**：
+  
   ```bash
   uv add <package_name>
   # 若无法直接通过 uv add 添加，则使用：
   uv pip install <package_name>
   ```
 - **运行 Python 脚本**：
+  
   ```bash
   uv run python <script_name>
   ```
 
 ### 4.3 数据库管理与迁移
+
 本地开发默认使用 SQLite 数据库（固定为 `services/api/shutong-dev.sqlite3`，与启动目录无关，零环境依赖）：
+
 ```bash
 # 执行数据库迁移到最新版 (Head)
 uv run alembic -c services/api/alembic.ini upgrade head
@@ -149,9 +158,10 @@ uv run alembic -c services/api/alembic.ini current
 ```
 
 ### 4.4 启动本地开发后端
+
 ```bash
 # 设置本地开发测试用的随机 Token
-export SHUTONG_TOKEN="dev-secret-token"
+export SHUTONG_TOKEN=""
 
 # 启动 FastAPI 本地开发服务 (严格锁定 127.0.0.1 回环地址)
 uv run uvicorn shutong.main:app --host 127.0.0.1 --port 8000 --reload
@@ -164,6 +174,7 @@ uv run uvicorn shutong.main:app --host 127.0.0.1 --port 8000 --reload
 前端采用 **Vite 多页面架构 (Multi-Page Application, MPA)**，物理隔离学生日常端与后台审核端。
 
 ### 5.1 依赖安装与构建
+
 ```bash
 cd apps/web
 
@@ -178,7 +189,9 @@ npm run build
 ```
 
 ### 5.2 前端启动模式
+
 - **开发模式（热重载，监听 127.0.0.1:5173）**：
+  
   ```bash
   cd apps/web
   npm run dev -- --host 127.0.0.1 --port 5173
@@ -186,6 +199,7 @@ npm run build
   - 学生端界面：`http://127.0.0.1:5173/`
   - 审核管理端：`http://127.0.0.1:5173/admin.html`
 - **生产产物预览模式（模拟真实反代伺服，监听 127.0.0.1:4173）**：
+  
   ```bash
   cd apps/web
   npm run preview -- --host 127.0.0.1 --port 4173
@@ -210,16 +224,17 @@ flowchart LR
     D --> E["npm run test:e2e:ipad (WebKit iPad 仿真)"]
     E --> F["bash scripts/check_env_isolation.sh"]
 ```
+
 </details>
 
-| 门禁指令 | 执行目录 | 验证范围与核心断言 |
-|---|---|---|
-| `PATH="$PWD/.venv/bin:$PATH" make verify` | 根目录 | 聚合门禁：<br>1. `api-test`：162 项后端业务单测全绿<br>2. `contracts`：JSON Schema 正反例校验<br>3. `docs`：自动重绘 Mermaid 静态矢量图、Markdown 全量解析与相对链接检查<br>4. `openapi`：真实 API 路由与 committed openapi.yaml 快照强一致 |
-| `npm run test:unit` | `apps/web` | Vitest 驱动，测试 KaTeX 富文本拆分与中文本地化映射 |
-| `npm run build` | `apps/web` | `vue-tsc -b` 零类型报错，Vite 编译产物确保 `dist/index.html` 零 Admin 逻辑与表单泄露 |
-| `npm run test:e2e` | `apps/web` | Playwright Chromium 引擎，全自动化执行 J1~J9 完整用户旅程（含题库体检、会话恢复、附件导入与 WCAG A/AA 可访问性零违规） |
-| `npm run test:e2e:ipad` | `apps/web` | Playwright WebKit 引擎，iPad 视口仿真（720~980px 响应式断言、触控仿真） |
-| `bash scripts/check_env_isolation.sh` | 根目录 | 环境安全自检：无生产机密泄露、无外部非回环监听、无遗留真实附件 |
+| 门禁指令                                      | 执行目录       | 验证范围与核心断言                                                                                                                                                                             |
+| ----------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATH="$PWD/.venv/bin:$PATH" make verify` | 根目录        | 聚合门禁：<br>1. `api-test`：162 项后端业务单测全绿<br>2. `contracts`：JSON Schema 正反例校验<br>3. `docs`：自动重绘 Mermaid 静态矢量图、Markdown 全量解析与相对链接检查<br>4. `openapi`：真实 API 路由与 committed openapi.yaml 快照强一致 |
+| `npm run test:unit`                       | `apps/web` | Vitest 驱动，测试 KaTeX 富文本拆分与中文本地化映射                                                                                                                                                      |
+| `npm run build`                           | `apps/web` | `vue-tsc -b` 零类型报错，Vite 编译产物确保 `dist/index.html` 零 Admin 逻辑与表单泄露                                                                                                                      |
+| `npm run test:e2e`                        | `apps/web` | Playwright Chromium 引擎，全自动化执行 J1~J9 完整用户旅程（含题库体检、会话恢复、附件导入与 WCAG A/AA 可访问性零违规）                                                                                                        |
+| `npm run test:e2e:ipad`                   | `apps/web` | Playwright WebKit 引擎，iPad 视口仿真（720~980px 响应式断言、触控仿真）                                                                                                                                  |
+| `bash scripts/check_env_isolation.sh`     | 根目录        | 环境安全自检：无生产机密泄露、无外部非回环监听、无遗留真实附件                                                                                                                                                       |
 
 ### 文档图表自动化维护规范
 
@@ -236,6 +251,7 @@ bash scripts/check_env_isolation.sh
 ```
 
 脚本将强制校验以下四项安全不变量：
+
 1. **生产机密不可读**：开发用户 `xc` 绝对不可读 `prod.env`（权限 0600，且归属 `shutong-prod` 用户）。
 2. **Docker 权限隔离**：开发用户 `xc` 绝不在系统 `docker` 组中（避免借助宿主 docker daemon 越权访问生产持久卷）。
 3. **工作树干净无残留**：开发代码树中严禁残留 `infra/.env`、`restic-password` 或真实试卷附件文件。
@@ -269,7 +285,9 @@ uv run python scripts/run_manual_test_env.py stop
 ```
 
 ### 8.2 选项式核验清单矩阵 (`docs/quality/checklists/`)
+
 测试人需在模拟机中完成对应主题的核验点选：
+
 - `01-gate-and-auth.md`：令牌门进入、页面无痕与记住令牌测试。
 - `02-viewport-and-touch.md`：iPadOS 横竖屏触控、按钮点击与滚动流畅度。
 - `03-practice-and-assessment.md`：单选、短答、主观题自评链终态。

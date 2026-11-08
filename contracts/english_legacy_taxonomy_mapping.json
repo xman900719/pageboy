@@ -1,0 +1,217 @@
+{
+  "subject": "english",
+  "legacy_mappings": [
+    {
+      "legacy_code": "english.grammar",
+      "legacy_name": "语法与词法",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.morphology",
+        "english_cand.verb_system"
+      ],
+      "mapping_reason": "一级分类承载语法与词法大类，映射至新体系词法与动词时态系统大类。",
+      "compatibility_assurance": "历史语法大类统计数据保持兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.pronoun",
+      "legacy_name": "代词分类与用法",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.pronoun.types"
+      ],
+      "mapping_reason": "代词人称、物主、反身与不定代词考查核心完全一致，平移承接历史考题。",
+      "compatibility_assurance": "历史代词题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.preposition",
+      "legacy_name": "介词与介词短语",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.preposition.usage"
+      ],
+      "mapping_reason": "时间、空间与常用固定介词短语搭配考点完全一致。",
+      "compatibility_assurance": "历史介词题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.tense",
+      "legacy_name": "动词时态与语态",
+      "legacy_parent_code": "english.grammar",
+      "action": "split",
+      "target_candidate_codes": [
+        "english_cand.tense.present_past",
+        "english_cand.tense.future_continuous",
+        "english_cand.tense.present_perfect",
+        "english_cand.voice.passive"
+      ],
+      "mapping_reason": "原旧节点将全部时态与被动语态混合，新体系精细化区分一般时、将来与进行时、现在完成时及被动语态，大幅增强时态语态诊断精度。",
+      "compatibility_assurance": "历史时态题目平滑关联至细分子节点，历史答题记录保持完整可用。"
+    },
+    {
+      "legacy_code": "english.grammar.modal",
+      "legacy_name": "情态动词用法",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.modal.verbs"
+      ],
+      "mapping_reason": "情态动词推测语气与情态含义辨析考查点完全一致。",
+      "compatibility_assurance": "历史情态动词题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.conjunction",
+      "legacy_name": "连词与并列句",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.syntax.compound_conjunction"
+      ],
+      "mapping_reason": "并列连词与复合并列句考查内容完全契合。",
+      "compatibility_assurance": "历史连词题目保持只读兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.comparative",
+      "legacy_name": "形容词与副词比较等级",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.adj_adv.comparison"
+      ],
+      "mapping_reason": "形容词与副词原级比较、比较级和最高级变形规则及句型考查点完全契合。",
+      "compatibility_assurance": "历史比较等级题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.grammar.noun",
+      "legacy_name": "名词的数与所有格",
+      "legacy_parent_code": "english.grammar",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.noun.number_case"
+      ],
+      "mapping_reason": "名词单复数与所有格考查核心完全一致，平移承接历史考题。",
+      "compatibility_assurance": "历史名词题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.syntax",
+      "legacy_name": "句法与复合句",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.syntax_system"
+      ],
+      "mapping_reason": "一级分类承载句法大类，映射至新体系语法知识·句法与复合句大类。",
+      "compatibility_assurance": "历史句法分类统计数据保持兼容。"
+    },
+    {
+      "legacy_code": "english.syntax.object_clause",
+      "legacy_name": "宾语从句",
+      "legacy_parent_code": "english.syntax",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.syntax.object_clause"
+      ],
+      "mapping_reason": "宾语从句引导词、陈述语序与时态呼应三要素考点完全一致。",
+      "compatibility_assurance": "历史宾语从句题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.syntax.adverbial_clause",
+      "legacy_name": "状语从句",
+      "legacy_parent_code": "english.syntax",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.syntax.adverbial_clause"
+      ],
+      "mapping_reason": "时间、条件、原因、让步等状语从句及主将从现时态规则考点完全一致。",
+      "compatibility_assurance": "历史状语从句题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.syntax.attributive_clause",
+      "legacy_name": "定语从句初步",
+      "legacy_parent_code": "english.syntax",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.syntax.attributive_clause"
+      ],
+      "mapping_reason": "初中阶段that, which, who引导的定语从句识别与基本理解考点完全一致。",
+      "compatibility_assurance": "历史定语从句题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.skills",
+      "legacy_name": "语篇理解与综合表达",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.skills_comprehension"
+      ],
+      "mapping_reason": "一级分类承载语言技能大类，映射至新体系语言技能与语篇综合素养大类。",
+      "compatibility_assurance": "历史技能分类统计数据保持兼容。"
+    },
+    {
+      "legacy_code": "english.cloze.context",
+      "legacy_name": "完形填空语境理解与词义辨析",
+      "legacy_parent_code": "english.skills",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.vocab.collocation_context"
+      ],
+      "mapping_reason": "完形填空语境理解与高频词汇短语辨析考查要点完全契合。",
+      "compatibility_assurance": "历史完形填空题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.reading.detail",
+      "legacy_name": "阅读理解事实细节与主旨概括",
+      "legacy_parent_code": "english.skills",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.reading.facts_inference"
+      ],
+      "mapping_reason": "阅读理解事实细节提取与主旨大意推断考查要点完全契合。",
+      "compatibility_assurance": "历史阅读题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.reading.expression",
+      "legacy_name": "任务型阅读与简答表达",
+      "legacy_parent_code": "english.skills",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.reading.task_based"
+      ],
+      "mapping_reason": "任务型阅读回答问题与信息提取表达考查要点完全契合。",
+      "compatibility_assurance": "历史任务型阅读题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.writing.composition",
+      "legacy_name": "书面表达与话题写作",
+      "legacy_parent_code": "english.skills",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.writing.composition"
+      ],
+      "mapping_reason": "书面表达、通知书信与话题短文写作考查要点完全契合。",
+      "compatibility_assurance": "历史作文题目关联保持无损兼容。"
+    },
+    {
+      "legacy_code": "english.listening",
+      "legacy_name": "听力理解",
+      "legacy_parent_code": "english.skills",
+      "action": "retained",
+      "target_candidate_codes": [
+        "english_cand.listening_speaking"
+      ],
+      "mapping_reason": "听力理解短对话、长对话与独白信息提取考查要点完全契合。",
+      "compatibility_assurance": "历史听力题目关联保持无损兼容。"
+    }
+  ],
+  "summary": {
+    "total_legacy_nodes": 18,
+    "retained_count": 17,
+    "renamed_count": 0,
+    "split_count": 1,
+    "merged_count": 0,
+    "new_count": 0,
+    "deprecated_count": 0,
+    "pending_human_review_count": 0
+  }
+}

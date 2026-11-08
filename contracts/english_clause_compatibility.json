@@ -1,0 +1,754 @@
+{
+  "meta": {
+    "subject": "english",
+    "standard_id": "MOE-2022-ENGLISH",
+    "description": "英语课程标准旧条款 ID (R2/V2) 与当前最新官方条款全集 (R3/V3 30条) 的替代、拆分、合并与保留演进追溯表",
+    "schema_version": "1.0.0",
+    "total_legacy_clause_ids": 30,
+    "total_current_clause_ids": 30,
+    "action_summary": {
+      "retained": 5,
+      "replaced": 17,
+      "split": 2,
+      "merged": 6
+    }
+  },
+  "mappings": [
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+      "action": "retained",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01"
+      ],
+      "reason": "保留：三大主题范畴与子主题内容要求不变",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+        "standardized_text": "在三大主题范畴及子主题语境中运用词汇、语法及语篇知识进行听、说、读、看、写，把握作者态度与价值取向。",
+        "derived_requirement": "三大主题语境在完形填空、阅读理解与话题作文中的综合运用",
+        "domain": "lang_usage",
+        "print_page": 13
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+          "standardized_text": "在人与自我、人与社会、人与自然三大主题范畴及子主题语境中运用词汇、语法及语篇知识进行听、说、读、看、写，把握作者态度与价值取向。",
+          "derived_requirement": "三大主题语境在完形填空、阅读理解与话题作文中的综合运用",
+          "domain": "lang_usage",
+          "print_page": 14
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:reading:content_req:discourse_genre:c02",
+      "action": "retained",
+      "current_clause_ids": [
+        "cs:english:2022:s4:reading:content_req:discourse_genre:c02"
+      ],
+      "reason": "保留：语篇类型与体裁要求不变",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:reading:content_req:discourse_genre:c02",
+        "standardized_text": "掌握常见应用文与说明文、记叙文语篇逻辑框架，根据文体特征分析段落主旨与图文信息转换。",
+        "derived_requirement": "掌握文体特征分析与任务型阅读图文信息匹配",
+        "domain": "reading",
+        "print_page": 15
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:reading:content_req:discourse_genre:c02",
+          "standardized_text": "接触和理解对话、记叙文、说明文、应用文及图表、图画等多模态非连续性文本，把握不同语篇的组织结构和文体特征。",
+          "derived_requirement": "掌握常见应用文与说明文、记叙文文体特征分析与任务型阅读图文信息匹配",
+          "domain": "reading",
+          "print_page": 18
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+      "action": "retained",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:phonetics:c03"
+      ],
+      "reason": "保留：语音拼读与开闭音节要求不变",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+        "standardized_text": "掌握元音辅音音素辨析、开闭音节拼读、单词及句子重音与语调，应用于初中听说机考朗读与情境应答。",
+        "derived_requirement": "掌握语音拼读规则、句子语调停顿与听说机考朗读能力",
+        "domain": "lang_usage",
+        "print_page": 17
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+          "standardized_text": "掌握国际音标拼读、开闭音节规律、单词及句子重音、意群停顿与语调连读，准确运用于初中听说朗读与口语交互。",
+          "derived_requirement": "掌握国际音标、拼读规则、句子语调意群停顿与听说机考朗读能力",
+          "domain": "lang_usage",
+          "print_page": 19
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04",
+      "action": "retained",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04"
+      ],
+      "reason": "保留：构词法前缀后缀与合成词要求不变",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04",
+        "standardized_text": "熟练运用前缀（un-, dis-, im-等）、后缀（-er, -or, -tion, -ful, -less, -ly等）进行词性转换；结合上下文推断词义。",
+        "derived_requirement": "掌握构词法、词类派生转换与完形填空中生词语境辨析",
+        "domain": "lang_usage",
+        "print_page": 18
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04",
+          "standardized_text": "掌握常见前缀（un-, dis-, im-等）、后缀（-er, -or, -tion, -ful, -less, -ly等）派生法、合成法与转化法构词规律，结合语境推断词义与词性。",
+          "derived_requirement": "掌握构词法规则、词类派生转换与完形填空生词语境推断能力",
+          "domain": "lang_usage",
+          "print_page": 20
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05",
+      "action": "retained",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05"
+      ],
+      "reason": "保留：核心词汇与短语搭配要求不变",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05",
+        "standardized_text": "掌握动词+介词/副词高频短语（look, take, get, give, turn, put 等）及近义词搭配辨析，在完形填空和写作中正确使用。",
+        "derived_requirement": "高频短语搭配、动词短语与完形填空核心词义辨析",
+        "domain": "lang_usage",
+        "print_page": 18
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05",
+          "standardized_text": "掌握初中1600个核心词汇及常用动词短语、介词短语与固定搭配，辨析同义词、近义词与多义词在特定语境中的意义。",
+          "derived_requirement": "掌握初中1600词汇高频短语搭配、一词多义与完形填空语境词义辨析",
+          "domain": "lang_usage",
+          "print_page": 20
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:noun_syntax:c06",
+      "action": "split",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+        "cs:english:2022:s4:lang_usage:content_req:noun_grammar:c07"
+      ],
+      "reason": "拆分：原综合词法拆分为语法统领观念（表11总要求）与名词专项目录（附录4语法）",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:noun_syntax:c06",
+        "standardized_text": "掌握可数名词变复数规则与不规则变化（child-children, foot-feet 等）；不可数名词量化结构（a piece of, two cups of）；掌握所有格区别（A and B's 与 A's and B's）。",
+        "derived_requirement": "名词单复数、不可数名词修饰与名词所有格准确运用",
+        "domain": "lang_usage",
+        "print_page": 19
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+          "standardized_text": "树立语法“形式—意义—使用”统一体观念，在语境中把握句子结构特征（种类、成分、语序及主谓一致），理解表意功能并用于描述、叙述和说明。",
+          "derived_requirement": "在具体情境中综合运用词法与句法知识进行理解与表达",
+          "domain": "lang_usage",
+          "print_page": 21
+        },
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:noun_grammar:c07",
+          "standardized_text": "掌握名词可数与不可数判断、规则与不规则复数变化、专有名词大写及名词所有格（'s与of所有格）的正确用法。",
+          "derived_requirement": "熟练掌握可数名词规则与不规则复数、不可数名词计量及名词所有格运用",
+          "domain": "lang_usage",
+          "print_page": 138
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:pronoun_syntax:c07",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:pronoun_grammar:c08"
+      ],
+      "reason": "替代：代词要求调整编号与附录4三级项目对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:pronoun_syntax:c07",
+        "standardized_text": "区分形容词性物主代词与名词性物主代词；掌握复合不定代词后置形容词修饰规则及谓语单数一致性；掌握 both/all, neither/none, either 的辨析。",
+        "derived_requirement": "代词人称格、物主代词与不定代词用法辨析",
+        "domain": "lang_usage",
+        "print_page": 19
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:pronoun_grammar:c08",
+          "standardized_text": "掌握人称代词主格与宾格、物主代词形容词性与名词性转换、反身代词、指示代词、复合不定代词及疑问代词在语境中的准确运用。",
+          "derived_requirement": "掌握代词人称、数、格的准确转换及复合不定代词语境辨析",
+          "domain": "lang_usage",
+          "print_page": 139
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:prep_syntax:c08",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:prep_grammar:c09"
+      ],
+      "reason": "替代：介词要求调整编号与附录4三级项目对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:prep_syntax:c08",
+        "standardized_text": "准确辨析 at/in/on 在时间与地点中的用法区别，掌握 across/through, between/among, by/with 区分及固定介词短语在语篇中的衔接。",
+        "derived_requirement": "掌握高频时间、地点、方式介词及固定介词短语",
+        "domain": "lang_usage",
+        "print_page": 19
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:prep_grammar:c09",
+          "standardized_text": "熟练运用表示时间（at, in, on等）、方位地点（between, among, through, across等）及方式手段的常用介词和固定短语搭配。",
+          "derived_requirement": "掌握时间、空间方位高频介词辨析及与动词形容词的固定搭配",
+          "domain": "lang_usage",
+          "print_page": 139
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:article_syntax:c09",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:article_grammar:c10"
+      ],
+      "reason": "替代：冠词要求调整编号与附录4三级项目对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:article_syntax:c09",
+        "standardized_text": "根据元音音素辨析 a 与 an (如 a university, an honest boy)；掌握 the 与零冠词的习惯用法。",
+        "derived_requirement": "冠词特指泛指及固定短语中冠词用法",
+        "domain": "lang_usage",
+        "print_page": 19
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:article_grammar:c10",
+          "standardized_text": "掌握不定冠词a/an元音音素辨析与泛指功能；掌握定冠词the特指、独一无二事物与乐器等用法；掌握球类、三餐及抽象名词等零冠词规则。",
+          "derived_requirement": "掌握不定冠词、定冠词特指与零冠词常见固定结构",
+          "domain": "lang_usage",
+          "print_page": 139
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:adj_adv_comp:c10",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:comparison_grammar:c11"
+      ],
+      "reason": "替代：比较等级要求调整编号与附录4三级项目对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:adj_adv_comp:c10",
+        "standardized_text": "熟练掌握 good/well-better-best, bad-worse-worst, many/much-more-most 等不规则变化；掌握修饰比较级的程度副词（much, a little, even 等）；掌握比较对象的一致性。",
+        "derived_requirement": "形容词副词原级比较级最高级规则、不规则变化及修饰语",
+        "domain": "lang_usage",
+        "print_page": 20
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:comparison_grammar:c11",
+          "standardized_text": "掌握形容词副词原级比较、比较级和最高级的规则与不规则构成，熟练运用修饰比较级的程度副词（much, even等）与比较句型。",
+          "derived_requirement": "掌握比较级最高级变化规则、比较句型及语境中的程度修饰",
+          "domain": "lang_usage",
+          "print_page": 138
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:numeral_syntax:c11",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:numeral_grammar:c12"
+      ],
+      "reason": "替代：数词要求调整编号与附录4三级项目对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:numeral_syntax:c11",
+        "standardized_text": "掌握基数词变序数词规律（first, second, third, fifth, eighth, ninth, twelfth 等特殊变化）；掌握分数子基母序原则；掌握 hundred, thousand 表确数与不确数短语。",
+        "derived_requirement": "基数词与序数词拼写转化及时间日期数字表达",
+        "domain": "lang_usage",
+        "print_page": 20
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:numeral_grammar:c12",
+          "standardized_text": "掌握基数词变序数词规律，熟练掌握日期月份表达、分数（分子基数词分母序数词）及hundreds of等大数表达结构。",
+          "derived_requirement": "掌握基数词序数词转换、大数表达法及日期分数表达",
+          "domain": "lang_usage",
+          "print_page": 139
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c12",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c13"
+      ],
+      "reason": "替代：一般现在与一般过去时调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c12",
+        "standardized_text": "掌握第三人称单数加 s/es 规律；掌握动词过去式规则与不规则变化表；辨析 yesterday, last week, ago, in 2020 等过去时间状语。",
+        "derived_requirement": "动词单三、过去式变化及一般现在时与过去时在语境中的准确选用",
+        "domain": "lang_usage",
+        "print_page": 20
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c13",
+          "standardized_text": "熟练掌握一般现在时主谓一致及动词第三人称单数变化；掌握一般过去时常用时间状语及不规则动词过去式拼写与用法。",
+          "derived_requirement": "掌握一般现在时第三人称单数与一般过去时不规则动词语境正确运用",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c13",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c14"
+      ],
+      "reason": "替代：一般将来与现在进行时调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c13",
+        "standardized_text": "区分 will 与 be going to 的语气偏向；掌握现在分词加 -ing 规则；掌握过去进行时与 while, when 引导的时间状语从句配合使用。",
+        "derived_requirement": "掌握将来时与进行时结构，理解复合句中过去进行时时间参照",
+        "domain": "lang_usage",
+        "print_page": 20
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c14",
+          "standardized_text": "掌握一般将来时计划与预测表达（will/be going to）；掌握现在进行时与过去进行时（特定时刻正在发生动作）的结构与时间状语配合。",
+          "derived_requirement": "掌握一般将来时与现在/过去进行时基本结构与典型标志词搭配",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c14",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c15"
+      ],
+      "reason": "替代：现在完成时调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c14",
+        "standardized_text": "掌握动词过去分词变化；掌握 have been to, have gone to, have been in 辨析；掌握短暂性动词（die, borrow, buy, join 等）与 for/since 连用时转换为延续状态（be dead, keep, have, be in 等）。",
+        "derived_requirement": "掌握现在完成时标志词搭配、非延续动词转换及与一般过去时的严格区分",
+        "domain": "lang_usage",
+        "print_page": 21
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c15",
+          "standardized_text": "掌握现在完成时已完成与持续性用法（have/has + done）；掌握for/since引导的时间段与延续性动词搭配规则（短暂动词转延续动词）。",
+          "derived_requirement": "掌握现在完成时结构、标志词（already, yet, ever, never）与延续性动词转换",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:passive_voice:c15",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:voice_passive:c16"
+      ],
+      "reason": "替代：被动语态调整编号并更正为课标规范动词语态名称",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:passive_voice:c15",
+        "standardized_text": "掌握主动语态与被动语态的转换规则；掌握各种时态被动语态结构（am/is/are + done, was/were + done, can/must + be done）；辨析不可用于被动语态的不及物动词或系动词（happen, take place 等）。",
+        "derived_requirement": "一般现在、一般过去及情态动词被动语态结构与语境转化",
+        "domain": "lang_usage",
+        "print_page": 21
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:voice_passive:c16",
+          "standardized_text": "掌握主语与动词存在被动承受关系时的被动语态构成（be + done），能够灵活实现主动句与被动句转换。",
+          "derived_requirement": "掌握常见时态及情态动词被动语态结构与语境识别应用",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:modal_verb:c16",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:modal_verbs:c17"
+      ],
+      "reason": "替代：情态动词调整编号与附录4分类对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:modal_verb:c16",
+        "standardized_text": "掌握 must 表肯定推测（一定是）、can't 表否定推测（不可能）、may/might 表不确定推测；掌握 must 提问的否定回答用 needn't 或 don't have to。",
+        "derived_requirement": "掌握情态动词在情境问答中的礼貌表达与可能性推测判断",
+        "domain": "lang_usage",
+        "print_page": 21
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:modal_verbs:c17",
+          "standardized_text": "掌握常用情态动词（can/could, may/might, must, shall/should, will/would, need等）后接动词原形，准确辨析must, can't, may在肯定、否定推测中的确定程度。",
+          "derived_requirement": "掌握情态动词表能力、允许、推测的语境辨析与否定回答规则",
+          "domain": "lang_usage",
+          "print_page": 138
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:non_finite:c17",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:non_finite:c18"
+      ],
+      "reason": "替代：非谓语动词（动词不定式）调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:non_finite:c17",
+        "standardized_text": "辨析跟 to do 的动词（decide, hope, want, plan 等）与跟 doing 的动词（enjoy, practice, finish, mind 等）；区分 remember/forget/stop to do 与 doing 的语义差异；掌握省略 to 的动词不定式（make, let, see, hear 等使役感官动词后）。",
+        "derived_requirement": "不定式与动名词作宾语、状语与补足语的规范搭配",
+        "domain": "lang_usage",
+        "print_page": 21
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:non_finite:c18",
+          "standardized_text": "掌握不定式作目的状语、宾语及省略to的结构（使役感官动词）；掌握stop/remember/forget接to do与doing的语义差异。",
+          "derived_requirement": "掌握动词不定式作宾补目的状语与动名词接特定动词的用法辨析",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:simple_sentence:c18",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:simple_sentences:c19"
+      ],
+      "reason": "替代：五种简单句基本句型调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:simple_sentence:c18",
+        "standardized_text": "熟练分析简单句句子成分；掌握 What a/an + adj. + n. 与 How + adj./adv. + 主谓感叹句结构；掌握前肯后否、前否后肯反意疑问句简略回答原则。",
+        "derived_requirement": "简单句基本句型划分、感叹句与反意疑问句结构运用",
+        "domain": "lang_usage",
+        "print_page": 22
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:simple_sentences:c19",
+          "standardized_text": "掌握五种简单句基本骨架；熟练运用What/How感叹句转换；掌握There be句型就近原则与疑问句结构。",
+          "derived_requirement": "掌握简单句五大句型、反意疑问句与感叹句结构转换",
+          "domain": "lang_usage",
+          "print_page": 140
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:compound_coord:c19",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:compound_sentences:c20"
+      ],
+      "reason": "替代：并列复合句调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:compound_coord:c19",
+        "standardized_text": "在句子和语篇中准确使用并列连词表达顺承、转折、选择和因果逻辑关系，避免 double conjunction (如 although...but, because...so 错误连用)。",
+        "derived_requirement": "并列连词逻辑辨析与并列连词连接主语时的就近主谓一致",
+        "domain": "lang_usage",
+        "print_page": 22
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:compound_sentences:c20",
+          "standardized_text": "熟练掌握并列连词and, but, or, so表示顺承、转折、选择与因果逻辑；掌握not only... but also..., either... or..., neither... nor...连接主语时的就近一致原则。",
+          "derived_requirement": "掌握并列连词逻辑语义辨析与主谓一致就近原则",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:object_clause:c20",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:object_clause:c21"
+      ],
+      "reason": "替代：宾语从句调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:object_clause:c20",
+        "standardized_text": "解决宾语从句三大考点：引导词选用（陈述用 that，一般疑问用 if/whether，特殊疑问保留原疑问词）；陈述句语序（主语+谓语，严禁助动词提前）；时态一致性（主现从随便，主过从过，真理永恒现）。",
+        "derived_requirement": "掌握宾语从句引导词、陈述语序与主从时态呼应三大中考核心考点",
+        "domain": "lang_usage",
+        "print_page": 22
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:object_clause:c21",
+          "standardized_text": "掌握that/whether/if及特殊疑问词引导的宾语从句；严格保持从句陈述语序（主语+谓语）；掌握主句过去时从句时态呼应及客观真理例外规则。",
+          "derived_requirement": "掌握宾语从句陈述语序、引导词选择与主从时态呼应规则",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c21",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c22"
+      ],
+      "reason": "替代：状语从句调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c21",
+        "standardized_text": "熟练运用状语从句引导词；掌握在 if, unless, when, as soon as 等引导的时间与条件状语从句中，主句用一般将来时，从句用一般现在时表示将来（主将从现原则）。",
+        "derived_requirement": "状语从句从属连词逻辑辨析及时间条件状语从句主将从现时态规则",
+        "domain": "lang_usage",
+        "print_page": 23
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c22",
+          "standardized_text": "掌握时间、条件、原因、目的、结果、让步与比较状语从句从属连词的逻辑含义，熟练应用时间与条件状语从句中“主将从现/主情从现”时态规则。",
+          "derived_requirement": "掌握时间与条件状语从句主将从现时态规则及从属连词辨析",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c22",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c23"
+      ],
+      "reason": "替代：定语从句调整编号与附录4对齐",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c22",
+        "standardized_text": "掌握定语从句先行词为物时用 that/which、先行词为人时用 who/that 引导；在阅读中分析定语从句后置修饰功能，理解语篇主旨。",
+        "derived_requirement": "定语从句先行词与关系代词对应初步识别与长难句阅读理解",
+        "domain": "lang_usage",
+        "print_page": 23
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c23",
+          "standardized_text": "识别定语从句修饰先行词的结构特征，掌握指人关系代词who/that与指物关系代词which/that的基本选择与句意理解。",
+          "derived_requirement": "掌握定语从句先行词判断与关系代词who/which/that的基本用法",
+          "domain": "lang_usage",
+          "print_page": 141
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:listening:content_req:listen_detail:c23",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+      ],
+      "reason": "合并：听力理解细节合并入三级语言技能理解性技能总条款",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:listening:content_req:listen_detail:c23",
+        "standardized_text": "在听力理解测试中准确提取对话与独白关键信息，记录时间数字等事实细节，推断说话人身份与言外之意。",
+        "derived_requirement": "掌握听力关键信息抓取、数字时间转化与说话人意图态度推断",
+        "domain": "listening",
+        "print_page": 25
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+          "standardized_text": "综合运用听、读、看技能获取文本细节、推测词义、提炼主旨，应对初中听说机考听选信息与阅读理解多题型考查。",
+          "derived_requirement": "掌握阅读理解细节理解、主旨大意归纳与听说机考听力信息抓取",
+          "domain": "listening",
+          "print_page": 27
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:speaking:content_req:oral_interact:c24",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:writing:content_req:skills_expression:c28"
+      ],
+      "reason": "合并：口语交际合并入三级语言技能表达性技能（听说机考与口语表达）条款",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:speaking:content_req:oral_interact:c24",
+        "standardized_text": "对应北京市中考英语听说机考题型：短文朗读、听后选择、听后回答、听后转述，表达准确连贯。",
+        "derived_requirement": "掌握短文朗读流畅度、交际问答与机考听说转述规范表达",
+        "domain": "speaking",
+        "print_page": 26
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:writing:content_req:skills_expression:c28",
+          "standardized_text": "具备机考口语情境问答、简短演讲及初中中考话题写作（应用文与记叙文写作）的连贯规范表达能力。",
+          "derived_requirement": "掌握中考书面表达审题立意、段落结构组织、过渡连词运用与拼写语法纠错",
+          "domain": "writing",
+          "print_page": 31
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:reading:content_req:read_detail:c25",
+      "action": "split",
+      "current_clause_ids": [
+        "cs:english:2022:s4:reading:content_req:discourse_knowledge:c24",
+        "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+      ],
+      "reason": "拆分：原阅读细节拆分为语篇知识（段落衔接）与综合理解性技能",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:reading:content_req:read_detail:c25",
+        "standardized_text": "掌握扫读（scanning）与略读（skimming）技巧；在阅读理解中进行同义词替换对照，准确锁定事实细节选项，排除偷换概念与绝对化干扰项。",
+        "derived_requirement": "阅读事实细节定位、同义替换辨析与直接信息提取判断",
+        "domain": "reading",
+        "print_page": 27
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:reading:content_req:discourse_knowledge:c24",
+          "standardized_text": "掌握段落主题句识别、承上启下过渡词、代词指代及总分总语篇逻辑结构，增强篇章阅读理解与还原能力。",
+          "derived_requirement": "掌握语篇衔接连词、逻辑指代关系及任务型阅读篇章段落还原",
+          "domain": "reading",
+          "print_page": 22
+        },
+        {
+          "clause_id": "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+          "standardized_text": "综合运用听、读、看技能获取文本细节、推测词义、提炼主旨，应对初中听说机考听选信息与阅读理解多题型考查。",
+          "derived_requirement": "掌握阅读理解细节理解、主旨大意归纳与听说机考听力信息抓取",
+          "domain": "listening",
+          "print_page": 27
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:reading:content_req:read_main_idea:c26",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+      ],
+      "reason": "合并：主旨概括合并入三级理解性技能",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:reading:content_req:read_main_idea:c26",
+        "standardized_text": "掌握首尾段与各段首尾句主旨提炼法，避免以偏概全或主旨泛化，准确概括文章核心主旨与写作目的。",
+        "derived_requirement": "把握段落中心句、概括全文主旨大意及选择文章最佳标题",
+        "domain": "reading",
+        "print_page": 27
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+          "standardized_text": "综合运用听、读、看技能获取文本细节、推测词义、提炼主旨，应对初中听说机考听选信息与阅读理解多题型考查。",
+          "derived_requirement": "掌握阅读理解细节理解、主旨大意归纳与听说机考听力信息抓取",
+          "domain": "listening",
+          "print_page": 27
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:reading:content_req:read_inference:c27",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+      ],
+      "reason": "合并：推断推论合并入三级理解性技能",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:reading:content_req:read_inference:c27",
+        "standardized_text": "立足原文已知证据进行合理合逻辑推断，不主观臆断；分析用词褒贬判断作者赞同、反对或中立态度。",
+        "derived_requirement": "依据上下文进行逻辑推断、指代辨析与作者意图态度深层理解",
+        "domain": "reading",
+        "print_page": 27
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+          "standardized_text": "综合运用听、读、看技能获取文本细节、推测词义、提炼主旨，应对初中听说机考听选信息与阅读理解多题型考查。",
+          "derived_requirement": "掌握阅读理解细节理解、主旨大意归纳与听说机考听力信息抓取",
+          "domain": "listening",
+          "print_page": 27
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:reading:content_req:read_task_based:c28",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+      ],
+      "reason": "合并：任务型阅读合并入三级理解性技能",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:reading:content_req:read_task_based:c28",
+        "standardized_text": "掌握篇章结构逻辑（总分、对比、递进、因果），分析还原选项中的过渡词与主旨词；掌握阅读回答问题（简答题）规范作答，大小写人称时态准确无误。",
+        "derived_requirement": "任务型阅读篇章还原、简答题信息归纳与规范英文书写表达",
+        "domain": "reading",
+        "print_page": 28
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+          "standardized_text": "综合运用听、读、看技能获取文本细节、推测词义、提炼主旨，应对初中听说机考听选信息与阅读理解多题型考查。",
+          "derived_requirement": "掌握阅读理解细节理解、主旨大意归纳与听说机考听力信息抓取",
+          "domain": "listening",
+          "print_page": 27
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:writing:content_req:writing_expression:c29",
+      "action": "merged",
+      "current_clause_ids": [
+        "cs:english:2022:s4:writing:content_req:skills_expression:c28"
+      ],
+      "reason": "合并：书面写作表达合并入三级表达性技能",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:writing:content_req:writing_expression:c29",
+        "standardized_text": "做到审题三要素明确（人称、时态、文体）；要点齐全且拓展合理；运用高阶词汇与复合句式；逻辑衔接紧密连贯（firstly, furthermore, however, therefore 等）。",
+        "derived_requirement": "中考话题作文与应用文书面表达、要点完整、逻辑连贯与规范书写",
+        "domain": "writing",
+        "print_page": 29
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:writing:content_req:skills_expression:c28",
+          "standardized_text": "具备机考口语情境问答、简短演讲及初中中考话题写作（应用文与记叙文写作）的连贯规范表达能力。",
+          "derived_requirement": "掌握中考书面表达审题立意、段落结构组织、过渡连词运用与拼写语法纠错",
+          "domain": "writing",
+          "print_page": 31
+        }
+      ]
+    },
+    {
+      "legacy_clause_id": "cs:english:2022:s4:lang_usage:acad_req:english_eval:c30",
+      "action": "replaced",
+      "current_clause_ids": [
+        "cs:english:2022:s4:reading:academic_req:english_eval:c30"
+      ],
+      "reason": "替代：学业质量评价域归属更正为 reading/综合评估与初中中考评价一致",
+      "legacy_snapshot": {
+        "clause_id": "cs:english:2022:s4:lang_usage:acad_req:english_eval:c30",
+        "standardized_text": "初中毕业生中考英语全面考查基础语言知识、语篇阅读理解、逻辑思维与书面综合表达能力。",
+        "derived_requirement": "初中英语学业水平考试评价总体依据",
+        "domain": "lang_usage",
+        "print_page": 44
+      },
+      "current_snapshots": [
+        {
+          "clause_id": "cs:english:2022:s4:reading:academic_req:english_eval:c30",
+          "standardized_text": "初中毕业生中考英语综合考查听力口语、语言知识综合运用（完形填空、语法填空）、篇章阅读与书面表达四大核心板块。",
+          "derived_requirement": "初中学业水平考试中考英语学科评价总体标准",
+          "domain": "reading",
+          "print_page": 45
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "legacy_mappings": [
+    {
+      "legacy_code": "math.num_alg",
+      "legacy_name": "数与代数",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.num_alg"
+      ],
+      "mapping_reason": "一级领域名称与课标体系完全对应，予以保留对应。",
+      "compatibility_assurance": "旧节点保留，历史试卷领域级引用不变。"
+    },
+    {
+      "legacy_code": "math.num.real",
+      "legacy_name": "实数与数轴绝对值",
+      "legacy_parent_code": "math.num_alg",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.num.rational",
+        "math_cand.num.real"
+      ],
+      "mapping_reason": "原旧节点将有理数及其运算与实数无理数估算混同，新课标按主题明确区分为(1)有理数及其运算与(2)实数概念与估算，予以合理拆分。",
+      "compatibility_assurance": "历史题目对 math.num.real 的引用保持只读有效，不覆盖原有历史数据。"
+    },
+    {
+      "legacy_code": "math.alg.poly",
+      "legacy_name": "整式运算与因式分解",
+      "legacy_parent_code": "math.num_alg",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.alg.poly",
+        "math_cand.alg.factor"
+      ],
+      "mapping_reason": "原旧节点将整式运算（加减乘与乘法公式）和因式分解（提公因式与公式法）合并，新体系将因式分解独立为核心诊断考点。",
+      "compatibility_assurance": "原有 QuestionVersion.knowledge_ids 保持不变。"
+    },
+    {
+      "legacy_code": "math.alg.frac",
+      "legacy_name": "分式与二次根式运算",
+      "legacy_parent_code": "math.num_alg",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.alg.frac",
+        "math_cand.alg.quadratic_radical"
+      ],
+      "mapping_reason": "原旧节点将分式运算与二次根式化简合并，两者在初中教学进度及代数特征上截然不同，新体系拆为独立考点。",
+      "compatibility_assurance": "历史答题记录与曝光记录保持只读不变。"
+    },
+    {
+      "legacy_code": "math.eq.linear_system",
+      "legacy_name": "一次方程与二元一次方程组",
+      "legacy_parent_code": "math.num_alg",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.eq.linear",
+        "math_cand.eq.linear_system",
+        "math_cand.eq.linear_system_3var"
+      ],
+      "mapping_reason": "原旧节点合并一元一次方程与二元一次方程组，新体系分别设立一元一次方程、二元一次方程组及三元一次方程组（选学*）；明确三元一次方程组为课标选学考点，不作为中考必考诊断默认池，需隔离维护。",
+      "compatibility_assurance": "历史题目对 math.eq.linear_system 的引用保持只读，严禁将历史题目静默迁移至选学考点 math_cand.eq.linear_system_3var。"
+    },
+    {
+      "legacy_code": "math.eq.quadratic",
+      "legacy_name": "一元二次方程与分式方程",
+      "legacy_parent_code": "math.num_alg",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.eq.quadratic",
+        "math_cand.eq.fractional"
+      ],
+      "mapping_reason": "原旧节点将一元二次方程（判别式与配方求根）与分式方程（去分母化整与验根）混并，新体系细化拆分为独立诊断单元。",
+      "compatibility_assurance": "历史考题关联零修改。"
+    },
+    {
+      "legacy_code": "math.ineq",
+      "legacy_name": "一元一次不等式组",
+      "legacy_parent_code": "math.num_alg",
+      "action": "renamed",
+      "target_candidate_codes": [
+        "math_cand.ineq.linear"
+      ],
+      "mapping_reason": "规范命名为一元一次不等式（组）及其解法与应用，完整涵盖单不等式及不等式组要求。",
+      "compatibility_assurance": "语义兼容，保留历史引用映射记录。"
+    },
+    {
+      "legacy_code": "math.func.linear",
+      "legacy_name": "一次函数与正比例函数",
+      "legacy_parent_code": "math.num_alg",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.func.linear"
+      ],
+      "mapping_reason": "正比例函数与一次函数为初中函数基础核心，在新候选体系中对等保留。",
+      "compatibility_assurance": "原有关联与曝光记录零变更。"
+    },
+    {
+      "legacy_code": "math.func.inverse",
+      "legacy_name": "反比例函数",
+      "legacy_parent_code": "math.num_alg",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.func.inverse"
+      ],
+      "mapping_reason": "反比例函数及其几何意义在初中数学中定位明确稳定，予以保留。",
+      "compatibility_assurance": "历史答题记录零变更。"
+    },
+    {
+      "legacy_code": "math.func.quad",
+      "legacy_name": "二次函数综合",
+      "legacy_parent_code": "math.num_alg",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.func.quadratic"
+      ],
+      "mapping_reason": "二次函数的图象性质、顶点对称轴与极值应用是中考核心考点，在新体系中予以保留对应。",
+      "compatibility_assurance": "历史数据保持完整只读。"
+    },
+    {
+      "legacy_code": "math.geo",
+      "legacy_name": "图形与几何",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo"
+      ],
+      "mapping_reason": "图形与几何一级领域与课标体系一致，予以保留对应。",
+      "compatibility_assurance": "旧领域标识不变。"
+    },
+    {
+      "legacy_code": "math.geo.lines",
+      "legacy_name": "相交线、平行线与角",
+      "legacy_parent_code": "math.geo",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo.lines_angles"
+      ],
+      "mapping_reason": "相交线、平行线与角是几何入门核心，在新体系中设立 math_cand.geo.lines_angles 予以继承保留。",
+      "compatibility_assurance": "历史试卷关联只读保持。"
+    },
+    {
+      "legacy_code": "math.geo.triangle",
+      "legacy_name": "三角形与全等三角形",
+      "legacy_parent_code": "math.geo",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.geo.triangle_basic",
+        "math_cand.geo.isosceles_triangle",
+        "math_cand.geo.congruent_triangles"
+      ],
+      "mapping_reason": "原旧节点覆盖过宽（包含边角基本关系、等腰/等边特殊三角形、全等判定），在诊断中难以定位薄弱点，新体系予以结构化拆分。",
+      "compatibility_assurance": "历史试题与做题记录严格保持不变。"
+    },
+    {
+      "legacy_code": "math.geo.pythagoras",
+      "legacy_name": "勾股定理与直角三角形",
+      "legacy_parent_code": "math.geo",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo.pythagoras"
+      ],
+      "mapping_reason": "直角三角形与勾股定理及其逆定理具有独立而鲜明的考查特征，在新体系中予以保留。",
+      "compatibility_assurance": "历史关联无缝兼容。"
+    },
+    {
+      "legacy_code": "math.geo.quadrilateral",
+      "legacy_name": "四边形与特殊平行四边形",
+      "legacy_parent_code": "math.geo",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.geo.quadrilateral_basic",
+        "math_cand.geo.special_parallelogram"
+      ],
+      "mapping_reason": "多边形/平行四边形基础性质与特殊平行四边形（矩形、菱形、正方形）判定有层次差异，新体系拆分利于分层诊断。",
+      "compatibility_assurance": "存量考点零覆盖。"
+    },
+    {
+      "legacy_code": "math.geo.circle",
+      "legacy_name": "圆的性质与切线",
+      "legacy_parent_code": "math.geo",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.geo.circle_basic",
+        "math_cand.geo.circle_tangent",
+        "math_cand.geo.arc_sector"
+      ],
+      "mapping_reason": "圆的板块跨越基本性质（垂径/圆周角）、切线证明与位置关系、弧长扇形计算，新体系按教学单元拆分。",
+      "compatibility_assurance": "历史版本数据不受影响。"
+    },
+    {
+      "legacy_code": "math.geo.similar",
+      "legacy_name": "相似图形与比例线段",
+      "legacy_parent_code": "math.geo",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo.similarity"
+      ],
+      "mapping_reason": "相似三角形与比例线段考点在新体系中独立设立并完整保留。",
+      "compatibility_assurance": "历史作答与曝光记录保持只读。"
+    },
+    {
+      "legacy_code": "math.geo.trig",
+      "legacy_name": "锐角三角函数与解直角三角形",
+      "legacy_parent_code": "math.geo",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo.trigonometry"
+      ],
+      "mapping_reason": "锐角三角函数定义与解直角三角形实际应用考查稳定，予以对等保留。",
+      "compatibility_assurance": "原有关联零重写。"
+    },
+    {
+      "legacy_code": "math.geo.transform",
+      "legacy_name": "图形变换与对称折叠",
+      "legacy_parent_code": "math.geo",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.geo.transform_symmetry"
+      ],
+      "mapping_reason": "轴对称、旋转、平移在新体系中作为图形变换核心考点保留。",
+      "compatibility_assurance": "历史数据保持完好。"
+    },
+    {
+      "legacy_code": "math.geo.comprehensive",
+      "legacy_name": "几何综合探究与动点最值",
+      "legacy_parent_code": "math.geo",
+      "action": "pending_human_review",
+      "target_candidate_codes": [
+        "math_cand.prac.exploration_new_definition"
+      ],
+      "mapping_reason": "几何综合探究在中考中主要表现为动点轨迹、极值与全等/相似综合证明，属于高阶综合题型与思维能力维度，与2022课标'综合与实践'现实项目建模缺乏充分教学语义等价性，故暂标为待人工核定，待真实数学学科专家确定是映射为独立题型标签还是并入探究活动。",
+      "compatibility_assurance": "旧考点 math.geo.comprehensive 保持只读保留，历史题目与答题记录绝对不自动迁移重写。"
+    },
+    {
+      "legacy_code": "math.stat_prob",
+      "legacy_name": "统计与概率",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.stat_prob"
+      ],
+      "mapping_reason": "统计与概率一级领域完全对应，予以保留。",
+      "compatibility_assurance": "历史领域引用有效。"
+    },
+    {
+      "legacy_code": "math.stat.data",
+      "legacy_name": "数据的收集、整理与分析",
+      "legacy_parent_code": "math.stat_prob",
+      "action": "split",
+      "target_candidate_codes": [
+        "math_cand.stat.sampling_collection",
+        "math_cand.stat.central_dispersion"
+      ],
+      "mapping_reason": "抽样收集/统计图表与集中趋势/离散程度分别对应课标不同要求条文，新体系予以结构化拆分。",
+      "compatibility_assurance": "历史答题数据零变更。"
+    },
+    {
+      "legacy_code": "math.prob.basic",
+      "legacy_name": "概率初步与树状图法",
+      "legacy_parent_code": "math.stat_prob",
+      "action": "retained",
+      "target_candidate_codes": [
+        "math_cand.prob.probability"
+      ],
+      "mapping_reason": "随机事件与简单概率计算在新体系中对应保留。",
+      "compatibility_assurance": "原有关联零修改。"
+    },
+    {
+      "legacy_code": "math.adv.new_definition",
+      "legacy_name": "新定义与综合实践探究",
+      "legacy_parent_code": null,
+      "action": "pending_human_review",
+      "target_candidate_codes": [
+        "math_cand.prac.project_modeling",
+        "math_cand.prac.exploration_new_definition"
+      ],
+      "mapping_reason": "中考新定义题型重点考查学生现场阅读理解新规则、迁移运用数学符号进行逻辑推理的能力，属于特殊题型与高阶素养考查，与课标真实情境项目式学习存在明显语义差异，暂标记为待人工核定，待学科专家核定迁移方向或保留为题型标签。",
+      "compatibility_assurance": "旧考点 math.adv.new_definition 保持只读保留，历史作答与曝光记录不受任何影响。"
+    }
+  ],
+  "new_candidate_additions": [
+    {
+      "candidate_code": "math_cand.num_alg.num_expr",
+      "candidate_name": "数与式",
+      "domain": "num_alg",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.num_alg.eq_ineq",
+      "candidate_name": "方程与不等式",
+      "domain": "num_alg",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.num_alg.func",
+      "candidate_name": "函数",
+      "domain": "num_alg",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.func.basic",
+      "candidate_name": "函数概念与图象表示法",
+      "domain": "num_alg",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.geo.properties",
+      "candidate_name": "图形的性质",
+      "domain": "geom",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.geo.proof_logic",
+      "candidate_name": "命题、定理、公理与演绎推理证明",
+      "domain": "geom",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.geo.transformations",
+      "candidate_name": "图形的变化",
+      "domain": "geom",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.geo.projection_views",
+      "candidate_name": "投影与三视图",
+      "domain": "geom",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.geo.coordinates",
+      "candidate_name": "平面直角坐标系与图形坐标变化",
+      "domain": "geom",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.stat.data_analysis",
+      "candidate_name": "抽样调查与数据分析",
+      "domain": "stat_prob",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    },
+    {
+      "candidate_code": "math_cand.comp_prac",
+      "candidate_name": "综合与实践",
+      "domain": "comp_prac",
+      "action": "new",
+      "reason": "依据2022年版课程标准初中第四学段新设立的考点，旧体系中无独立节点覆盖（例如函数概念基础、三视图、平面直角坐标系或命题证明逻辑）。"
+    }
+  ],
+  "summary": {
+    "total_legacy_math_nodes": 24,
+    "retained_count": 12,
+    "renamed_count": 1,
+    "split_count": 9,
+    "merged_count": 0,
+    "new_count": 11,
+    "deprecated_count": 0,
+    "pending_human_review_count": 2
+  }
+}

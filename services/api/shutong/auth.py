@@ -11,7 +11,9 @@ from fastapi import Header, HTTPException
 
 
 def get_admin_token() -> str:
-    """获取管理端鉴权密钥；优先读取 SHUTONG_ADMIN_TOKEN，过渡期兼容 SHUTONG_TOKEN。"""
+    """获取管理端鉴权密钥；优先读取 SHUTONG_ADMIN_TOKEN，过渡期兼容 SHUTONG_TOKEN。
+    若未配置则直接拒绝服务（503 Service Unavailable），杜绝硬编码默认凭据。
+    """
     token = os.getenv("SHUTONG_ADMIN_TOKEN")
     if not token:
         token = os.getenv("SHUTONG_TOKEN")
@@ -25,7 +27,9 @@ def get_admin_token() -> str:
 
 
 def get_student_token() -> str:
-    """获取学生端鉴权密钥；读取 SHUTONG_STUDENT_TOKEN。"""
+    """获取学生端鉴权密钥；读取 SHUTONG_STUDENT_TOKEN。
+    若未配置则直接拒绝服务（503 Service Unavailable），杜绝硬编码默认凭据。
+    """
     token = os.getenv("SHUTONG_STUDENT_TOKEN")
     if not token:
         raise HTTPException(503, detail="SHUTONG_STUDENT_TOKEN is not configured")
@@ -48,9 +52,13 @@ def require_admin(authorization: str | None = Header(default=None)) -> str:
         raise HTTPException(401, detail="Admin authorization required", headers={"WWW-Authenticate": "Bearer"})
     
     token = authorization[7:].strip()
-    student = os.getenv("SHUTONG_STUDENT_TOKEN")
-    if student and hmac.compare_digest(token, student):
-        raise HTTPException(403, detail="Admin authorization required; student token not permitted")
+    try:
+        student = get_student_token()
+        if hmac.compare_digest(token, student):
+            raise HTTPException(403, detail="Admin authorization required; student token not permitted")
+    except HTTPException as e:
+        if e.status_code == 403:
+            raise
     
     if not hmac.compare_digest(token, expected):
         raise HTTPException(401, detail="Admin authorization required", headers={"WWW-Authenticate": "Bearer"})
@@ -69,9 +77,13 @@ def require_student(authorization: str | None = Header(default=None)) -> str:
         raise HTTPException(401, detail="Student authorization required", headers={"WWW-Authenticate": "Bearer"})
     
     token = authorization[7:].strip()
-    admin = os.getenv("SHUTONG_ADMIN_TOKEN") or os.getenv("SHUTONG_TOKEN")
-    if admin and hmac.compare_digest(token, admin):
-        raise HTTPException(403, detail="Student authorization required; admin token not permitted")
+    try:
+        admin = get_admin_token()
+        if hmac.compare_digest(token, admin):
+            raise HTTPException(403, detail="Student authorization required; admin token not permitted")
+    except HTTPException as e:
+        if e.status_code == 403:
+            raise
     
     if not hmac.compare_digest(token, expected):
         raise HTTPException(401, detail="Student authorization required", headers={"WWW-Authenticate": "Bearer"})

@@ -277,6 +277,99 @@ export interface Client {
   sourceQuestions(sourceId: string): Promise<QuestionVersion[]>
   reviewQuestion(versionId: string): Promise<unknown>
   publishQuestion(versionId: string): Promise<unknown>
+  /* 知识点审核台（ST-019-B）。 */
+  adminKnowledgeClauses(subject?: string, domain?: string): Promise<CurriculumClause[]>
+  adminKnowledgeCandidates(subject?: Subject): Promise<CandidateNode[]>
+  adminSeedCandidates(subject?: Subject): Promise<{ subject: Subject; seeded_count: number; total_nodes: number }>
+  adminKnowledgeLegacyMapping(subject?: Subject): Promise<LegacyMappingResult>
+  adminReviewNode(nodeId: string, review: { reviewer_id: string; review_status: 'approved' | 'rejected'; review_opinion: string }): Promise<unknown>
+  adminPublishRelease(release: { subject: Subject; release_version: string; published_by: string; summary?: string }): Promise<unknown>
+  adminKnowledgeReleases(subject?: Subject): Promise<TaxonomyRelease[]>
+}
+
+export interface CurriculumClause {
+  clause_id: string
+  source_id: string
+  subject: string
+  stage: string
+  domain: string
+  part_title: string
+  domain_title: string
+  theme_title: string
+  sub_theme: string
+  section_type: string
+  clause_number: string
+  pdf_page: number
+  print_page: number
+  raw_text: string
+  standardized_text: string
+  collation_note: string
+  is_elective: boolean
+  derived_requirement: string
+  review_status: string
+  legacy_mappings: string[]
+}
+
+export interface CandidateNode {
+  id?: string
+  code: string
+  name: string
+  domain?: string
+  parent_code?: string | null
+  parent_id?: string | null
+  level?: number
+  version?: number
+  description?: string | null
+  origin?: string
+  review_status: string
+  source_clause_ids?: string[]
+  reviewer_id?: string | null
+  review_opinion?: string | null
+  reviewed_at?: string | null
+}
+
+export interface LegacyMappingRecord {
+  legacy_code: string
+  legacy_name: string
+  legacy_parent_code: string | null
+  action: 'retained' | 'renamed' | 'split' | 'merged' | 'new' | 'deprecated' | 'pending_human_review'
+  target_candidate_codes: string[]
+  mapping_reason: string
+  compatibility_assurance: string
+}
+
+export interface LegacyMappingResult {
+  legacy_mappings: LegacyMappingRecord[]
+  new_candidate_additions: {
+    candidate_code: string
+    candidate_name: string
+    domain: string
+    action: string
+    reason: string
+  }[]
+  summary: {
+    total_legacy_nodes?: number
+    total_legacy_math_nodes?: number
+    retained_count: number
+    renamed_count: number
+    split_count: number
+    merged_count: number
+    new_count: number
+    deprecated_count?: number
+    pending_human_review_count?: number
+  }
+}
+
+export interface TaxonomyRelease {
+  id: string
+  subject: Subject
+  release_version: string
+  status: string
+  published_by: string | null
+  published_at: string | null
+  summary: string | null
+  total_nodes: number
+  created_at: string
 }
 
 export function createClient(token: string, role: 'student' | 'admin' = 'student'): Client {
@@ -365,6 +458,19 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
     sourceQuestions: sourceId => call<QuestionVersion[]>(`/api/admin/sources/${encodeURIComponent(sourceId)}/questions`),
     reviewQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/review`, 'POST'),
     publishQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/publish`, 'POST'),
+    adminKnowledgeClauses: (subject = 'math', domain) =>
+      call<CurriculumClause[]>(`/api/admin/knowledge/clauses?subject=${encodeURIComponent(subject)}${domain ? `&domain=${encodeURIComponent(domain)}` : ''}`),
+    adminKnowledgeCandidates: (subject = 'math') =>
+      call<CandidateNode[]>(`/api/admin/knowledge/candidates?subject=${encodeURIComponent(subject)}`),
+    adminSeedCandidates: (subject = 'math') =>
+      call<{ subject: Subject; seeded_count: number; revised_count?: number; total_nodes: number }>(`/api/admin/knowledge/candidates/seed?subject=${encodeURIComponent(subject)}`, 'POST'),
+    adminKnowledgeLegacyMapping: (subject = 'math') =>
+      call<LegacyMappingResult>(`/api/admin/knowledge/legacy-mapping?subject=${encodeURIComponent(subject)}`),
+    adminReviewNode: (nodeId, review) =>
+      call<unknown>(`/api/admin/knowledge/nodes/${encodeURIComponent(nodeId)}/review`, 'POST', review),
+    adminPublishRelease: release => call<unknown>('/api/admin/knowledge/releases', 'POST', release),
+    adminKnowledgeReleases: (subject = 'math') =>
+      call<TaxonomyRelease[]>(`/api/admin/knowledge/releases?subject=${encodeURIComponent(subject)}`),
   }
 }
 

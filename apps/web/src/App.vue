@@ -35,7 +35,7 @@ onMounted(() => {
     // 忽略异常
   }
   const saved = localStorage.getItem(TOKEN_STORE_KEY)
-  if (saved === null || saved === '') return
+  if (!saved) return
   createClient(saved, 'student')
     .verify()
     .then(() => {
@@ -55,6 +55,14 @@ async function enter(nextToken: string, remember: boolean) {
   if (remember) localStorage.setItem(TOKEN_STORE_KEY, nextToken)
   else localStorage.removeItem(TOKEN_STORE_KEY)
   token.value = nextToken
+  if (import.meta.env.DEV) {
+    try {
+      sessionStorage.setItem('shutong.dev_token_student', nextToken)
+      sessionStorage.removeItem('shutong.dev_logout_student')
+    } catch {
+      // 忽略
+    }
+  }
   notify('已进入私有学习空间。', 'success')
 }
 
@@ -64,6 +72,14 @@ function signOut() {
     localStorage.removeItem(TOKEN_STORE_KEY) // 退出 = 完整登出：本机记住的令牌一并清除
   } catch {
     // 忽略异常
+  }
+  if (import.meta.env.DEV) {
+    try {
+      sessionStorage.removeItem('shutong.dev_token_student')
+      sessionStorage.setItem('shutong.dev_logout_student', 'true')
+    } catch {
+      // 忽略
+    }
   }
   token.value = ''
   notice.value = null
@@ -138,7 +154,7 @@ function signOut() {
       />
     </main>
 
-    <Gate v-else :on-enter="enter" />
+    <Gate v-else :on-enter="enter" role="student" />
 
     <footer>开发验证版 · 演示数据均为虚构测试数据 · 不作中考分数预测</footer>
     <Notice :notice="notice" @close="clearNotice" />

@@ -1,0 +1,532 @@
+[
+  {
+    "code": "english_cand.phonetics_vocab",
+    "name": "语音与词汇知识",
+    "domain": "lang_usage",
+    "parent_code": null,
+    "level": 1,
+    "description": "国际音标拼读与句子连读语调、词缀构词法派生转换及高频短语语境搭配辨析。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+      "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04",
+      "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标三级语音与词汇知识归集，待审核",
+    "legacy_mappings": [
+      "english.listening",
+      "english.cloze.context"
+    ]
+  },
+  {
+    "code": "english_cand.vocab.formation",
+    "name": "词汇构词法与词性转换",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.phonetics_vocab",
+    "level": 2,
+    "description": "派生词缀（前缀un-/dis-/im-，后缀-er/-or/-tion/-ful/-less/-ly等）、合成法与转化法构词规律与词性辨析。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:vocab_formation:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应构词法与词类转换条文，待审核",
+    "legacy_mappings": [
+      "english.cloze.context"
+    ]
+  },
+  {
+    "code": "english_cand.vocab.collocation_context",
+    "name": "短语搭配与语境词义辨析",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.phonetics_vocab",
+    "level": 2,
+    "description": "动词短语、介词固定搭配辨析及近义词、同义词在完形填空语境中的细微含义区别。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:vocab_collocation:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应习惯搭配与语境词义辨析条文，待审核",
+    "legacy_mappings": [
+      "english.cloze.context"
+    ]
+  },
+  {
+    "code": "english_cand.morphology",
+    "name": "语法知识·词法",
+    "domain": "lang_usage",
+    "parent_code": null,
+    "level": 1,
+    "description": "名词、代词、介词、冠词、形容词副词比较级与数词在真实语境中的形态与功能。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+      "cs:english:2022:s4:lang_usage:content_req:noun_grammar:c07",
+      "cs:english:2022:s4:lang_usage:content_req:pronoun_grammar:c08",
+      "cs:english:2022:s4:lang_usage:content_req:prep_grammar:c09",
+      "cs:english:2022:s4:lang_usage:content_req:article_grammar:c10",
+      "cs:english:2022:s4:lang_usage:content_req:comparison_grammar:c11",
+      "cs:english:2022:s4:lang_usage:content_req:numeral_grammar:c12",
+      "cs:english:2022:s4:lang_usage:content_req:modal_verbs:c17"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标附录4词类体系归集，待审核",
+    "legacy_mappings": [
+      "english.grammar",
+      "english.grammar.noun",
+      "english.grammar.pronoun",
+      "english.grammar.preposition",
+      "english.grammar.comparative"
+    ]
+  },
+  {
+    "code": "english_cand.noun.number_case",
+    "name": "名词单复数与所有格",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "可数名词规则与不规则复数形式、不可数名词修饰及有生命/无生命名词所有格辨析。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:noun_grammar:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4名词语法条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.noun"
+    ]
+  },
+  {
+    "code": "english_cand.pronoun.types",
+    "name": "代词分类与用法",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "人称代词主宾格、物主代词形代与名代、反身代词及复合不定代词语境准确运用。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:pronoun_grammar:c08"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4代词语法条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.pronoun"
+    ]
+  },
+  {
+    "code": "english_cand.preposition.usage",
+    "name": "介词与介词短语",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "表示时间、空间方位的核心介词及动词介词、形容词介词常用短语搭配。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:prep_grammar:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4介词语法条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.preposition"
+    ]
+  },
+  {
+    "code": "english_cand.article.rules",
+    "name": "冠词（定冠词、不定冠词与零冠词）",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "不定冠词a/an发音规律与泛指、定冠词the特指与独一无二事物及零冠词固定习惯表达。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:article_grammar:c10"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4冠词用法条文，待审核",
+    "legacy_mappings": [
+      "english.grammar"
+    ]
+  },
+  {
+    "code": "english_cand.adj_adv.comparison",
+    "name": "形容词与副词比较等级",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "形容词副词原级比较（as...as）、比较级最高级规则与不规则变化及程度副词修饰。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:comparison_grammar:c11"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4比较等级条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.comparative"
+    ]
+  },
+  {
+    "code": "english_cand.numeral.rules",
+    "name": "数词（基数词与序数词）",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.morphology",
+    "level": 2,
+    "description": "基数词与序数词转换规律、大数表示法及在时间、日期、年龄、分数、百分数中的正确表达。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:numeral_grammar:c12"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4数词用法条文，待审核",
+    "legacy_mappings": [
+      "english.grammar"
+    ]
+  },
+  {
+    "code": "english_cand.verb_system",
+    "name": "语法知识·动词时态与语态",
+    "domain": "lang_usage",
+    "parent_code": null,
+    "level": 1,
+    "description": "初中五大核心时态、被动语态、情态动词推测与非谓语动词（不定式与动名词）。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+      "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c13",
+      "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c14",
+      "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c15",
+      "cs:english:2022:s4:lang_usage:content_req:voice_passive:c16",
+      "cs:english:2022:s4:lang_usage:content_req:modal_verbs:c17",
+      "cs:english:2022:s4:lang_usage:content_req:non_finite:c18"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标附录4动词体系归集，待审核",
+    "legacy_mappings": [
+      "english.grammar.tense",
+      "english.grammar.modal",
+      "english.grammar"
+    ]
+  },
+  {
+    "code": "english_cand.tense.present_past",
+    "name": "一般现在时与一般过去时",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "一般现在时主谓一致及动词第三人称单数变化；一般过去时常用时间状语及不规则动词过去式拼写。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:tense_present_past:c13"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4一般现在与过去时条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.tense"
+    ]
+  },
+  {
+    "code": "english_cand.tense.future_continuous",
+    "name": "一般将来时与进行时态",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "一般将来时（will/be going to）计划预测；现在进行时与过去进行时动作进行状态表达。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:tense_future_prog:c14"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4将来与进行时态条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.tense"
+    ]
+  },
+  {
+    "code": "english_cand.tense.present_perfect",
+    "name": "现在完成时及其延续性转换",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "现在完成时表示影响与持续、常用标志词搭配及短暂动词转延续性动词与for/since时间段连用。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:tense_perfect:c15"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4现在完成时条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.tense"
+    ]
+  },
+  {
+    "code": "english_cand.voice.passive",
+    "name": "被动语态（一般现在、一般过去与情态动词）",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "一般现在时、一般过去时及含情态动词的被动语态构成（be + done）及主动被动语态转换。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:voice_passive:c16"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4被动语态条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.tense"
+    ]
+  },
+  {
+    "code": "english_cand.modal.verbs",
+    "name": "情态动词用法与推测判断",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "can, may, must, should, need等基本情态动词及must/can't/could/might肯定否定可能性推测。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:modal_verbs:c17"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4情态动词条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.modal"
+    ]
+  },
+  {
+    "code": "english_cand.non_finite.verbs",
+    "name": "非谓语动词（动词不定式与动名词）",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.verb_system",
+    "level": 2,
+    "description": "动词不定式作宾语、目的状语、宾补（使役感官动词省略to）及动词后接doing的辨析用法。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:non_finite:c18"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4非谓语动词条文，待审核",
+    "legacy_mappings": [
+      "english.grammar"
+    ]
+  },
+  {
+    "code": "english_cand.syntax_system",
+    "name": "语法知识·句法与复合句",
+    "domain": "lang_usage",
+    "parent_code": null,
+    "level": 1,
+    "description": "简单句五大句型、反意疑问句、感叹句、There be句型、并列句及三大主从复合句。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+      "cs:english:2022:s4:lang_usage:content_req:simple_sentences:c19",
+      "cs:english:2022:s4:lang_usage:content_req:compound_sentences:c20",
+      "cs:english:2022:s4:lang_usage:content_req:object_clause:c21",
+      "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c22",
+      "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c23"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标附录4句法体系归集，待审核",
+    "legacy_mappings": [
+      "english.syntax",
+      "english.grammar.conjunction",
+      "english.syntax.object_clause",
+      "english.syntax.adverbial_clause",
+      "english.syntax.attributive_clause"
+    ]
+  },
+  {
+    "code": "english_cand.clause.simple_sentences",
+    "name": "简单句句型与功能句式",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.syntax_system",
+    "level": 2,
+    "description": "主谓宾等五大简单句骨架、There be句型就近原则、What/How感叹句与反意疑问句构成规律。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:grammar_general:c06",
+      "cs:english:2022:s4:lang_usage:content_req:simple_sentences:c19"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4简单句句型条文，待审核",
+    "legacy_mappings": [
+      "english.syntax"
+    ]
+  },
+  {
+    "code": "english_cand.syntax.compound_conjunction",
+    "name": "并列复合句与并列连词",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.syntax_system",
+    "level": 2,
+    "description": "and, but, or, so等常用并列连词逻辑义及not only...but also...等主谓就近一致原则。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:compound_sentences:c20"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4并列句条文，待审核",
+    "legacy_mappings": [
+      "english.grammar.conjunction"
+    ]
+  },
+  {
+    "code": "english_cand.syntax.object_clause",
+    "name": "宾语从句",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.syntax_system",
+    "level": 2,
+    "description": "that, if/whether及疑问词引导的宾语从句；陈述语序规则及主句过去时主从时态呼应。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:object_clause:c21"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4宾语从句条文，待审核",
+    "legacy_mappings": [
+      "english.syntax.object_clause"
+    ]
+  },
+  {
+    "code": "english_cand.syntax.adverbial_clause",
+    "name": "状语从句",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.syntax_system",
+    "level": 2,
+    "description": "时间、条件、原因、让步、目的、结果状语从句从属连词逻辑义及时间条件从句主将从现规则。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:adverbial_clause:c22"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4状语从句条文，待审核",
+    "legacy_mappings": [
+      "english.syntax.adverbial_clause"
+    ]
+  },
+  {
+    "code": "english_cand.syntax.attributive_clause",
+    "name": "定语从句（初步认识）",
+    "domain": "lang_usage",
+    "parent_code": "english_cand.syntax_system",
+    "level": 2,
+    "description": "定语从句修饰先行词概念、指人关系代词that/who与指物that/which的基础选择与阅读理解识别。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:attributive_clause:c23"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应附录4定语从句条文，待审核",
+    "legacy_mappings": [
+      "english.syntax.attributive_clause"
+    ]
+  },
+  {
+    "code": "english_cand.skills_comprehension",
+    "name": "语言技能与语篇综合素养",
+    "domain": "reading",
+    "parent_code": null,
+    "level": 1,
+    "description": "三大主题范畴语境下的听说机考口语应答、篇章阅读理解细节推断、任务型非连续性文本处理及中考话题写作。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+      "cs:english:2022:s4:reading:content_req:discourse_genre:c02",
+      "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+      "cs:english:2022:s4:reading:content_req:discourse_knowledge:c24",
+      "cs:english:2022:s4:lang_usage:content_req:pragmatics_knowledge:c25",
+      "cs:english:2022:s4:reading:content_req:culture_knowledge:c26",
+      "cs:english:2022:s4:listening:content_req:skills_comprehension:c27",
+      "cs:english:2022:s4:writing:content_req:skills_expression:c28",
+      "cs:english:2022:s4:lang_usage:content_req:learning_strategies:c29",
+      "cs:english:2022:s4:reading:academic_req:english_eval:c30"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标三级语言技能与学业质量标准归集，待审核",
+    "legacy_mappings": [
+      "english.listening",
+      "english.reading.detail",
+      "english.reading.expression",
+      "english.writing.composition",
+      "english.skills"
+    ]
+  },
+  {
+    "code": "english_cand.listening_speaking",
+    "name": "听力理解与机考听说交互",
+    "domain": "listening",
+    "parent_code": "english_cand.skills_comprehension",
+    "level": 2,
+    "description": "听辨关键信息细节、推测说话者意图身份、听说机考短文朗读、情境问答与转述表达。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:phonetics:c03",
+      "cs:english:2022:s4:lang_usage:content_req:pragmatics_knowledge:c25",
+      "cs:english:2022:s4:listening:content_req:skills_comprehension:c27"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应机考听说与听力技能条文，待审核",
+    "legacy_mappings": [
+      "english.listening"
+    ]
+  },
+  {
+    "code": "english_cand.reading.facts_inference",
+    "name": "阅读理解（事实细节、主旨大意与深层推断）",
+    "domain": "reading",
+    "parent_code": "english_cand.skills_comprehension",
+    "level": 2,
+    "description": "三大主题范畴书面语篇事实细节筛选、段落中心主旨提炼、词义推断、文化背景、作者观点态度与深层逻辑推断。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+      "cs:english:2022:s4:reading:content_req:discourse_genre:c02",
+      "cs:english:2022:s4:reading:content_req:discourse_knowledge:c24",
+      "cs:english:2022:s4:reading:content_req:culture_knowledge:c26",
+      "cs:english:2022:s4:reading:academic_req:english_eval:c30"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应阅读理解核心考点条文与主题范畴语境要求，待审核",
+    "legacy_mappings": [
+      "english.reading.detail"
+    ]
+  },
+  {
+    "code": "english_cand.reading.task_based",
+    "name": "任务型阅读（篇章还原与信息简答）",
+    "domain": "reading",
+    "parent_code": "english_cand.skills_comprehension",
+    "level": 2,
+    "description": "语篇上下文衔接逻辑还原、任务型多模态图表表格转换及根据短文回答问题的规范简答。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:reading:content_req:discourse_knowledge:c24",
+      "cs:english:2022:s4:lang_usage:content_req:learning_strategies:c29"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应任务型阅读篇章还原与简答条文，待审核",
+    "legacy_mappings": [
+      "english.reading.expression"
+    ]
+  },
+  {
+    "code": "english_cand.writing.composition",
+    "name": "书面表达与话题写作（应用文与记叙议论文）",
+    "domain": "writing",
+    "parent_code": "english_cand.skills_comprehension",
+    "level": 2,
+    "description": "中考英语应用文（书信、邮件、演讲稿、建议倡议）与话题作文审题、提纲组织、逻辑衔接与规范书写。",
+    "source_clause_ids": [
+      "cs:english:2022:s4:lang_usage:content_req:theme_contexts:c01",
+      "cs:english:2022:s4:writing:content_req:skills_expression:c28",
+      "cs:english:2022:s4:lang_usage:content_req:learning_strategies:c29"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应中考书面表达话题写作条文，待审核",
+    "legacy_mappings": [
+      "english.writing.composition"
+    ]
+  }
+]

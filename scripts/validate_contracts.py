@@ -19,7 +19,13 @@ def valid(v, obj):
     return not list(v.iter_errors(obj))
 
 def check():
-    items = [("source-document.schema.json", "source.valid.json"), ("evidence.schema.json", "evidence.valid.json"), ("goal.schema.json", "goal.valid.json")]
+    items = [
+        ("source-document.schema.json", "source.valid.json"),
+        ("evidence.schema.json", "evidence.valid.json"),
+        ("goal.schema.json", "goal.valid.json"),
+        ("curriculum-standard-source.schema.json", "curriculum_source.valid.json"),
+        ("curriculum-standard-clause.schema.json", "curriculum_clause.valid.json"),
+    ]
     for schema_name, example_name in items:
         v=validator(schema_name)
         source=json.loads((EXAMPLES/example_name).read_text(encoding='utf-8'))

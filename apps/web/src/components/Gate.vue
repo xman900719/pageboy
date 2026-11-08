@@ -6,9 +6,11 @@ const props = withDefaults(
   defineProps<{
     onEnter: (token: string, remember: boolean) => Promise<void>
     allowRemember?: boolean
+    role?: 'student' | 'admin'
   }>(),
   {
     allowRemember: true,
+    role: 'student',
   }
 )
 
@@ -50,7 +52,8 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    await props.onEnter(value.value.trim(), props.allowRemember ? remember.value : false)
+    const tokenVal = value.value.trim()
+    await props.onEnter(tokenVal, props.allowRemember ? remember.value : false)
   } catch (e) {
     error.value = describeError(e)
   } finally {

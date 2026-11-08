@@ -22,6 +22,9 @@
 | AC-SEC-02 | 管理端与学生端凭据双向隔离授权 | 服务端双凭据鉴权（SHUTONG_ADMIN_TOKEN 与 SHUTONG_STUDENT_TOKEN 独立）；角色互斥调用返回 403，错误/缺失返回 401，未配置/相同返回 503；管理 API 必须经 require_admin 校验；[P0-1 证据](checklists/07-p01-isolation.md) |
 | AC-ISO-01 | 学生 API 彻底剔除内部知识点数据 | 学生端接口（/api/practice/next, /api/guidance/*）彻底移除 knowledge_id(s) 与内部审核状态，收敛为服务端派生的自然语言 topic 与 advice；服务端纯函数派生，不破坏历史曝光与诊断可比性；[P0-1 证据](checklists/07-p01-isolation.md) |
 | AC-ISO-02 | 学生前端收敛与知识标签包物理隔离 | 学生端完全移除知识点筛选与内部编码展示；knowledge-labels.json 仅管理端引用，学生端打包零泄露；LocalStorage 分别存储 shutong.student_token 与 shutong.admin_token；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-STD-01 | 四科课标官方来源与哈希基线核验 | 教育部教材〔2022〕2号官方原件、下载URL、字节数、PDF物理总页数与SHA256核验通过；数学确认采录教育部官网标注以此为准的2022年5月9日修正版；北京市中考改革（京教计〔2023〕44号）适用政策基线核实；[ST-019-A 证据](st-019-a-curriculum-baseline.md) |
+| AC-STD-02 | 课标条款双页码定位与未审状态隔离 | 规范化条款引用代码，严格区分PDF物理页码与书籍印刷页码（物理页>=印刷页）；采录数学初中第四学段典型核心条文原文；选学标记（*号不作考试要求）；AI解析默认强约束为 pending 未审核状态；存量81个历史考点零覆盖；[ST-019-A 证据](st-019-a-curriculum-baseline.md) |
+| AC-STD-03 | 数学权威知识库候选采录与发布强门禁 | 149条初中数学官方课标条文100%覆盖；47个候选考点全量溯源并保持 pending；旧24考点可审计映射（保留15/重命名1/拆分6/待审2）；正式版本发布强门禁（负例防御拦截：无新候选被拒、缺任一节点被拒、未审核及驳回被拒）；独立审核整改 V2.1 闭环（三角形/四边形/统计/圆/代数式条款精确定向与选学纠偏） |
 | AC-OPS-01 | 从独立异地快照恢复 DB+附件 | **达成（2026-10-25，2026-11-03 再次实测）**：Cloudflare R2 异地备份 → 隔离环境完整恢复 DB+附件 → 端到端冒烟全绿（行数全等/附件字节级一致/练习可服务）；[演练记录](st-ops-01-offsite-restore.md)，[2026-11-03 演练](st-ops-01-offsite-restore-2026-11-03.md) |
 | AC-OPS-02 | 异地备份失败可观察并告警 | **达成（2026-10-25）**：healthchecks.io dead-man's switch——成功 ping（HTTP 200 实测）、>5h 静默即邮件告警（4h 周期+1h 宽限）；第三方基础设施=外部故障域；[演练记录](st-ops-01-offsite-restore.md) |
 

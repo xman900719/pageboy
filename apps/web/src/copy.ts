@@ -9,12 +9,13 @@ export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'diagnosis', label: '阶段诊断', hint: '未见题独立验证' },
 ]
 
-export type AdminViewId = 'ledger' | 'health' | 'exams'
+export type AdminViewId = 'ledger' | 'health' | 'exams' | 'knowledge'
 
 export const ADMIN_VIEWS: { id: AdminViewId; label: string; hint: string }[] = [
   { id: 'ledger', label: '题库审核台', hint: '题源 · 附件 · 人工发布' },
   { id: 'health', label: '题库体检', hint: '余量与知识点覆盖' },
   { id: 'exams', label: '学校考试', hint: '月考与期末总分录入' },
+  { id: 'knowledge', label: '知识点审核台', hint: '课标溯源 · 候选审核 · 版本发布' },
 ]
 
 export const GAP_LABELS: Record<GapType, string> = {

@@ -1,0 +1,218 @@
+{
+  "subject": "chinese",
+  "legacy_mappings": [
+    {
+      "legacy_code": "chinese.base",
+      "legacy_name": "基础·运用",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base_accumulation"
+      ],
+      "mapping_reason": "一级分类承载基础积累与运用，映射至新体系语言文字积累与梳理大类。",
+      "compatibility_assurance": "历史试卷基础板块统计数据保持兼容。"
+    },
+    {
+      "legacy_code": "chinese.base.phonetics",
+      "legacy_name": "字音辨析与注音拼读",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.phonetics"
+      ],
+      "mapping_reason": "多音字、易错字读音辨析核心考查点完全一致。",
+      "compatibility_assurance": "历史字音题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.base.character",
+      "legacy_name": "汉字字形与错别字纠正",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.character_orthography"
+      ],
+      "mapping_reason": "错别字纠正与同音形近字辨析核心考查点完全一致。",
+      "compatibility_assurance": "历史字形题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.base.idiom",
+      "legacy_name": "成语与词语语境运用",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.idiom_vocabulary"
+      ],
+      "mapping_reason": "词语和成语语境理解与色彩辨析核心考查点完全一致。",
+      "compatibility_assurance": "历史成语词语题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.base.syntax",
+      "legacy_name": "病句辨析与句子修改",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.syntax_revision"
+      ],
+      "mapping_reason": "病句类型识别与规范修改核心考查点完全一致。",
+      "compatibility_assurance": "历史病句题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.base.punctuation",
+      "legacy_name": "标点符号规范使用",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.punctuation"
+      ],
+      "mapping_reason": "常用标点符号用法与辨析核心考查点完全一致。",
+      "compatibility_assurance": "历史标点题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.base.culture",
+      "legacy_name": "文学文化常识与书法鉴赏",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.culture_calligraphy"
+      ],
+      "mapping_reason": "文学文化常识与书法五体鉴赏考点完全一致，平移保留。",
+      "compatibility_assurance": "历史常识与书法鉴赏题目无损保留。"
+    },
+    {
+      "legacy_code": "chinese.base.expression",
+      "legacy_name": "情境表达与综合性学习",
+      "legacy_parent_code": "chinese.base",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.base.contextual_expression"
+      ],
+      "mapping_reason": "情境表达、活动方案、宣传标语与口语交际核心考查点完全一致。",
+      "compatibility_assurance": "历史综合性学习题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.poetry_classical",
+      "legacy_name": "古诗文阅读",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.classical_literature"
+      ],
+      "mapping_reason": "一级分类承载古诗文阅读大类，对应新体系古诗文阅读领域。",
+      "compatibility_assurance": "历史答题统计数据保持不变。"
+    },
+    {
+      "legacy_code": "chinese.poetry.dictation",
+      "legacy_name": "古诗文名句理解性默写",
+      "legacy_parent_code": "chinese.poetry_classical",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.poetry.dictation"
+      ],
+      "mapping_reason": "中考古诗文理解性默写考查核心完全一致。",
+      "compatibility_assurance": "历史默写题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.poetry.appreciation",
+      "legacy_name": "古代诗歌意象鉴赏与情感感悟",
+      "legacy_parent_code": "chinese.poetry_classical",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.poetry.appreciation"
+      ],
+      "mapping_reason": "古诗意象意境、表现手法与主旨情感鉴赏考查核心完全一致。",
+      "compatibility_assurance": "历史诗歌赏析题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.prose.classical",
+      "legacy_name": "文言文实词、断句与对比理解",
+      "legacy_parent_code": "chinese.poetry_classical",
+      "action": "split",
+      "target_candidate_codes": [
+        "chinese_cand.prose.classical_vocab",
+        "chinese_cand.prose.classical_syntax_trans",
+        "chinese_cand.prose.classical_comprehension"
+      ],
+      "mapping_reason": "原旧节点将实词、断句翻译与内容理解对比混杂，新体系将其精细化拆解为字词、句法翻译与对比探究三项，极大提升弱项诊断颗粒度。",
+      "compatibility_assurance": "历史文言文试题引用保持只读兼容。"
+    },
+    {
+      "legacy_code": "chinese.reading",
+      "legacy_name": "现代文与整本书阅读",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.modern_reading"
+      ],
+      "mapping_reason": "一级分类承载现代文多文本阅读与整本书阅读大类，概念完全一致。",
+      "compatibility_assurance": "历史答题统计数据保持不变。"
+    },
+    {
+      "legacy_code": "chinese.classic.reading",
+      "legacy_name": "名著阅读人物与主题探究",
+      "legacy_parent_code": "chinese.reading",
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.reading.classic_whole_book"
+      ],
+      "mapping_reason": "必读名著情节梳理、人物分析与主题探究考查完全一致。",
+      "compatibility_assurance": "历史名著阅读题目关联无缝保留。"
+    },
+    {
+      "legacy_code": "chinese.reading.narrative",
+      "legacy_name": "记叙文语言品味与主旨理解",
+      "legacy_parent_code": "chinese.reading",
+      "action": "split",
+      "target_candidate_codes": [
+        "chinese_cand.reading.narrative_plot_character",
+        "chinese_cand.reading.narrative_language_theme"
+      ],
+      "mapping_reason": "新体系将情节脉络人物塑造与语句赏析主旨感悟精细划分，支持记叙文分类诊断。",
+      "compatibility_assurance": "历史记叙文题目保持只读兼容。"
+    },
+    {
+      "legacy_code": "chinese.reading.informative",
+      "legacy_name": "说明文与非连续性文本信息提取",
+      "legacy_parent_code": "chinese.reading",
+      "action": "split",
+      "target_candidate_codes": [
+        "chinese_cand.reading.informative_skills",
+        "chinese_cand.reading.multimodal_non_continuous"
+      ],
+      "mapping_reason": "新体系将传统科技说明文与现代多模态非连续性图表文本分立，契合北京新中考命题方向。",
+      "compatibility_assurance": "历史题目保持只读兼容。"
+    },
+    {
+      "legacy_code": "chinese.reading.argumentative",
+      "legacy_name": "议论文论点论据论证分析",
+      "legacy_parent_code": "chinese.reading",
+      "action": "split",
+      "target_candidate_codes": [
+        "chinese_cand.reading.argument_claims_evidence",
+        "chinese_cand.reading.argument_methods_structure"
+      ],
+      "mapping_reason": "新体系细分论点论据提炼与论证方法思路分析，利于议论文专项攻关。",
+      "compatibility_assurance": "历史议论文题目保持只读兼容。"
+    },
+    {
+      "legacy_code": "chinese.writing.composition",
+      "legacy_name": "写作表达与立意构思",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "chinese_cand.writing.composition_narrative"
+      ],
+      "mapping_reason": "中考记叙文大作文审题立意构思与细节描摹，考查核心完全对应。",
+      "compatibility_assurance": "历史答题记录保持不变。"
+    }
+  ],
+  "summary": {
+    "total_legacy_nodes": 18,
+    "retained_count": 14,
+    "renamed_count": 0,
+    "split_count": 4,
+    "merged_count": 0,
+    "new_count": 0,
+    "deprecated_count": 0,
+    "pending_human_review_count": 0
+  }
+}

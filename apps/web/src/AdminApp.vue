@@ -7,6 +7,7 @@ import Gate from './components/Gate.vue'
 import AdminView from './views/AdminView.vue'
 import PoolHealthCard from './components/PoolHealthCard.vue'
 import SchoolExamCard from './components/admin/SchoolExamCard.vue'
+import KnowledgeReviewCard from './components/admin/KnowledgeReviewCard.vue'
 import Note from './components/Note.vue'
 
 // P0-1 安全整改：管理端令牌仅当前页面内存保存，不再写入 localStorage，杜绝同源本地持久化串用风险
@@ -50,10 +51,12 @@ watch(
 )
 
 onMounted(() => {
-  // 清理废弃旧键与历史可能残留的管理端本地存储，确保仅当前会话内存持有
+  // 清理废弃旧键与历史可能残留的管理端本地存储，确保仅当前会话内存持有，不发生任何凭据持久化
   try {
     localStorage.removeItem('shutong.token')
     localStorage.removeItem('shutong.admin_token')
+    sessionStorage.removeItem('shutong.dev_token_admin')
+    sessionStorage.removeItem('shutong.dev_logout_admin')
   } catch {
     // 忽略受沙箱环境限制的异常
   }
@@ -62,7 +65,7 @@ onMounted(() => {
 async function enter(nextToken: string, _remember?: boolean) {
   const candidate = createClient(nextToken, 'admin')
   await candidate.verify()
-  // 严格仅保留在当前页面响应式内存中，不写入 localStorage
+  // 严格仅保留在当前页面响应式内存中，不写入 localStorage 与 sessionStorage
   token.value = nextToken
   notify('已进入综合管理工作台（管理凭据仅内存保存）。', 'success')
 }
@@ -70,6 +73,8 @@ async function enter(nextToken: string, _remember?: boolean) {
 function signOut() {
   try {
     localStorage.removeItem('shutong.admin_token')
+    sessionStorage.removeItem('shutong.dev_token_admin')
+    sessionStorage.removeItem('shutong.dev_logout_admin')
   } catch {
     // 忽略异常
   }
@@ -161,11 +166,26 @@ function signOut() {
           </Note>
         </div>
       </div>
+
+      <div v-else-if="view === 'knowledge'" class="admin-knowledge-full">
+        <KnowledgeReviewCard
+          :client="client"
+          :subject="subject"
+          :notify="notify"
+        />
+      </div>
     </main>
 
-    <Gate v-else :on-enter="enter" :allow-remember="false" />
+    <Gate v-else :on-enter="enter" :allow-remember="false" role="admin" />
 
     <footer>开发管理版 · 演示数据均为虚构测试数据 · 仅供管理与审核使用</footer>
     <Notice :notice="notice" @close="clearNotice" />
   </div>
 </template>
+
+<style scoped>
+.admin-knowledge-full {
+  width: 100%;
+  max-width: 100%;
+}
+</style>

@@ -1,0 +1,20 @@
+{
+  "clause_id": "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c01",
+  "source_id": "MOE-2022-MATH-ERRATA-20220509",
+  "subject": "math",
+  "stage": "stage4",
+  "domain": "num_alg",
+  "part_title": "四、课程内容（初中部分）",
+  "domain_title": "(一) 数与代数",
+  "theme_title": "1. 数与式",
+  "sub_theme": "(1) 有理数",
+  "section_type": "content_requirement",
+  "clause_number": "①",
+  "pdf_page": 61,
+  "print_page": 54,
+  "raw_text": "理解负数的意义（例64）；理解有理数的意义，能用数轴上的点表示有理数，能比较有理数的大小。",
+  "is_elective": false,
+  "derived_requirement": "理解负数与有理数概念，掌握数轴表示法，掌握有理数大小比较方法",
+  "review_status": "pending",
+  "legacy_mappings": ["math.num.real"]
+}
