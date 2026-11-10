@@ -220,10 +220,29 @@ class KnowledgeNodeVersion(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     node_id: Mapped[str] = mapped_column(ForeignKey("knowledge_nodes.id"), index=True)
     version: Mapped[int] = mapped_column(Integer)
+    parent_node_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_nodes.id"), nullable=True)  # 版本快照历史父节点ID
+    parent_code: Mapped[str | None] = mapped_column(String(80), nullable=True)  # 版本快照历史父节点编码
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     origin: Mapped[str] = mapped_column(String(20), default="manual")  # manual/ai_suggested
     review_status: Mapped[str] = mapped_column(String(20), default="pending")
+    source_clause_ids: Mapped[list | None] = mapped_column(JSON)  # 课标溯源条款ID列表
+    reviewer_id: Mapped[str | None] = mapped_column(String(40))  # 真实人工审核者ID
+    review_opinion: Mapped[str | None] = mapped_column(Text)  # 审核意见与依据
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 审核时间
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class KnowledgeTaxonomyRelease(Base):
+    """知识库版本发布快照：记录不可变发布全貌，未审核完成前禁止发布。"""
+    __tablename__ = "knowledge_taxonomy_releases"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    subject: Mapped[str] = mapped_column(String(20))
+    release_version: Mapped[str] = mapped_column(String(40), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft/published/archived
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    published_by: Mapped[str | None] = mapped_column(String(40))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class QuestionKnowledgeLink(Base):

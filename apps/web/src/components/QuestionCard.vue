@@ -14,7 +14,6 @@ import { KindBadge } from './Badges'
 import AudioPlayer from './AudioPlayer.vue'
 import Note from './Note.vue'
 import { RichText } from '../rich'
-import { getKnowledgeLabel } from '../config/knowledge'
 
 type Phase = 'answering' | 'sending' | 'answered'
 
@@ -128,7 +127,7 @@ const resultTone = computed(() =>
   <section class="card question-card" aria-label="题目">
     <div class="question-head">
       <span class="eyebrow">
-        {{ badge }} · {{ item.knowledge_ids.map(getKnowledgeLabel).join(' / ') }}
+        {{ badge }}
       </span>
       <KindBadge :kind="item.kind" />
     </div>

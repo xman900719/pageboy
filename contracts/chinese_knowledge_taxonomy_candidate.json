@@ -1,0 +1,483 @@
+[
+  {
+    "code": "chinese_cand.base_accumulation",
+    "name": "语言文字积累与基础运用",
+    "domain": "lang_usage",
+    "parent_code": null,
+    "level": 1,
+    "description": "字音字形、词语成语、语法修辞与病句标点、文化常识与书法鉴赏、情境综合表达。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:goals:character_accumulation:c00a",
+      "cs:chinese:2022:s4:lang_usage:goals:handwriting_norm:c00b",
+      "cs:chinese:2022:s4:lang_usage:content_req:phonetics:c01",
+      "cs:chinese:2022:s4:lang_usage:content_req:character:c02",
+      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03",
+      "cs:chinese:2022:s4:lang_usage:content_req:syntax:c04",
+      "cs:chinese:2022:s4:lang_usage:content_req:punctuation:c05",
+      "cs:chinese:2022:s4:lang_usage:content_req:culture:c06",
+      "cs:chinese:2022:s4:lang_usage:content_req:expression:c07",
+      "cs:chinese:2022:s4:lang_usage:academic_req:chinese_eval:c31"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标基础型任务群归集，待审核",
+    "legacy_mappings": [
+      "chinese.base",
+      "chinese.base.phonetics",
+      "chinese.base.character",
+      "chinese.base.idiom",
+      "chinese.base.grammar",
+      "chinese.base.punctuation",
+      "chinese.base.literature",
+      "chinese.base.calligraphy",
+      "chinese.base.comprehensive"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.phonetics",
+    "name": "字音辨析与拼读规范",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "常见多音字、多音多义字、易读错字、形声字易错读音辨析及汉语拼音正确拼写。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:content_req:phonetics:c01",
+      "cs:chinese:2022:s4:lang_usage:academic_req:chinese_eval:c31"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应字音认读条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.phonetics"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.character_orthography",
+    "name": "汉字字形与错别字纠正",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "音近致错、形近致错、义混致错等常见错别字识别纠正及汉字规范书写。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:goals:character_accumulation:c00a",
+      "cs:chinese:2022:s4:lang_usage:goals:handwriting_norm:c00b",
+      "cs:chinese:2022:s4:lang_usage:content_req:character:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应字形规范书写条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.character"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.idiom_vocabulary",
+    "name": "词语与成语语境运用",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "初中常用词语与成语含义理解、感情色彩褒贬辨析、适用对象及语境搭配正误判断。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应成语词语积累运用条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.idiom"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.syntax_revision",
+    "name": "语法修辞与病句辨析修改",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "搭配不当、成分残缺赘余、语序不当、句式杂糅、不合逻辑等六大病句辨析与规范修改。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:content_req:syntax:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应语法修辞与病句修改条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.grammar"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.punctuation",
+    "name": "标点符号规范运用与纠错",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "顿号、逗号、分号、冒号、引号、问号、书名号等在复合语境中的规范用法与正误辨析。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:content_req:punctuation:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应标点符号规范运用条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.punctuation"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.culture_calligraphy",
+    "name": "文学文化常识与书法鉴赏",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "中国传统节气民俗、古代称谓、文学流派与楷书、行书等名家书法字体源流审美鉴赏。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:goals:handwriting_norm:c00b",
+      "cs:chinese:2022:s4:lang_usage:content_req:culture:c06"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文化常识与名家书法鉴赏条文，待审核",
+    "legacy_mappings": [
+      "chinese.base.literature",
+      "chinese.base.calligraphy"
+    ]
+  },
+  {
+    "code": "chinese_cand.base.contextual_expression",
+    "name": "情境表达与综合性学习",
+    "domain": "lang_usage",
+    "parent_code": "chinese_cand.base_accumulation",
+    "level": 2,
+    "description": "图表转写、标语撰写、通知邀请函拟写、活动方案策划及得体口语交际应对。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:lang_usage:content_req:expression:c07",
+      "cs:chinese:2022:s4:comp_prac:content_req:interdisciplinary_science:c22",
+      "cs:chinese:2022:s4:comp_prac:content_req:interdisciplinary_health:c23",
+      "cs:chinese:2022:s4:comp_prac:content_req:interdisciplinary_social:c24",
+      "cs:chinese:2022:s4:comp_prac:content_req:interdisciplinary_virtue:c25",
+      "cs:chinese:2022:s4:comp_prac:content_req:interdisciplinary_culture_club:c26"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应情境表达与跨学科综合性学习，待审核",
+    "legacy_mappings": [
+      "chinese.base.comprehensive"
+    ]
+  },
+  {
+    "code": "chinese_cand.classical_literature",
+    "name": "古诗文阅读与传统文化",
+    "domain": "reading",
+    "parent_code": null,
+    "level": 1,
+    "description": "古代诗词默写鉴赏、文言实词虚词、断句翻译与内容主旨对比探究。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:poetry_appreciation:c15",
+      "cs:chinese:2022:s4:reading:content_req:poetry_dictation:c27",
+      "cs:chinese:2022:s4:reading:content_req:classical_vocab:c28",
+      "cs:chinese:2022:s4:reading:content_req:classical_sentence:c29",
+      "cs:chinese:2022:s4:reading:content_req:classical_comp:c30"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标古诗文阅读要求归集，待审核",
+    "legacy_mappings": [
+      "chinese.ancient",
+      "chinese.ancient.poetry_recite",
+      "chinese.ancient.poetry_appreciate",
+      "chinese.ancient.prose_word",
+      "chinese.ancient.prose_sentence",
+      "chinese.ancient.prose_content"
+    ]
+  },
+  {
+    "code": "chinese_cand.poetry.dictation",
+    "name": "古诗文名句理解性默写",
+    "domain": "reading",
+    "parent_code": "chinese_cand.classical_literature",
+    "level": 2,
+    "description": "中考统编初中61篇必背古诗文名篇名句识记、语境理解性填空与关键字词准确书写。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:poetry_dictation:c27"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应初中必背诗文背诵默写要求，待审核",
+    "legacy_mappings": [
+      "chinese.ancient.poetry_recite"
+    ]
+  },
+  {
+    "code": "chinese_cand.poetry.appreciation",
+    "name": "古代诗词意象意境与手法鉴赏",
+    "domain": "reading",
+    "parent_code": "chinese_cand.classical_literature",
+    "level": 2,
+    "description": "古代诗词经典意象意境把握、炼字炼句品析、表现手法（虚实结合、动静结合）与情感主旨领悟。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:poetry_appreciation:c15"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应古代诗词意境艺术手法鉴赏，待审核",
+    "legacy_mappings": [
+      "chinese.ancient.poetry_appreciate"
+    ]
+  },
+  {
+    "code": "chinese_cand.prose.classical_vocab",
+    "name": "文言实词通假活用与虚词理解",
+    "domain": "reading",
+    "parent_code": "chinese_cand.classical_literature",
+    "level": 2,
+    "description": "文言实词一词多义、词类活用、通假字、古今异义辨析及之其而以于等高频文言虚词在语境中的含义。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:classical_vocab:c28"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文言实词虚词理解要求，待审核",
+    "legacy_mappings": [
+      "chinese.ancient.prose_word"
+    ]
+  },
+  {
+    "code": "chinese_cand.prose.classical_syntax_trans",
+    "name": "文言断句停顿与重点句子翻译",
+    "domain": "reading",
+    "parent_code": "chinese_cand.classical_literature",
+    "level": 2,
+    "description": "文言句子节奏停顿与句读断句、判断句倒装句被动句等特殊句式把握与重点文言语句规范直译。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:classical_sentence:c29"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文言断句与翻译要求，待审核",
+    "legacy_mappings": [
+      "chinese.ancient.prose_sentence"
+    ]
+  },
+  {
+    "code": "chinese_cand.prose.classical_comprehension",
+    "name": "文言文内容理解与主旨对比探究",
+    "domain": "reading",
+    "parent_code": "chinese_cand.classical_literature",
+    "level": 2,
+    "description": "文言文文本事实信息提取归纳、人物品行性格评析、主旨观点阐述及课内与课外联读对比分析。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:classical_comp:c30"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文言文主旨理解与对比探究，待审核",
+    "legacy_mappings": [
+      "chinese.ancient.prose_content"
+    ]
+  },
+  {
+    "code": "chinese_cand.modern_reading",
+    "name": "现代文多文本阅读与整本书阅读",
+    "domain": "reading",
+    "parent_code": null,
+    "level": 1,
+    "description": "说明文实用文、多材料非连续性文本、记叙文散文小说文学作品、议论文思辨性文本与名著整本书探究。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:informative:c08",
+      "cs:chinese:2022:s4:reading:content_req:explain_methods:c09",
+      "cs:chinese:2022:s4:reading:content_req:non_continuous:c10",
+      "cs:chinese:2022:s4:reading:content_req:narrative_plot:c11",
+      "cs:chinese:2022:s4:reading:content_req:character_profile:c12",
+      "cs:chinese:2022:s4:reading:content_req:language_taste:c13",
+      "cs:chinese:2022:s4:reading:content_req:theme_sentiment:c14",
+      "cs:chinese:2022:s4:reading:content_req:argument_claim:c17",
+      "cs:chinese:2022:s4:reading:content_req:argument_evidence:c18",
+      "cs:chinese:2022:s4:reading:content_req:argument_methods:c19",
+      "cs:chinese:2022:s4:reading:content_req:whole_book_reading:c21"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标现代文多文体阅读与整本书阅读归集，待审核",
+    "legacy_mappings": [
+      "chinese.reading",
+      "chinese.reading.practical",
+      "chinese.reading.non_continuous",
+      "chinese.reading.literary",
+      "chinese.reading.argumentative"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.informative_skills",
+    "name": "说明性文本信息筛选与说明方法品析",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "说明对象及其特征概括、事实信息要点提炼、列数字作比较打比方等说明方法作用分析与语言准确性品析。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:informative:c08",
+      "cs:chinese:2022:s4:reading:content_req:explain_methods:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应说明性文本信息筛选与说明方法品析，待审核",
+    "legacy_mappings": [
+      "chinese.reading.practical"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.multimodal_non_continuous",
+    "name": "多材料非连续性文本信息图表综合分析",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "跨文本、图表、调查问卷等多模态材料信息提取、图文转换、异同对比归纳与结论合理推断。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:non_continuous:c10"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应多模态非连续性文本综合分析，待审核",
+    "legacy_mappings": [
+      "chinese.reading.non_continuous"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.narrative_plot_character",
+    "name": "记叙文散文小说情节脉络与人物形象",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "记叙文、散文、小说情节起伏脉络梳理、行文线索把握及多维度人物性格品质肖像心理描写分析。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:narrative_plot:c11",
+      "cs:chinese:2022:s4:reading:content_req:character_profile:c12"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文学作品情节脉络与人物塑造，待审核",
+    "legacy_mappings": [
+      "chinese.reading.literary"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.narrative_language_theme",
+    "name": "记叙文语言修辞品味与文章主旨感悟",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "记叙文精彩语句词语含义与修辞赏析、环境描写与表现手法作用及作品中心主旨与情感感悟领会。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:language_taste:c13",
+      "cs:chinese:2022:s4:reading:content_req:theme_sentiment:c14"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应文学语言品味与主旨领悟，待审核",
+    "legacy_mappings": [
+      "chinese.reading.literary"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.argument_claims_evidence",
+    "name": "议论文中心论点提炼与论据分析",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "议论文论题与中心论点提取判断、分论点梳理、事实论据与道理论据辨析及其与论点的证明关系、补充论据。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:argument_claim:c17",
+      "cs:chinese:2022:s4:reading:content_req:argument_evidence:c18"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应议论文论点论据要求，待审核",
+    "legacy_mappings": [
+      "chinese.reading.argumentative"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.argument_methods_structure",
+    "name": "议论文论证方法与行文思路结构",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "举例、道理、对比、比喻四大论证方法作用分析及全文或段落引论本论结论思路逻辑剖析。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:argument_methods:c19"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应议论文论证方法与论证结构，待审核",
+    "legacy_mappings": [
+      "chinese.reading.argumentative"
+    ]
+  },
+  {
+    "code": "chinese_cand.reading.classic_whole_book",
+    "name": "必读名著情节人物专题探究与读书心得",
+    "domain": "reading",
+    "parent_code": "chinese_cand.modern_reading",
+    "level": 2,
+    "description": "统编初中必读名著关键情节脉络、核心人物命运性格对比分析、主题思想探究及读书心得笔记。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:reading:content_req:whole_book_reading:c21"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应整本书阅读任务群核心要求，待审核",
+    "legacy_mappings": [
+      "chinese.reading.literary"
+    ]
+  },
+  {
+    "code": "chinese_cand.composition_expression",
+    "name": "表达交流与写作素养",
+    "domain": "writing",
+    "parent_code": null,
+    "level": 1,
+    "description": "记叙文大作文审题立意构思、细节描摹创意表达与思辨性微写作简评论述。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:writing:content_req:creative_writing:c16",
+      "cs:chinese:2022:s4:writing:content_req:critical_writing:c20"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "依据课标写作表达与微写作归集，待审核",
+    "legacy_mappings": [
+      "chinese.writing.composition",
+      "chinese.reading.argumentative"
+    ]
+  },
+  {
+    "code": "chinese_cand.writing.composition_narrative",
+    "name": "记叙文大作文立意选材构思与细节描摹",
+    "domain": "writing",
+    "parent_code": "chinese_cand.composition_expression",
+    "level": 2,
+    "description": "中考记叙文审题立意、典型选材、巧妙详略剪裁、生动人物景物细节描摹与真情实感规范表达。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:writing:content_req:creative_writing:c16"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应记叙文大作文写作要求，待审核",
+    "legacy_mappings": [
+      "chinese.writing.composition"
+    ]
+  },
+  {
+    "code": "chinese_cand.writing.critical_micro_writing",
+    "name": "思辨性微写作观点论述与评论",
+    "domain": "writing",
+    "parent_code": "chinese_cand.composition_expression",
+    "level": 2,
+    "description": "中考微写作针对社会现象、材料话题发表明确观点，摆事实讲道理，150字逻辑严密精炼论述。",
+    "source_clause_ids": [
+      "cs:chinese:2022:s4:writing:content_req:critical_writing:c20"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应中考微写作思辨性论述要求，待审核",
+    "legacy_mappings": [
+      "chinese.reading.argumentative"
+    ]
+  }
+]

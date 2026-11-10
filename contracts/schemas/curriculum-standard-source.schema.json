@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/shutong/curriculum-standard-source.schema.json",
+  "title": "CurriculumStandardSource",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "subject",
+    "standard_name",
+    "doc_number",
+    "publisher",
+    "issued_date",
+    "published_date",
+    "official_effective_text",
+    "technical_effective_date",
+    "effective_date_note",
+    "effective_date",
+    "version_tag",
+    "is_errata_revision",
+    "source_url",
+    "portal_url",
+    "file_sha256",
+    "byte_size",
+    "page_count",
+    "stage_scope",
+    "beijing_applicability"
+  ],
+  "properties": {
+    "source_id": {
+      "type": "string",
+      "pattern": "^MOE-[0-9]{4}-[A-Z0-9_-]+$",
+      "description": "官方来源唯一代号，如 MOE-2022-MATH-ERRATA-20220509"
+    },
+    "subject": {
+      "enum": ["chinese", "math", "english", "physics"],
+      "description": "适用学科代码"
+    },
+    "standard_name": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 200,
+      "description": "国家课程标准正式文件全称"
+    },
+    "doc_number": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 50,
+      "description": "印发文号，如 教材〔2022〕2号"
+    },
+    "publisher": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 100,
+      "description": "官方印发机构，如 中华人民共和国教育部"
+    },
+    "issued_date": {
+      "type": "string",
+      "format": "date",
+      "description": "官方印发日期，如 2022-03-25"
+    },
+    "published_date": {
+      "type": "string",
+      "format": "date",
+      "description": "公开上网公布日期，如 2022-04-21"
+    },
+    "official_effective_text": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 100,
+      "description": "官方通知明确载明的施行要求，如'2022年秋季学期开始执行'"
+    },
+    "technical_effective_date": {
+      "type": "string",
+      "format": "date",
+      "description": "系统检索与版本排序的技术约定基准日期，如 2022-09-01"
+    },
+    "effective_date_note": {
+      "type": "string",
+      "minLength": 10,
+      "description": "技术约定日期说明，明确区分官方学期规定与技术推算基准日，避免误作官方明确生效日期"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date",
+      "description": "施行生效技术约定基准日（兼容字段，等同于 technical_effective_date）"
+    },
+    "version_tag": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 50,
+      "description": "版本标签，如 2022年5月9日修正版"
+    },
+    "is_errata_revision": {
+      "type": "boolean",
+      "description": "是否为官方勘误定稿/以此为准修正版"
+    },
+    "errata_note": {
+      "type": ["string", "null"],
+      "description": "勘误或修正说明"
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "官方附件直链下载地址"
+    },
+    "portal_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "官方通知主页地址"
+    },
+    "file_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "官方原始附件 SHA256 校验和"
+    },
+    "byte_size": {
+      "type": "integer",
+      "minimum": 1000,
+      "description": "官方原始附件字节数"
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "PDF 物理总页数"
+    },
+    "stage_scope": {
+      "type": "array",
+      "items": {
+        "enum": ["stage1", "stage2", "stage3", "stage4"]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "涵盖学段列表，stage4 代表 7~9 年级初中阶段"
+    },
+    "beijing_applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_doc_name",
+        "policy_doc_number",
+        "applicable_exam_years",
+        "subject_total_points",
+        "exam_mode",
+        "applies_2022_curriculum_standard",
+        "status"
+      ],
+      "properties": {
+        "policy_doc_name": {
+          "type": "string",
+          "description": "北京市深化中考改革方案文件名称"
+        },
+        "policy_doc_number": {
+          "type": "string",
+          "description": "北京市文件文号"
+        },
+        "applicable_exam_years": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 2022, "maximum": 2035},
+          "minItems": 1,
+          "description": "适用初中学业水平考试届别年度"
+        },
+        "subject_total_points": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 150,
+          "description": "中考计入总分满分分值"
+        },
+        "exam_mode": {
+          "type": "string",
+          "description": "考试形式说明（如闭卷笔试、开卷、实验操作、机考等）"
+        },
+        "applies_2022_curriculum_standard": {
+          "type": "boolean",
+          "description": "命题是否严格依据 2022 年版课程标准"
+        },
+        "status": {
+          "enum": ["confirmed", "pending_review"],
+          "description": "政策核验状态"
+        }
+      }
+    }
+  }
+}

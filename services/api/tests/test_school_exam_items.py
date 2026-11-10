@@ -24,51 +24,51 @@ def confirm_item(client, auth, exam_id, item_id, earned_points, confirmed_by_hum
                        json={"confirmed_by_human": confirmed_by_human, "earned_points": earned_points}, headers=auth)
 
 
-def profile_knowledge(client, auth, subject="math"):
-    response = client.get(f"/api/guidance/profile?subject={subject}", headers=auth)
+def profile_knowledge(client, student_auth, subject="math"):
+    response = client.get(f"/api/guidance/profile?subject={subject}", headers=student_auth)
     assert response.status_code == 200
     return response.json()["knowledge"]
 
 
-def knowledge_entry(knowledge_id, entries):
-    return next((e for e in entries if e["knowledge_id"] == knowledge_id), None)
+def knowledge_entry(topic, entries):
+    return next((e for e in entries if e["topic"] == topic), None)
 
 
-def test_totals_never_create_knowledge_evidence(client, auth):
+def test_totals_never_create_knowledge_evidence(client, auth, student_auth):
     # AC-EVI-01 回归：仅录入总分（即使人工确认）也绝不产生考点证据。
     created = client.post("/api/school-exams", json={
         "subject": "math", "title": "虚构测试数据：周测", "exam_date": "2026-10-20",
         "earned_points": 72, "max_points": 100, "confirmed_by_user": True}, headers=auth)
     assert created.status_code == 201
     assert created.json()["knowledge_evidence_created"] is False
-    assert profile_knowledge(client, auth) == []
+    assert profile_knowledge(client, student_auth) == []
 
 
-def test_confirmed_items_create_evidence_not_totals(client, auth, published):
+def test_confirmed_items_create_evidence_not_totals(client, auth, student_auth, published):
     exam_id = make_exam(client, auth)
     posted = post_items(client, auth, exam_id, [item("第5题")])
     assert posted.status_code == 201
     body = posted.json()
     assert body["items"][0]["confirmed_by_user"] is True  # manual_entry 人工录入即人工确认
     assert body["evidence_created"] == 1
-    knowledge = profile_knowledge(client, auth)
+    knowledge = profile_knowledge(client, student_auth)
     assert len(knowledge) == 1
-    assert knowledge[0]["knowledge_id"] == "math.arithmetic"
+    assert knowledge[0]["topic"] == "基础算术运算"
     assert knowledge[0]["sample_size"] == 1
     assert knowledge[0]["observed_rate"] == 1.0  # 证据来自该题 2/2，与总分 72/100 无关（INV-05）
     # 规划消费同一证据装配：1 条样本必然显示“证据不足”，补足 3 条确认 item 后才能观察到规划变化。
     goal = client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100,
-                                           "minutes_per_day": 15}, headers=auth)
+                                           "minutes_per_day": 15}, headers=student_auth)
     assert goal.status_code == 201
     more = post_items(client, auth, exam_id, [item("第6题"), item("第7题")])
     assert more.status_code == 201 and more.json()["evidence_created"] == 2
-    assert profile_knowledge(client, auth)[0]["sample_size"] == 3
-    plan = client.get("/api/guidance/plan?subject=math", headers=auth).json()
-    step = next(s for s in plan["steps"] if s["knowledge_id"] == "math.arithmetic")
+    assert profile_knowledge(client, student_auth)[0]["sample_size"] == 3
+    plan = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
+    step = next(s for s in plan["steps"] if s["topic"] == "基础算术运算")
     assert step["gap_type"] == "NO_CONFIRMED_GAP"  # 若校卷 item 不进证据装配，将仍是 INSUFFICIENT_EVIDENCE
 
 
-def test_ocr_draft_items_do_not_create_evidence_until_confirmed(client, auth):
+def test_ocr_draft_items_do_not_create_evidence_until_confirmed(client, auth, student_auth):
     # AC-EVI-02：未经人工核对的 OCR 草稿不得进入确认得分，也不产生证据。
     exam_id = make_exam(client, auth)
     posted = post_items(client, auth, exam_id, [
@@ -79,7 +79,7 @@ def test_ocr_draft_items_do_not_create_evidence_until_confirmed(client, auth):
     body = posted.json()
     assert [i["confirmed_by_user"] for i in body["items"]] == [False, False]
     assert body["evidence_created"] == 0
-    assert knowledge_entry("math.geometry", profile_knowledge(client, auth)) is None
+    assert knowledge_entry("几何图形与推理证明", profile_knowledge(client, student_auth)) is None
     first_id, second_id = body["items"][0]["id"], body["items"][1]["id"]
     confirmed_first = confirm_item(client, auth, exam_id, first_id, earned_points=3.0)
     assert confirmed_first.status_code == 200
@@ -89,7 +89,7 @@ def test_ocr_draft_items_do_not_create_evidence_until_confirmed(client, auth):
     assert confirmed_second.status_code == 200
     assert confirmed_second.json()["confirmed_by_user"] is True
     assert confirmed_second.json()["scoring_origin"] == "ocr_draft"
-    geometry = knowledge_entry("math.geometry", profile_knowledge(client, auth))
+    geometry = knowledge_entry("几何图形与推理证明", profile_knowledge(client, student_auth))
     assert geometry is not None
     assert geometry["sample_size"] == 2
     assert geometry["observed_rate"] == 0.625  # (3+2)/(4+4)
@@ -175,26 +175,26 @@ def test_items_require_owner_and_auth(client, auth):
     assert body["items"][0]["confirmed_by_user"] is True
 
 
-def test_school_and_practice_evidence_merge(client, auth, published):
+def test_school_and_practice_evidence_merge(client, auth, student_auth, published):
     # 已确认校卷 item 与练习评测证据合并入画像且独立计数；校卷 item 不得泄入复测装配。
     for i in range(3):
-        served = client.get("/api/practice/next?subject=math&purpose=evaluation", headers=auth)
+        served = client.get("/api/practice/next?subject=math&purpose=evaluation", headers=student_auth)
         assert served.status_code == 200
         recorded = client.post("/api/practice/attempts",
                                json={"client_attempt_id": f"mix-{i}", "exposure_id": served.json()["exposure_id"],
-                                     "answer": "B"}, headers=auth)
+                                     "answer": "B"}, headers=student_auth)
         assert recorded.status_code == 201
     exam_id = make_exam(client, auth)
     posted = post_items(client, auth, exam_id, [item("第1题")])
     assert posted.status_code == 201 and posted.json()["evidence_created"] == 1
-    arithmetic = knowledge_entry("math.arithmetic", profile_knowledge(client, auth))
+    arithmetic = knowledge_entry("基础算术运算", profile_knowledge(client, student_auth))
     assert arithmetic is not None
     assert arithmetic["sample_size"] == 4  # 3 练习评测 + 1 校卷 item，合成键保证按 item 独立计数
     assert arithmetic["observed_rate"] == 1.0
-    report = client.get("/api/guidance/validation?subject=math", headers=auth).json()
+    report = client.get("/api/guidance/validation?subject=math", headers=student_auth).json()
     assert report["verdict"] == "CANNOT_COMPARE"
     assert len(report["knowledge"]) == 1
     only = report["knowledge"][0]
-    assert only["knowledge_id"] == "math.arithmetic"
+    assert only["topic"] == "基础算术运算"
     assert only["verdict"] == "cannot_compare" and only["reason"] == "insufficient_retest"
     assert only["baseline_items"] == 3 and only["retest_items"] == 0  # 若校卷 item 泄入，retest_items 会是 1

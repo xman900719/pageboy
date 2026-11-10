@@ -39,7 +39,7 @@ def review_source(client, auth, source):
     })
 
 
-def test_audio_upload_parse_confirm_import_publish_serve(client, auth, private_dir):
+def test_audio_upload_parse_confirm_import_publish_serve(client, auth, student_auth, private_dir):
     source = make_source(client, auth, 'english', '虚构测试数据：英语听力题源')
     audio = synthetic_mp3()
     attached = upload_audio(client, auth, source, data=audio)
@@ -73,7 +73,7 @@ def test_audio_upload_parse_confirm_import_publish_serve(client, auth, private_d
     assert client.post(f'/api/admin/questions/{version_id}/review', headers=auth).status_code == 200
     assert client.post(f'/api/admin/questions/{version_id}/publish', headers=auth).status_code == 200
 
-    item = client.get('/api/practice/next?subject=english', headers=auth).json()
+    item = client.get('/api/practice/next?subject=english', headers=student_auth).json()
     assert item['question_version_id'] == version_id
     assert item['media_attachment_id'] == attachment_id
 

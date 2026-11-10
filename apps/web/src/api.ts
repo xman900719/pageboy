@@ -26,7 +26,6 @@ export interface NextItem {
   options: string[]
   max_points: number
   subject: Subject
-  knowledge_ids: string[]
 }
 
 export interface AttemptResult {
@@ -52,10 +51,11 @@ export interface SelfAssessmentResult {
 }
 
 export interface PlanStep {
-  knowledge_id: string
+  topic: string
   gap_type: GapType
   action: string
   reason: string
+  advice?: string
   priority: number
   observed_rate?: number
 }
@@ -72,16 +72,19 @@ export interface Plan {
 }
 
 export interface ProfileEntry {
-  knowledge_id: string
+  topic: string
+  status?: string
   sample_size: number
-  observed_rate: number
-  evidence_status: string
+  observed_rate?: number
+  score_rate?: number
+  evidence_status?: string
+  advice?: string
 }
 
 export type ValidationVerdict = 'CANNOT_COMPARE' | 'IMPROVED_ON_COMPARABLE_SCOPE' | 'NO_OBSERVED_IMPROVEMENT'
 
 export interface KnowledgeComparison {
-  knowledge_id: string
+  topic: string
   verdict: 'improved' | 'no_improvement' | 'cannot_compare'
   baseline_rate?: number
   retest_rate?: number
@@ -274,9 +277,102 @@ export interface Client {
   sourceQuestions(sourceId: string): Promise<QuestionVersion[]>
   reviewQuestion(versionId: string): Promise<unknown>
   publishQuestion(versionId: string): Promise<unknown>
+  /* 知识点审核台（ST-019-B）。 */
+  adminKnowledgeClauses(subject?: string, domain?: string): Promise<CurriculumClause[]>
+  adminKnowledgeCandidates(subject?: Subject): Promise<CandidateNode[]>
+  adminSeedCandidates(subject?: Subject): Promise<{ subject: Subject; seeded_count: number; total_nodes: number }>
+  adminKnowledgeLegacyMapping(subject?: Subject): Promise<LegacyMappingResult>
+  adminReviewNode(nodeId: string, review: { reviewer_id: string; review_status: 'approved' | 'rejected'; review_opinion: string }): Promise<unknown>
+  adminPublishRelease(release: { subject: Subject; release_version: string; published_by: string; summary?: string }): Promise<unknown>
+  adminKnowledgeReleases(subject?: Subject): Promise<TaxonomyRelease[]>
 }
 
-export function createClient(token: string): Client {
+export interface CurriculumClause {
+  clause_id: string
+  source_id: string
+  subject: string
+  stage: string
+  domain: string
+  part_title: string
+  domain_title: string
+  theme_title: string
+  sub_theme: string
+  section_type: string
+  clause_number: string
+  pdf_page: number
+  print_page: number
+  raw_text: string
+  standardized_text: string
+  collation_note: string
+  is_elective: boolean
+  derived_requirement: string
+  review_status: string
+  legacy_mappings: string[]
+}
+
+export interface CandidateNode {
+  id?: string
+  code: string
+  name: string
+  domain?: string
+  parent_code?: string | null
+  parent_id?: string | null
+  level?: number
+  version?: number
+  description?: string | null
+  origin?: string
+  review_status: string
+  source_clause_ids?: string[]
+  reviewer_id?: string | null
+  review_opinion?: string | null
+  reviewed_at?: string | null
+}
+
+export interface LegacyMappingRecord {
+  legacy_code: string
+  legacy_name: string
+  legacy_parent_code: string | null
+  action: 'retained' | 'renamed' | 'split' | 'merged' | 'new' | 'deprecated' | 'pending_human_review'
+  target_candidate_codes: string[]
+  mapping_reason: string
+  compatibility_assurance: string
+}
+
+export interface LegacyMappingResult {
+  legacy_mappings: LegacyMappingRecord[]
+  new_candidate_additions: {
+    candidate_code: string
+    candidate_name: string
+    domain: string
+    action: string
+    reason: string
+  }[]
+  summary: {
+    total_legacy_nodes?: number
+    total_legacy_math_nodes?: number
+    retained_count: number
+    renamed_count: number
+    split_count: number
+    merged_count: number
+    new_count: number
+    deprecated_count?: number
+    pending_human_review_count?: number
+  }
+}
+
+export interface TaxonomyRelease {
+  id: string
+  subject: Subject
+  release_version: string
+  status: string
+  published_by: string | null
+  published_at: string | null
+  summary: string | null
+  total_nodes: number
+  created_at: string
+}
+
+export function createClient(token: string, role: 'student' | 'admin' = 'student'): Client {
   // 统一请求与错误解析：detail 字符串原样保留（409 等业务码由 describeError 如实呈现）。
   const request = async (path: string, init: RequestInit = {}): Promise<unknown> => {
     const res = await fetch(path, {
@@ -306,7 +402,7 @@ export function createClient(token: string): Client {
     }) as Promise<T>
 
   return {
-    verify: () => call<unknown>('/api/subjects'),
+    verify: () => call<unknown>(role === 'admin' ? '/api/admin/verify' : '/api/student/verify'),
     nextItem: (subject, purpose, knowledgeId) =>
       call<NextItem>(`/api/practice/next?subject=${subject}&purpose=${purpose}${knowledgeId ? `&knowledge_id=${encodeURIComponent(knowledgeId)}` : ''}`),
     resume: subject => call<{ item: NextItem | null }>(`/api/practice/resume?subject=${subject}`),
@@ -362,6 +458,19 @@ export function createClient(token: string): Client {
     sourceQuestions: sourceId => call<QuestionVersion[]>(`/api/admin/sources/${encodeURIComponent(sourceId)}/questions`),
     reviewQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/review`, 'POST'),
     publishQuestion: versionId => call<unknown>(`/api/admin/questions/${encodeURIComponent(versionId)}/publish`, 'POST'),
+    adminKnowledgeClauses: (subject = 'math', domain) =>
+      call<CurriculumClause[]>(`/api/admin/knowledge/clauses?subject=${encodeURIComponent(subject)}${domain ? `&domain=${encodeURIComponent(domain)}` : ''}`),
+    adminKnowledgeCandidates: (subject = 'math') =>
+      call<CandidateNode[]>(`/api/admin/knowledge/candidates?subject=${encodeURIComponent(subject)}`),
+    adminSeedCandidates: (subject = 'math') =>
+      call<{ subject: Subject; seeded_count: number; revised_count?: number; total_nodes: number }>(`/api/admin/knowledge/candidates/seed?subject=${encodeURIComponent(subject)}`, 'POST'),
+    adminKnowledgeLegacyMapping: (subject = 'math') =>
+      call<LegacyMappingResult>(`/api/admin/knowledge/legacy-mapping?subject=${encodeURIComponent(subject)}`),
+    adminReviewNode: (nodeId, review) =>
+      call<unknown>(`/api/admin/knowledge/nodes/${encodeURIComponent(nodeId)}/review`, 'POST', review),
+    adminPublishRelease: release => call<unknown>('/api/admin/knowledge/releases', 'POST', release),
+    adminKnowledgeReleases: (subject = 'math') =>
+      call<TaxonomyRelease[]>(`/api/admin/knowledge/releases?subject=${encodeURIComponent(subject)}`),
   }
 }
 
@@ -392,6 +501,7 @@ const API_CODE_TEXT: Record<string, string> = {
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return '访问令牌无效或已过期，请重新输入。'
+    if (error.status === 403) return '凭据权限不足或使用了错误的角色凭据（如学生凭据访问管理端）。'
     return API_CODE_TEXT[error.code] ?? error.code
   }
   if (error instanceof TypeError) return '无法连接服务器，请检查网络连接后重试。'

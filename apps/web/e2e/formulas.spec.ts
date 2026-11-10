@@ -11,7 +11,8 @@
  *   - 文本段仍安全转义：选项里的 `<b>` 只作为字面文本出现，绝不生成 HTML 元素。 */
 import { test, expect, type Page } from '@playwright/test'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 const API = process.env.ST008_API_BASE ?? 'http://127.0.0.1:18765'
 
 const SOURCE_TITLE = '虚构测试数据：ST-013 公式渲染题源'
@@ -33,7 +34,7 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${ADMIN_TOKEN}`,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -46,14 +47,14 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
 async function seed(): Promise<void> {
   // 幂等：Playwright 在用例超时后会重启 worker 并重跑 beforeAll（2026-10-29 实证），
   // 按标题复用已存在的题源，避免重复种子把台账选择器挤成 strict 冲突。
-  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources')
+  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources?subject=physics')
   const reused = existing.find(item => item.source.title === SOURCE_TITLE)
   const source = reused
     ? reused.id
     : (
         await call<{ id: string }>('/api/admin/sources', 'POST', {
           title: SOURCE_TITLE,
-          subject: 'math',
+          subject: 'physics',
           rights_status: 'licensed',
           verified: true,
         })
@@ -104,14 +105,14 @@ test.beforeAll(async () => {
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
@@ -120,11 +121,12 @@ function questionCard(page: Page) {
   return page.getByRole('region', { name: '题目' })
 }
 
-async function openPracticeItem(page: Page, knowledgeId: string) {
+async function openPracticeItem(page: Page) {
   await enterSpace(page)
+  // 切换至物理科目（该科目专属于 ST-013 公式渲染题目，避免依赖学生端内部知识点参数筛选）
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '物理' }).click()
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
-  await practice.getByLabel('按知识点').selectOption(knowledgeId)
   await practice.getByRole('button', { name: '开始练习' }).click()
   const card = questionCard(page)
   await expect(card).toBeVisible()
@@ -134,7 +136,7 @@ async function openPracticeItem(page: Page, knowledgeId: string) {
 /* ---------- 客观题：题干 / 阅读材料 / 选项 ---------- */
 
 test('客观题：题干与材料公式渲染、选项公式与文本转义、KaTeX 交付判分', async ({ page }) => {
-  const card = await openPracticeItem(page, CHOICE_KID)
+  const card = await openPracticeItem(page)
 
   // 题干：display 公式渲染为 KaTeX（无错误），分隔符与 LaTeX 源不再作为字面文本出现。
   await expect(card.locator('p.stem .katex')).toHaveCount(1)
@@ -169,7 +171,7 @@ test('客观题：题干与材料公式渲染、选项公式与文本转义、Ka
 /* ---------- 主观题：参考答案 ---------- */
 
 test('主观题：参考答案公式渲染（自评链照常）', async ({ page }) => {
-  const card = await openPracticeItem(page, SUBJ_KID)
+  const card = await openPracticeItem(page)
   await expect(card).toContainText('主观题')
 
   await card.getByLabel('解答').fill('虚构测试数据：用配方法推导。')
@@ -187,12 +189,13 @@ test('主观题：参考答案公式渲染（自评链照常）', async ({ page 
 
 test('审核台：题目草稿列表的公式预览同样安全渲染', async ({ page }) => {
   await enterAdminSpace(page)
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '物理' }).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   await ledger.getByRole('button', { name: /ST-013 公式渲染题源/ }).click()
 
   const versions = page.getByRole('region', { name: '题目草稿与发布' })
-  const choiceRow = versions.locator('li.version-row', { hasText: '解方程' })
+  const choiceRow = versions.locator('li.version-row', { hasText: '解方程' }).first()
   await expect(choiceRow.locator('.version-stem .katex')).toHaveCount(1)
   await expect(choiceRow.locator('.version-stem .katex-error')).toHaveCount(0)
   await expect(choiceRow.locator('.version-stem')).not.toContainText('$')

@@ -2,7 +2,6 @@
 import { ACTION_LABELS, pct } from '../copy'
 import type { PlanStep, ProfileEntry } from '../api'
 import { GapBadge } from './Badges'
-import { getKnowledgeLabel } from '../config/knowledge'
 
 defineProps<{
   steps: PlanStep[]
@@ -18,27 +17,25 @@ const emit = defineEmits<{
 
 <template>
   <ul v-if="steps.length === 0" class="steps">
-    <li class="step">暂无已发布知识点：请先在管理端导入、审核并发布题目。</li>
+    <li class="step">暂无能力提升建议：请先在管理端导入、审核并发布题目。</li>
   </ul>
   <ul v-else class="steps">
     <li
       v-for="step in steps"
-      :key="step.knowledge_id"
+      :key="step.topic"
       :class="['step', `gap-${step.gap_type.toLowerCase()}`]"
     >
       <div class="step-head">
-        <code class="kid">
-          <span class="k-label">{{ getKnowledgeLabel(step.knowledge_id) }}</span>
-        </code>
+        <span class="step-topic">{{ step.topic }}</span>
         <GapBadge :gap="step.gap_type" />
       </div>
-      <p class="step-reason">{{ step.reason }}</p>
+      <p class="step-advice">{{ step.advice || step.reason }}</p>
       <div class="step-facts">
         <span v-if="step.gap_type === 'KNOWLEDGE_GAP' && step.observed_rate !== undefined">
           观察作答率 <b>{{ pct(step.observed_rate) }}</b> · 规划阈值 <b>{{ pct(threshold) }}</b>（未校准假设）
         </span>
-        <span v-if="profiles?.[step.knowledge_id]">
-          独立题样本 {{ profiles[step.knowledge_id].sample_size }} 题
+        <span v-if="profiles?.[step.topic]">
+          独立题样本 {{ profiles[step.topic].sample_size }} 题
         </span>
         <span v-if="ACTION_LABELS[step.action]" class="muted">
           {{ ACTION_LABELS[step.action] }}

@@ -104,7 +104,7 @@ def test_paper_upload_stream_cap_and_hash_mismatch(client, auth, private_dir):
     assert matched.status_code == 201  # 提供正确哈希时正常入库
 
 
-def test_paper_is_invisible_to_content_pipeline(client, auth, published, private_dir):
+def test_paper_is_invisible_to_content_pipeline(client, auth, student_auth, published, private_dir):
     exam_id = make_exam(client, auth)
     attached = upload_paper(client, auth, exam_id)
     assert attached.status_code == 201
@@ -117,7 +117,7 @@ def test_paper_is_invisible_to_content_pipeline(client, auth, published, private
         "source_document_id": attachment_id, "stem": "虚构测试数据：1+1=?", "options": ["A. 1", "B. 2"],
         "correct_answer": "B", "knowledge_ids": ["math.arithmetic"], "max_points": 2}, headers=auth)
     assert draft.status_code == 404  # 校卷附件 id 不是 source_documents id，无法被题目草稿引用
-    served = client.get("/api/practice/next?subject=math", headers=auth)
+    served = client.get("/api/practice/next?subject=math", headers=student_auth)
     assert served.status_code == 200 and served.json()["question_version_id"] in published
 
 

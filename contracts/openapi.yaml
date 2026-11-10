@@ -233,6 +233,13 @@ components:
           - type: string
           - type: 'null'
           title: Parent Code
+        source_clause_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Source Clause Ids
         subject:
           enum:
           - math
@@ -247,6 +254,29 @@ components:
       - name
       title: NodeIn
       type: object
+    NodeReviewIn:
+      properties:
+        review_opinion:
+          minLength: 1
+          title: Review Opinion
+          type: string
+        review_status:
+          enum:
+          - approved
+          - rejected
+          title: Review Status
+          type: string
+        reviewer_id:
+          maxLength: 40
+          minLength: 1
+          title: Reviewer Id
+          type: string
+      required:
+      - reviewer_id
+      - review_status
+      - review_opinion
+      title: NodeReviewIn
+      type: object
     NodeVersionIn:
       properties:
         description:
@@ -259,6 +289,18 @@ components:
           minLength: 1
           title: Name
           type: string
+        parent_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Code
+        source_clause_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Source Clause Ids
       required:
       - name
       title: NodeVersionIn
@@ -776,6 +818,37 @@ components:
           title: Review Status
       title: SourceStatusIn
       type: object
+    TaxonomyReleaseIn:
+      properties:
+        published_by:
+          maxLength: 40
+          minLength: 1
+          title: Published By
+          type: string
+        release_version:
+          maxLength: 40
+          minLength: 1
+          title: Release Version
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+      required:
+      - subject
+      - release_version
+      - published_by
+      title: TaxonomyReleaseIn
+      type: object
     ValidationError:
       properties:
         ctx:
@@ -984,6 +1057,172 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Coverage
+  /api/admin/knowledge/candidates:
+    get:
+      description: "返回知识点候选体系与当前审核状态。\n契约权威约束（F01/B01）：\n1. 候选集合固定来源于 contracts/{subject}_knowledge_taxonomy_candidate.json（数学为\
+        \ 47 个节点），\n   绝不把旧 24 个历史节点 (math.*) 或契约外节点混入候选列表；\n2. 对已入库的候选节点，如实反映数据库中的真实审核状态、最新版本与实名审核证据；\n\
+        3. 未入库的候选节点，按契约展示，标注 pending 与未入库状态；\n4. 单个候选代码仅出现一次，返回列表长度严格为契约候选数量。"
+      operationId: list_candidate_nodes_api_admin_knowledge_candidates_get
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          default: math
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Candidate Nodes
+  /api/admin/knowledge/candidates/seed:
+    post:
+      description: "将候选知识体系初始化写入数据库或执行可审计的契约同步修订。\n规则约束（P0-02 / F01 / F02）：\n1. 比对当前契约与\
+        \ DB 中的候选节点：\n   - 不在当前契约中的存量候选，安全标记为 status = 'deprecated'，隔离其参与候选发布，但保留历史版本与作答关联；\n\
+        \   - 在当前契约中但之前被废弃的节点，重新激活为 status = 'active'；\n2. 对发生 parent_id 变更的候选节点，严格执行学科归属、环路检测和孤儿检查；若检查失败拒绝变更；\n\
+        3. 检查已存在候选与当前契约的名称、描述与来源条款差异：\n   - 无差异时保持幂等，不创建重复版本；\n   - 存在差异时，按 F01 版本修订机制生成新版本（version+1），状态重置为\
+        \ pending，待重新审核；\n4. 保持幂等性：同一契约重复 seed 不得产生重复版本或非法状态。"
+      operationId: seed_candidate_nodes_api_admin_knowledge_candidates_seed_post
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          default: math
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Seed Candidate Nodes
+  /api/admin/knowledge/clauses:
+    get:
+      description: 读取课程标准条款全集数据（支持数学、语文、英语、物理四科）。
+      operationId: list_curriculum_clauses_api_admin_knowledge_clauses_get
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          default: math
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: query
+        name: domain
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Domain
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Curriculum Clauses
+  /api/admin/knowledge/legacy-mapping:
+    get:
+      description: 获取旧考点与新候选体系的可审计映射关系（支持四科）。
+      operationId: get_legacy_mapping_api_admin_knowledge_legacy_mapping_get
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          default: math
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Legacy Mapping
   /api/admin/knowledge/links:
     post:
       operationId: link_api_admin_knowledge_links_post
@@ -1147,7 +1386,76 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Node Questions
+  /api/admin/knowledge/nodes/{node_id}/review:
+    post:
+      description: 对知识点最新版本执行学科专家人工审核（批准/退回驳回），必须记录审核者、结论与意见。
+      operationId: review_node_api_admin_knowledge_nodes__node_id__review_post
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeReviewIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Review Node
   /api/admin/knowledge/nodes/{node_id}/versions:
+    get:
+      description: 查询指定知识点的历史版本快照列表（含历史父级与审核信息），保证历史父级可追溯且不可变。
+      operationId: list_node_versions_api_admin_knowledge_nodes__node_id__versions_get
+      parameters:
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          title: Node Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Node Versions
     post:
       operationId: revise_node_api_admin_knowledge_nodes__node_id__versions_post
       parameters:
@@ -1184,6 +1492,80 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Revise Node
+  /api/admin/knowledge/releases:
+    get:
+      description: 查询知识库历史发布记录（可追溯不可变快照列表）。
+      operationId: list_taxonomy_releases_api_admin_knowledge_releases_get
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - math
+            - chinese
+            - english
+            - physics
+            type: string
+          - type: 'null'
+          title: Subject
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Taxonomy Releases
+    post:
+      description: "发布知识库正式版本（强门禁）：\n1. 必须完整包含本次候选体系契约定义的全量候选节点（数学为 47 个 math_cand.*\
+        \ 节点）；缺少任一节点拒绝发布。\n2. 旧 math.* 节点只能用于历史兼容，不能独立满足新版发布条件。若无 math_cand.* 候选节点，拒绝发布。\n\
+        3. 每个候选节点最新版本必须为 approved，且必须具备完整的人工审核证据（reviewer_id, review_opinion, reviewed_at）；\n\
+        \   存在 pending、rejected 或缺乏必要审核证据时，强行拒绝发布。\n4. 节点的来源条款必须有效，不能引用不存在的官方条款。\n\
+        5. 成功发布时生成不可变历史快照 snapshot，记录获批节点与权威课标来源版本。"
+      operationId: publish_taxonomy_release_api_admin_knowledge_releases_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxonomyReleaseIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Publish Taxonomy Release
   /api/admin/questions:
     post:
       operationId: add_question_api_admin_questions_post
@@ -1739,6 +2121,31 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Set Source Status
+  /api/admin/verify:
+    get:
+      operationId: verify_admin_api_admin_verify_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Verify Admin
   /api/goals:
     post:
       operationId: set_goal_api_goals_post
@@ -1808,7 +2215,7 @@ paths:
       summary: Plan
   /api/guidance/pool-health:
     get:
-      description: '题池体检：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
+      description: '题池体检（管理员专属）：按逻辑题的最新已发布版与 owner 曝光记录如实计数（训练轮换与诊断余量）。
 
         查询形状刻意与 next_item 一致（最新发布版子查询），不引入第二套选题口径。'
       operationId: pool_health_endpoint_api_guidance_pool_health_get
@@ -1883,7 +2290,7 @@ paths:
       summary: Profile
   /api/guidance/validation:
     get:
-      description: 独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。
+      description: 独立未见题复测的可观察对比；不可比或证据不足绝不宣称涨分。学生端响应移除内部知识点编号。
       operationId: validation_api_guidance_validation_get
       parameters:
       - in: query
@@ -2407,6 +2814,31 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Upload School Paper
+  /api/student/verify:
+    get:
+      operationId: verify_student_api_student_verify_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Verify Student
   /api/subjects:
     get:
       operationId: subjects_api_subjects_get

@@ -16,21 +16,22 @@
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 
 /* ---------- helpers ---------- */
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }

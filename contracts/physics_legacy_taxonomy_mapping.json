@@ -1,0 +1,260 @@
+{
+  "subject": "physics",
+  "legacy_mappings": [
+    {
+      "legacy_code": "physics.acoustics_optics",
+      "legacy_name": "声学与光学",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.motion_interaction"
+      ],
+      "mapping_reason": "原一级旧领域对应新课标运动和相互作用领域中声和光主题，保留大类映射。",
+      "compatibility_assurance": "旧领域节点保留，历史试卷领域级引用不变。"
+    },
+    {
+      "legacy_code": "physics.sound",
+      "legacy_name": "声现象",
+      "legacy_parent_code": "physics.acoustics_optics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.sound"
+      ],
+      "mapping_reason": "考查声音产生、传播与特性，与新体系物理声现象完全对应。",
+      "compatibility_assurance": "原有试题关联保持只读有效。"
+    },
+    {
+      "legacy_code": "physics.light.reflection_refraction",
+      "legacy_name": "光的直线传播、反射与折射",
+      "legacy_parent_code": "physics.acoustics_optics",
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.light.propagate_reflect",
+        "physics_cand.light.refract_dispersion"
+      ],
+      "mapping_reason": "原旧节点将反射与折射合并，新体系根据课标将光的直线传播反射与折射色散拆分为清晰考点以精准诊断光路作图与介质折射规律。",
+      "compatibility_assurance": "历史题目对原旧节点的引用保持只读可用，新题目细分标记。"
+    },
+    {
+      "legacy_code": "physics.light.lens",
+      "legacy_name": "透镜及其成像规律",
+      "legacy_parent_code": "physics.acoustics_optics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.light.lens_application"
+      ],
+      "mapping_reason": "考查凸透镜成像规律及眼睛视力矫正应用，内涵完全一致。",
+      "compatibility_assurance": "历史作答与诊断记录保持只读兼容。"
+    },
+    {
+      "legacy_code": "physics.thermal",
+      "legacy_name": "热学",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.matter",
+        "physics_cand.energy"
+      ],
+      "mapping_reason": "原旧热学跨越课标的物质（物态变化）与能量（内能比热容），新体系予以双向映射对应。",
+      "compatibility_assurance": "旧领域节点保留，历史试卷引用不变。"
+    },
+    {
+      "legacy_code": "physics.thermal.state",
+      "legacy_name": "物态变化",
+      "legacy_parent_code": "physics.thermal",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.matter.thermal_state"
+      ],
+      "mapping_reason": "六大物态变化吸放热过程与新课标1.1完全对应。",
+      "compatibility_assurance": "历史作答记录不变。"
+    },
+    {
+      "legacy_code": "physics.thermal.heat",
+      "legacy_name": "内能、比热容与热机",
+      "legacy_parent_code": "physics.thermal",
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.energy.internal_heat",
+        "physics_cand.energy.heat_engine"
+      ],
+      "mapping_reason": "原旧节点将内能比热容与热机混合，新体系将热机工作冲程效率独立划分，有利于中考热学专项诊断。",
+      "compatibility_assurance": "历史试题引用不变。"
+    },
+    {
+      "legacy_code": "physics.mechanics",
+      "legacy_name": "力学",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.motion_interaction",
+        "physics_cand.energy"
+      ],
+      "mapping_reason": "原力学大类对应运动和相互作用力学部分与能量机械能部分。",
+      "compatibility_assurance": "历史领域级引用不变。"
+    },
+    {
+      "legacy_code": "physics.mech.motion",
+      "legacy_name": "机械运动与参照物",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.motion.speed"
+      ],
+      "mapping_reason": "参照物与速度计算，考查要点完全契合。",
+      "compatibility_assurance": "历史数据保持只读兼容。"
+    },
+    {
+      "legacy_code": "physics.mech.forces",
+      "legacy_name": "常见力与重力摩擦力",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.force.basics",
+        "physics_cand.force.gravity_friction"
+      ],
+      "mapping_reason": "新体系将力的基本概念三要素与重力弹力摩擦力分立，使受力分析作图技能独立考查。",
+      "compatibility_assurance": "历史数据保持完整只读兼容。"
+    },
+    {
+      "legacy_code": "physics.mech.balance",
+      "legacy_name": "牛顿第一定律、惯性与二力平衡",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.force.newton_balance"
+      ],
+      "mapping_reason": "牛顿第一定律与二力平衡条件，内容与考法完全契合。",
+      "compatibility_assurance": "历史数据保持只读兼容。"
+    },
+    {
+      "legacy_code": "physics.mech.density",
+      "legacy_name": "质量与密度测量",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.matter.density_prop"
+      ],
+      "mapping_reason": "课标将质量密度归入物质属性，新体系建立对应映射，教学内涵一致。",
+      "compatibility_assurance": "历史题目对旧节点的引用保持只读有效。"
+    },
+    {
+      "legacy_code": "physics.mech.pressure",
+      "legacy_name": "固体与液体压强、大气压强",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.force.pressure_fluid"
+      ],
+      "mapping_reason": "涵盖固体液体压强与大气压强流体压强，考查目标一致。",
+      "compatibility_assurance": "历史作答保持不变。"
+    },
+    {
+      "legacy_code": "physics.mech.buoyancy",
+      "legacy_name": "浮力与阿基米德原理",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.force.buoyancy"
+      ],
+      "mapping_reason": "阿基米德原理与浮沉条件，考查要点完全契合。",
+      "compatibility_assurance": "历史答题记录保持不变。"
+    },
+    {
+      "legacy_code": "physics.mech.work",
+      "legacy_name": "功、功率与机械效率",
+      "legacy_parent_code": "physics.mechanics",
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.force.simple_machine",
+        "physics_cand.energy.transfer_concept",
+        "physics_cand.energy.work_power_eff",
+        "physics_cand.energy.mech_energy_conserv"
+      ],
+      "mapping_reason": "原旧节点将简单机械、机械功功率及动能势能混杂，新体系精细化区分简单机械、机械功效率与机械能转化，利于初三精准诊断。",
+      "compatibility_assurance": "历史引用保持只读可用。"
+    },
+    {
+      "legacy_code": "physics.electromagnetism",
+      "legacy_name": "电学与磁学",
+      "legacy_parent_code": null,
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.motion_interaction",
+        "physics_cand.energy"
+      ],
+      "mapping_reason": "原电磁大类对应电磁相互作用与电磁能两个一级主题。",
+      "compatibility_assurance": "旧领域节点保留。"
+    },
+    {
+      "legacy_code": "physics.elec.circuit",
+      "legacy_name": "电路基础与电流电压",
+      "legacy_parent_code": "physics.electromagnetism",
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.elec.charge_field",
+        "physics_cand.energy.circuit_rules",
+        "physics_cand.energy.safety_and_conservation"
+      ],
+      "mapping_reason": "新体系将静电电荷、电路串并联规律与家庭安全用电分别确立考点，区分清晰。",
+      "compatibility_assurance": "历史数据保持只读兼容。"
+    },
+    {
+      "legacy_code": "physics.elec.ohm",
+      "legacy_name": "电阻、滑动变阻器与欧姆定律",
+      "legacy_parent_code": "physics.electromagnetism",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.energy.ohm_law"
+      ],
+      "mapping_reason": "欧姆定律及其串并联应用为中考核心诊断模块，映射至新体系欧姆定律考点。",
+      "compatibility_assurance": "历史数据保持只读兼容。"
+    },
+    {
+      "legacy_code": "physics.elec.power",
+      "legacy_name": "电功、电功率与焦耳定律",
+      "legacy_parent_code": "physics.electromagnetism",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.energy.electric_power_joule"
+      ],
+      "mapping_reason": "电功率额定功率与焦耳定律计算综合性强，映射至对应电功电功率考点。",
+      "compatibility_assurance": "原有试题关联保持有效。"
+    },
+    {
+      "legacy_code": "physics.elec.magnetism",
+      "legacy_name": "电与磁、电磁感应",
+      "legacy_parent_code": "physics.electromagnetism",
+      "action": "retained",
+      "target_candidate_codes": [
+        "physics_cand.elec.electromagnetism"
+      ],
+      "mapping_reason": "安培定则、电动机与发电机原理考查重点与新体系完全对应。",
+      "compatibility_assurance": "历史答题记录保持不变。"
+    },
+    {
+      "legacy_code": "physics.exp.inquiry",
+      "legacy_name": "物理实验与科学探究方法",
+      "legacy_parent_code": null,
+      "action": "split",
+      "target_candidate_codes": [
+        "physics_cand.experiment",
+        "physics_cand.exp.measuring_skills",
+        "physics_cand.exp.inquiry_methods",
+        "physics_cand.interdisciplinary"
+      ],
+      "mapping_reason": "原旧节点为实验笼统兜底项，新体系将其系统拆解为基本测量技能、科学探究方法与跨学科实践三大维度，全面覆盖21个必做实验。",
+      "compatibility_assurance": "历史实验题目关联保持只读兼容。"
+    }
+  ],
+  "summary": {
+    "total_legacy_nodes": 21,
+    "retained_count": 15,
+    "renamed_count": 0,
+    "split_count": 6,
+    "merged_count": 0,
+    "new_count": 0,
+    "deprecated_count": 0,
+    "pending_human_review_count": 0
+  }
+}

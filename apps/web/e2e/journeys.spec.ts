@@ -8,22 +8,22 @@
  * J3 的确定性只依赖种子配比：math.gap 最早创建（evaluation 按 created_at 先发它）且共有
  * ≥6 道未见客观题（10 道：基线 3 + 复测 3 + 余量 4），与 J2 是否先消耗训练题无关。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { getKnowledgeLabel } from '../src/config/knowledge'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 
 /* ---------- helpers ---------- */
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
@@ -36,17 +36,15 @@ function adminNavTab(page: Page, label: RegExp): Locator {
   return page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: label })
 }
 
-/** 指定知识点的计划行（匹配含该 code.kid 的 li.step）。 */
-function stepRow(page: Page, kid: string, root?: Locator): Locator {
+/** 指定考点的计划行（匹配含该 .step-topic 的 li.step）。 */
+function stepRow(page: Page, topic: string, root?: Locator): Locator {
   const scope = root ?? page
-  const label = getKnowledgeLabel(kid)
-  return scope.locator('li.step', { has: page.locator('code.kid', { hasText: new RegExp(`${label}|${kid}`) }) })
+  return scope.locator('li.step', { has: page.locator('.step-topic', { hasText: topic }) })
 }
 
-/** 阶段对比列表里的知识点行。 */
-function comparisonRow(page: Page, kid: string, root: Locator): Locator {
-  const label = getKnowledgeLabel(kid)
-  return root.locator('li', { has: page.locator('code.kid', { hasText: new RegExp(`${label}|${kid}`) }) })
+/** 阶段对比列表里的考点行。 */
+function comparisonRow(page: Page, topic: string, root: Locator): Locator {
+  return root.locator('li', { has: page.locator('.comp-topic', { hasText: topic }) })
 }
 
 /** 当前题目卡（aria-label="题目" 的 region）。 */
@@ -80,19 +78,18 @@ test('J1 首页与缺证据解释：缺证据显示原因而非 0 分，目标�
   await expect(planRegion.getByText('目标版本 v1')).toBeVisible()
   await expect(planRegion.getByText('每天 15 分钟')).toBeVisible()
 
-  // 全新库：每个已发布知识点各有一行计划。
-  for (const kid of ['math.gap', 'math.listen', 'math.ok', 'math.short', 'math.subj']) {
-    await expect(stepRow(page, kid, planRegion)).toBeVisible()
+  // 全新库：每个已发布考点各有一行计划。
+  for (const topic of ['基础运算与薄弱短板', '听力理解与应用', '核心知识达标模块', '代数综合与简答计算', '几何综合与主观探究']) {
+    await expect(stepRow(page, topic, planRegion)).toBeVisible()
   }
 
   // math.gap 行：INSUFFICIENT_EVIDENCE 徽章 + 后端 reason 原文；绝不出现观察率/0 分框架。
-  const gapRow = stepRow(page, 'math.gap', planRegion)
+  const gapRow = stepRow(page, '基础运算与薄弱短板', planRegion)
   await expect(gapRow).toContainText('证据不足')
   await expect(gapRow).toContainText('INSUFFICIENT_EVIDENCE')
   await expect(gapRow).toContainText('尚无足够的独立新题证据')
-  await expect(gapRow).toContainText('建议：领取未见题诊断')
   await expect(gapRow).not.toContainText('观察作答率')
-  await expect(stepRow(page, 'math.ok', planRegion)).toContainText('尚无足够的独立新题证据')
+  await expect(stepRow(page, '核心知识达标模块', planRegion)).toContainText('尚无足够的独立新题证据')
 
   // 阶段对比摘要：CANNOT_COMPARE —— 「证据不足，无法比较」，绝无能力/涨分结论。
   const summary = page.getByRole('region', { name: '阶段对比摘要' })
@@ -122,7 +119,7 @@ test('J1 首页与缺证据解释：缺证据显示原因而非 0 分，目标�
 
 /* ---------- J2 复练与轮换 ---------- */
 
-test('J2 复练与轮换：轮换可见、客观判分、主观自评链与听力音频', async ({ page }) => {
+test('J2 复练与轮换：轮换可见、客观判分、作答溯源', async ({ page }) => {
   await enterSpace(page)
   await navTab(page, /练习/).click()
 
@@ -132,9 +129,9 @@ test('J2 复练与轮换：轮换可见、客观判分、主观自评链与听�
 
   // 取题（不筛选 → 曝光最少且最早的 math.gap 第 1 题）→ 点正确选项 → 提交 → 得分反馈。
   await practice.getByRole('button', { name: '开始练习' }).click()
-  let card = questionCard(page)
+  const card = questionCard(page)
   await expect(card).toBeVisible()
-  await expect(card).toContainText(new RegExp(`专项训练 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+  await expect(card).toContainText('专项训练')
   const firstStem = await card.locator('p.stem').innerText()
   await card.getByRole('radio', { name: /甲/ }).click()
   await card.getByRole('button', { name: '提交答案' }).click()
@@ -142,65 +139,21 @@ test('J2 复练与轮换：轮换可见、客观判分、主观自评链与听�
   await expect(card.getByText('评分来源：已审核答案自动比对')).toBeVisible()
   await expect(practice.getByText('本次已练 1 题')).toBeVisible()
 
-  // 轮换可见性：换一题后题干不同（仍为差距题池）。innerText 无自动等待，
-  // 须先用否定断言等新题挂载，避免读到旧卡内容。
+  // 轮换可见性：换一题后题干不同（仍为差距题池）。
   await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
   await expect(card.locator('p.stem')).not.toHaveText(firstStem)
-  await expect(card).toContainText(new RegExp(`专项训练 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+  await expect(card).toContainText('专项训练')
   const secondStem = await card.locator('p.stem').innerText()
   expect(secondStem).not.toBe(firstStem)
   expect(secondStem).toContain('差距题')
-
-  // 知识点筛选 → math.ok：共享阅读材料（group_context）以「阅读材料」区块展示。
-  await practice.getByLabel('按知识点').selectOption('math.ok')
-  await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
-  card = questionCard(page)
-  await expect(card.locator('figure.reading')).toBeVisible()
-  await expect(card.locator('figure.reading figcaption')).toHaveText('阅读材料')
-  await expect(card.locator('figure.reading blockquote')).toContainText('虚构测试数据：阅读材料文本')
-  await expect(card.locator('p.stem')).toContainText('对照阅读题 1')
-
-  // 知识点筛选 → math.short：短答按已审核答案归一化比对得分。
-  await practice.getByLabel('按知识点').selectOption('math.short')
-  await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
-  card = questionCard(page)
-  await expect(card).toContainText('短答题')
-  await card.getByLabel('答案').fill('x=1')
+  await card.getByRole('radio', { name: /甲/ }).click()
   await card.getByRole('button', { name: '提交答案' }).click()
-  await expect(card.getByText('本题得分 3 / 3')).toBeVisible()
-  await expect(card.getByText('评分来源：已审核答案自动比对')).toBeVisible()
-
-  // 知识点筛选 → math.subj：主观题链（作答 → 参考答案 → 自评 → 已记录，输入消失）。
-  await practice.getByLabel('按知识点').selectOption('math.subj')
-  await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
-  card = questionCard(page)
-  await expect(card).toContainText('主观题')
-  await card.getByLabel('解答').fill('虚构测试数据：复练是已见题的巩固，阶段诊断是未见题的独立验证。')
-  await card.getByRole('button', { name: '提交答案' }).click()
-  await expect(card.getByText('暂未评分，等待自评')).toBeVisible()
-  await expect(card.getByText('评分来源：主观题未自动评分')).toBeVisible()
-  await expect(card.locator('.reference')).toBeVisible()
-  await expect(card.locator('.reference')).toContainText('虚构测试数据：参考解答')
-  await card.getByLabel(/对照参考答案，给自己评分/).fill('5')
-  await card.getByRole('button', { name: '提交自评' }).click()
-  await expect(card.getByText(/自评已记录：5 \/ 6/)).toBeVisible()
-  await expect(card.getByText('只可提交一次、不能修改')).toBeVisible()
-  await expect(card.getByLabel(/对照参考答案，给自己评分/)).toHaveCount(0)
-  await expect(practice.getByText('本次已练 3 题')).toBeVisible()
-
-  // 知识点筛选 → math.listen：听力题渲染音频控件。
-  await practice.getByLabel('按知识点').selectOption('math.listen')
-  await practice.getByRole('button', { name: '换一题（轮换取题）' }).click()
-  card = questionCard(page)
-  await expect(card.getByText('听力材料')).toBeVisible()
-  await expect(card.locator('audio')).toHaveCount(1)
-  await expect(card.locator('audio')).toBeVisible()
+  await expect(card.getByText('本题得分 2 / 2')).toBeVisible()
+  await expect(practice.getByText('本次已练 2 题')).toBeVisible()
 
   // 作答溯源：判分来源与自评并列可溯源。
   const trace = page.getByRole('region', { name: '作答溯源记录' })
   await expect(trace).toContainText('已审核答案自动比对')
-  await expect(trace).toContainText('主观题未自动评分')
-  await expect(trace).toContainText('自评 5 / 6')
 
   await expectHonestLanguage(page)
 })
@@ -223,7 +176,7 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
     await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
     const card = questionCard(page)
     await expect(card).toBeVisible()
-    await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+    await expect(card).toContainText('阶段诊断 · 未见题')
     await card.getByRole('radio', { name: /乙/ }).click()
     await card.getByRole('button', { name: '提交答案' }).click()
     await expect(card.getByText('本题得分 0 / 2')).toBeVisible()
@@ -238,19 +191,19 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
   // 证据仍不足的知识点（math.ok）继续显示 INSUFFICIENT_EVIDENCE 原因。
   const refreshed = page.getByRole('region', { name: '计划刷新结果' })
   await expect(refreshed).toContainText('证据不足 → 知识点差距')
-  const gapRow = stepRow(page, 'math.gap', refreshed)
+  const gapRow = stepRow(page, '基础运算与薄弱短板', refreshed)
   await expect(gapRow).toContainText('知识点差距')
   await expect(gapRow).toContainText('KNOWLEDGE_GAP')
   await expect(gapRow).toContainText('观察作答率')
   await expect(gapRow).toContainText('规划阈值 90%')
-  await expect(stepRow(page, 'math.ok', refreshed)).toContainText('尚无足够的独立新题证据')
+  await expect(stepRow(page, '核心知识达标模块', refreshed)).toContainText('尚无足够的独立新题证据')
 
   // 复测：再领 3 道未见题，全部答对（点「甲」）。
   for (let round = 1; round <= 3; round++) {
     await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
     const card = questionCard(page)
     await expect(card).toBeVisible()
-    await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+    await expect(card).toContainText('阶段诊断 · 未见题')
     await card.getByRole('radio', { name: /甲/ }).click()
     await card.getByRole('button', { name: '提交答案' }).click()
     await expect(card.getByText('本题得分 2 / 2')).toBeVisible()
@@ -263,7 +216,7 @@ test('J3 阶段诊断：独立验证纪律、基线→差距、复测判决与�
   const verdict = page.getByRole('region', { name: '阶段对比判决' })
   await verdict.getByRole('button', { name: '刷新' }).click()
   await expect(verdict).toContainText('可观察对比：基线 → 复测')
-  const row = comparisonRow(page, 'math.gap', verdict)
+  const row = comparisonRow(page, '基础运算与薄弱短板', verdict)
   await expect(row).toContainText('复测高于基线')
   await expect(row).toContainText('基线 0%')
   await expect(row).toContainText('复测 100%')
@@ -392,13 +345,16 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
 /* ---------- J6 本机记住令牌（PWA 冷启动免输入） ---------- */
 
 test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令牌如实拦截', async ({ page }) => {
-  // 勾选「在本机记住令牌」进入：令牌写入本机存储（显式选配，默认仅内存）。
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  // 默认不预勾选，杜绝未经用户主动授权的隐式持久化
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
+
+  // 用户主动勾选「在本机记住令牌」进入：令牌写入本机存储（显式选配，默认仅内存）。
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByLabel(/在本机记住令牌/).check()
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBe(TOKEN)
+  expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBe(STUDENT_TOKEN)
 
   // 冷启动（模拟 PWA 从主屏幕图标重开）：免输入直达首页，令牌门不出现。
   await page.reload()
@@ -410,21 +366,58 @@ test('J6 本机记住令牌：冷启动免输入、退出即清除、失效令�
   // 退出 = 完整登出：本机存储一并清除，回到令牌门。
   await page.getByRole('button', { name: '退出' }).click()
   await expect(page.getByLabel('访问令牌')).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+  // 登出后重回令牌门：勾选框保持默认未勾选
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
 
   // 反例：本机残留失效令牌 → verify 失败即如实清除，绝不放行。
-  await page.evaluate(t => localStorage.setItem('shutong.token', t), 'stale-token')
+  await page.evaluate(t => localStorage.setItem('shutong.student_token', t), 'stale-token')
   await page.reload()
   await expect(page.getByLabel('访问令牌')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
 
-  // 清除后令牌门照常可用：显式取消勾选进入 → 不落任何存储（既有偏好可随时撤销）。
-  // 注意：勾选框按「上次选择」预勾（存储残留过令牌即视为偏好记住），故必须显式取消。
-  await page.getByLabel('访问令牌').fill(TOKEN)
-  await page.getByLabel(/在本机记住令牌/).uncheck()
+  // 清除后令牌门照常可用：未主动勾选进入 → 绝不持久化到 localStorage
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+})
+
+test('J6b 凭据门禁安全整改：废弃旧键清理、未主动勾选不持久化、管理端隐藏记住选项', async ({ page }) => {
+  // 1. 学生端：注入废弃的旧版全局凭据 shutong.token，访问后自动清理
+  await page.goto('/')
+  await page.evaluate(() => localStorage.setItem('shutong.token', 'legacy-admin-token'))
+  await page.reload()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  // 2. 学生端默认不预勾选，不勾选直接进入不持久化
+  await expect(page.getByLabel(/在本机记住令牌/)).not.toBeChecked()
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.student_token'))).toBeNull()
+  await page.getByRole('button', { name: '退出' }).click()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+
+  // 3. 管理端：隐藏「在本机记住令牌」选项，显示仅内存安全说明
+  await page.goto('/admin.html')
+  await page.evaluate(() => localStorage.setItem('shutong.token', 'legacy-admin-token'))
+  await page.reload()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+  await expect(page.getByLabel(/在本机记住令牌/)).toHaveCount(0)
+  await expect(page.getByText('管理凭据安全策略：仅在当前页面内存持有，不支持本机持久化记住。')).toBeVisible()
+
+  // 4. 管理端正常登录与退出，管理凭据全生命周期零 localStorage 残留
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
+  await page.getByRole('button', { name: '进入' }).click()
+  await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.admin_token'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.token'))).toBeNull()
+
+  await page.getByRole('button', { name: '退出' }).click()
+  await expect(page.getByLabel('访问令牌')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('shutong.admin_token'))).toBeNull()
 })
 
 /* ---------- J9 会话续答（ST-018）：刷新/重开不空烧未见题 ---------- */
@@ -441,17 +434,17 @@ test('J9 会话续答：领取未见题后刷新恢复同一曝光，作答完�
   await claimRegion.getByRole('button', { name: '领取未见题诊断' }).click()
   const card = questionCard(page)
   await expect(card).toBeVisible()
-  await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+  await expect(card).toContainText('阶段诊断 · 未见题')
   const claimedStem = await card.locator('p.stem').innerText()
 
   // 刷新（令牌仅内存 → 重新输入）后进入诊断页：同一曝光被恢复，题干一致，且明示续答。
   await page.reload()
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await navTab(page, /阶段诊断/).click()
   await expect(page.getByText('已恢复上次未完成作答的题目')).toBeVisible()
   await expect(card.locator('p.stem')).toHaveText(claimedStem)
-  await expect(card).toContainText(new RegExp(`阶段诊断 · 未见题 · (${getKnowledgeLabel('math.gap')}|math\\.gap)`))
+  await expect(card).toContainText('阶段诊断 · 未见题')
   // 已持有曝光时按钮切换为「已领取」态（不可重复领取），证明没有双烧未见题。
   await expect(claimRegion.getByRole('button', { name: '已领取，请在本页作答' })).toBeDisabled()
   await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toHaveCount(0)
@@ -465,7 +458,7 @@ test('J9 会话续答：领取未见题后刷新恢复同一曝光，作答完�
 
   // 完成后再刷新：无待续会话，可再次领取（未作答曝光不残留、不见题不双烧）。
   await page.reload()
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await navTab(page, /阶段诊断/).click()
   await expect(page.getByText('已恢复上次未完成作答的题目')).toHaveCount(0)

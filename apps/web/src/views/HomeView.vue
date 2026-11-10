@@ -57,7 +57,7 @@ async function refresh() {
   }
   if (profileRes.status === 'fulfilled') {
     profiles.value = Object.fromEntries(
-      profileRes.value.knowledge.map(entry => [entry.knowledge_id, entry])
+      profileRes.value.knowledge.map(entry => [entry.topic, entry])
     )
   }
   if (validationRes.status === 'fulfilled') validation.value = validationRes.value

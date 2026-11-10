@@ -1,0 +1,1192 @@
+[
+  {
+    "code": "math_cand.num_alg",
+    "name": "数与代数",
+    "domain": "num_alg",
+    "parent_code": null,
+    "level": 1,
+    "description": "义务教育数学课程标准初中第四学段数与代数领域：包括数与式、方程与不等式、函数三大主题。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c09",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:tri_sys:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c03",
+      "cs:math:2022-errata:s4:num_alg:acad_req:num_expr:c01",
+      "cs:math:2022-errata:s4:num_alg:acad_req:eq_ineq:c02",
+      "cs:math:2022-errata:s4:num_alg:acad_req:functions:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标初中数与代数领域自动汇聚，待学科专家审核确认",
+    "legacy_mapping_codes": [
+      "math.num_alg"
+    ]
+  },
+  {
+    "code": "math_cand.num_alg.num_expr",
+    "name": "数与式",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg",
+    "level": 2,
+    "description": "有理数、实数、代数式、整式、分式及二次根式的基础运算与性质。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c09",
+      "cs:math:2022-errata:s4:num_alg:acad_req:num_expr:c01"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标主题1自动归集，待审核",
+    "legacy_mapping_codes": [
+      "math.num.real",
+      "math.alg.poly",
+      "math.alg.frac"
+    ]
+  },
+  {
+    "code": "math_cand.num.rational",
+    "name": "有理数及其运算",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "负数的意义、有理数概念、数轴、相反数、绝对值、有理数四则运算、乘方及运算律简便运算。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:rat_num:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(1)有理数条文①~⑤生成（精准对应有理数基础与运算律，科学记数法归入整式代数式主题），待审核",
+    "legacy_mapping_codes": [
+      "math.num.real"
+    ]
+  },
+  {
+    "code": "math_cand.num.real",
+    "name": "实数与无理数概念及估算",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "平方根、算术平方根、立方根、无理数概念、实数分类及与数轴的点一一对应、实数大小比较与近似估算。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(2)实数条文①~⑦生成，待审核",
+    "legacy_mapping_codes": [
+      "math.num.real"
+    ]
+  },
+  {
+    "code": "math_cand.alg.poly",
+    "name": "整式与乘法公式",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "代数式表示与求值、整数指数幂与科学记数法、整式加减、整式乘法（多项式相乘）、乘法公式（平方差公式与完全平方公式）及代数推理。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(3)代数式条文①~⑥及⑨代数推理生成，待审核",
+    "legacy_mapping_codes": [
+      "math.alg.poly"
+    ]
+  },
+  {
+    "code": "math_cand.alg.factor",
+    "name": "因式分解",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "因式分解的意义、提公因式法与公式法（直接用平方差公式或完全平方公式不超过两次）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(3)代数式条文⑦因式分解生成，待审核",
+    "legacy_mapping_codes": [
+      "math.alg.poly"
+    ]
+  },
+  {
+    "code": "math_cand.alg.frac",
+    "name": "分式及其四则运算",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "分式概念、分式基本性质、约分与通分、分式的乘除、乘方与加减混合运算（分子分母为一次式或二次多项式）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:alg_expr:c08"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(3)代数式条文⑧分式运算生成（已剥离代数推理独立条款），待审核",
+    "legacy_mapping_codes": [
+      "math.alg.frac"
+    ]
+  },
+  {
+    "code": "math_cand.alg.quadratic_radical",
+    "name": "二次根式及其化简运算",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.num_expr",
+    "level": 3,
+    "description": "二次根式概念及其加减乘除运算法则、二次根式化简与化简求值。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:real_num:c08"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标(2)实数条文⑧二次根式生成，待审核",
+    "legacy_mapping_codes": [
+      "math.alg.frac"
+    ]
+  },
+  {
+    "code": "math_cand.num_alg.eq_ineq",
+    "name": "方程与不等式",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg",
+    "level": 2,
+    "description": "一元一次方程、二元一次方程组、一元二次方程、分式方程及一元一次不等式组的解法与应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:tri_sys:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c07",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c08",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c03",
+      "cs:math:2022-errata:s4:num_alg:acad_req:eq_ineq:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标主题2归集，待审核",
+    "legacy_mapping_codes": [
+      "math.eq.linear_system",
+      "math.eq.quadratic",
+      "math.ineq"
+    ]
+  },
+  {
+    "code": "math_cand.eq.linear",
+    "name": "一元一次方程及应用",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "方程的解与等式基本性质、一元一次方程解法（去分母、去括号、移项、合并同类项、系数化为1）、实际问题应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标方程条文①~②生成，待审核",
+    "legacy_mapping_codes": [
+      "math.eq.linear_system"
+    ]
+  },
+  {
+    "code": "math_cand.eq.linear_system",
+    "name": "二元一次方程组及应用",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "二元一次方程组的解、代入消元法与加减消元法、实际问题建模与应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标方程条文③生成，待审核",
+    "legacy_mapping_codes": [
+      "math.eq.linear_system"
+    ]
+  },
+  {
+    "code": "math_cand.eq.linear_system_3var",
+    "name": "三元一次方程组解法（选学*）",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "*能解简单的三元一次方程组，掌握逐步消元转化为二元方程组的基本思想（课标带*选学考点，不作为中考默认必考题池）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:tri_sys:c04"
+    ],
+    "is_elective": true,
+    "review_status": "pending",
+    "review_note": "AI依据课标方程条文④生成（课标带*选学条目，与必学诊断池严格隔离），待审核",
+    "legacy_mapping_codes": [
+      "math.eq.linear_system"
+    ]
+  },
+  {
+    "code": "math_cand.eq.quadratic",
+    "name": "一元二次方程及其解法与判别式",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "一元二次方程一般形式、配方法、公式法、因式分解法、根的判别式（Δ=b²-4ac）与根的情况、根与系数关系（韦达定理，例67）、实际问题应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c06",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标方程条文⑤~⑦生成（确认根与系数关系在2022课标为正式探索内容，非选学），待审核",
+    "legacy_mapping_codes": [
+      "math.eq.quadratic"
+    ]
+  },
+  {
+    "code": "math_cand.eq.fractional",
+    "name": "分式方程及其解法与验根",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "分式方程概念、去分母转化为整式方程解法、增根产生原因与必须验根要求、工程行程等实际应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c08"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标方程条文②（解可化为一元一次方程的分式方程）与⑧（检验方程解的合理性）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.eq.quadratic"
+    ]
+  },
+  {
+    "code": "math_cand.ineq.linear",
+    "name": "一元一次不等式（组）及其解法与应用",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.eq_ineq",
+    "level": 3,
+    "description": "不等式的基本性质、一元一次不等式解法与数轴表示、一元一次不等式组解法与解集交集求法、实际方案决策应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:ineq:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标不等式条文①~③生成，待审核",
+    "legacy_mapping_codes": [
+      "math.ineq"
+    ]
+  },
+  {
+    "code": "math_cand.num_alg.func",
+    "name": "函数",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg",
+    "level": 2,
+    "description": "函数概念、一次函数、反比例函数与二次函数的图象、性质与建模应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c05",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c03",
+      "cs:math:2022-errata:s4:num_alg:acad_req:functions:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标主题3归集，待审核",
+    "legacy_mapping_codes": [
+      "math.func.linear",
+      "math.func.inverse",
+      "math.func.quad"
+    ]
+  },
+  {
+    "code": "math_cand.func.basic",
+    "name": "函数概念与图象表示法",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.func",
+    "level": 3,
+    "description": "常量与变量、函数概念、自变量取值范围、函数三种表示法（解析法、列表法、图象法）、用函数图象分析变化趋势。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c04",
+      "cs:math:2022-errata:s4:num_alg:content_req:func_base:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标函数概念条文①~⑤生成，待审核",
+    "legacy_mapping_codes": [
+      "math.func.linear"
+    ]
+  },
+  {
+    "code": "math_cand.func.linear",
+    "name": "一次函数与正比例函数的图象与性质",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.func",
+    "level": 3,
+    "description": "正比例函数与一次函数解析式、图象绘制与增减性质、待定系数法求解析式、一次函数实际应用；教学中引申与一元一次方程及不等式的联系（跨模块派生技能）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:lin_func:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标一次函数条文①~④生成（标明与不等式联系为跨主题教学派生），待审核",
+    "legacy_mapping_codes": [
+      "math.func.linear"
+    ]
+  },
+  {
+    "code": "math_cand.func.inverse",
+    "name": "反比例函数的图象与性质及几何意义",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.func",
+    "level": 3,
+    "description": "反比例函数概念、双曲线图象与增减性质、待定系数法求解析式、实际问题建模；比例系数k的面积几何意义为初中教学延伸与题型拓展应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:inv_func:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标反比例函数条文①~③生成（明确k的几何意义为教学应用拓展），待审核",
+    "legacy_mapping_codes": [
+      "math.func.inverse"
+    ]
+  },
+  {
+    "code": "math_cand.func.quadratic",
+    "name": "二次函数的图象、性质与极值应用",
+    "domain": "num_alg",
+    "parent_code": "math_cand.num_alg.func",
+    "level": 3,
+    "description": "二次函数解析式（一般式、顶点式）、抛物线开口、顶点坐标、对称轴与增减性质、最大值/最小值实际应用；交点式及与一元二次方程/不等式联系作为中考综合应用教学拓展。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c01",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c02",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c03",
+      "cs:math:2022-errata:s4:num_alg:content_req:quad_func:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标二次函数条文①~④生成（明确交点式与不等式联系为教学拓展），待审核",
+    "legacy_mapping_codes": [
+      "math.func.quad"
+    ]
+  },
+  {
+    "code": "math_cand.geo",
+    "name": "图形与几何",
+    "domain": "geom",
+    "parent_code": null,
+    "level": 1,
+    "description": "图形的性质、图形的变化、图形与坐标三大主题及逻辑推理证明。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c01",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c02",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c03",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c04",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c05",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c06",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c07",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c01",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c02",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c03",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c04",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c05",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c06",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c07",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c05",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c07",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c08",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c09",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c10",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c11",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c01",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c02",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c03",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c04",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c05",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c07",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c08",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c09",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c01",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c02",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c03",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c04",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c05",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c03",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c01",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c02",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c03",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c04",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c05",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c06",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c07",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c08",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c09",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c10",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c01",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c02",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c03",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c04",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c01",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c02",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c03",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c04",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c01",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c02",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c03",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c04",
+      "cs:math:2022-errata:s4:geom:acad_req:nature:c01",
+      "cs:math:2022-errata:s4:geom:acad_req:transform:c02",
+      "cs:math:2022-errata:s4:geom:acad_req:coord:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标图形与几何领域条文自动汇聚，待审核",
+    "legacy_mapping_codes": [
+      "math.geo"
+    ]
+  },
+  {
+    "code": "math_cand.geo.properties",
+    "name": "图形的性质",
+    "domain": "geom",
+    "parent_code": "math_cand.geo",
+    "level": 2,
+    "description": "点线面角、相交线与平行线、三角形、四边形、圆的性质与判定及公理化演绎证明。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c01",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c02",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c03",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c04",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c05",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c06",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c07",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c01",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c02",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c03",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c04",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c05",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c06",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c07",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c05",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c07",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c08",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c09",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c10",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c11",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c01",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c02",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c03",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c04",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c05",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c07",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c08",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c09",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c01",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c02",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c03",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c04",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c05",
+      "cs:math:2022-errata:s4:geom:acad_req:nature:c01"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标几何主题1归集，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.lines",
+      "math.geo.triangle",
+      "math.geo.pythagoras",
+      "math.geo.quadrilateral",
+      "math.geo.circle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.lines_angles",
+    "name": "相交线、平行线与角",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "点线面角概念、对顶角相等、垂线与点到直线的距离、线段垂直平分线与角平分线性质及逆定理、平行线判定定理与性质定理。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c01",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c02",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c03",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c04",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c05",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c06",
+      "cs:math:2022-errata:s4:geom:content_req:points_lines:c07",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c01",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c02",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c03",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c04",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c05",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c06",
+      "cs:math:2022-errata:s4:geom:content_req:intersect_parallel:c07",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标点线面角、相交平行线条文及三角形角平分线/垂直平分线性质定理生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.lines"
+    ]
+  },
+  {
+    "code": "math_cand.geo.triangle_basic",
+    "name": "三角形基本性质与角关系",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "三角形三边关系、内角和定理及其推论（外角性质）、中线、高线、角平分线性质、三角形中位线定理。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标三角形条文①②及四边形条文④（三角形中位线定理）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.triangle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.isosceles_triangle",
+    "name": "等腰三角形与等边三角形",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "等腰三角形的性质（等边对等角、三线合一）与判定定理证明、等边三角形的性质与判定定理证明。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c08"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标三角形条文⑧（等腰与等边三角形性质与判定定理证明）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.triangle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.pythagoras",
+    "name": "直角三角形与勾股定理及其逆定理",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "直角三角形两锐角互余、直角三角形斜边中线性质、30°角所对直角边性质、勾股定理及其逆定理证明与应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标三角形条文⑨（直角三角形性质定理、斜边中线、30°角所对直角边与勾股定理及其逆定理）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.pythagoras"
+    ]
+  },
+  {
+    "code": "math_cand.geo.congruent_triangles",
+    "name": "全等三角形的性质与判定",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "全等三角形对应边角相等性质、基本事实（SSS, SAS, ASA）与推论（AAS, HL）的判定定理证明与应用、全等三角形尺规作图。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c05",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c10",
+      "cs:math:2022-errata:s4:geom:content_req:triangle:c11"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标三角形条文③~⑤（全等概念、基本事实、AAS定理）、⑩（HL定理）及⑪（全等与等腰尺规作图）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.triangle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.quadrilateral_basic",
+    "name": "多边形与平行四边形",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "多边形内角和与外角和公式、平行四边形的定义、性质定理（对边、对角、对角线）与判定定理证明。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c01",
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标四边形条文①②生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.quadrilateral"
+    ]
+  },
+  {
+    "code": "math_cand.geo.special_parallelogram",
+    "name": "特殊平行四边形（矩形、菱形、正方形）",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "矩形、菱形、正方形的定义、性质定理与判定定理证明及其相互包含关系与综合应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标四边形条文③（矩形、菱形、正方形性质与判定定理证明）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.quadrilateral"
+    ]
+  },
+  {
+    "code": "math_cand.geo.circle_basic",
+    "name": "圆的基本性质、垂径定理与圆周角定理",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "圆的对称性、弧/弦/圆心角关系、垂径定理及其推论、圆周角定理及其推论（直径所对圆周角为直角）、三角形外心与内心概念、三角形外接圆与内切圆尺规作图。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c02",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c03",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标圆条文①~③及⑤（圆基本性质、垂径定理、圆周角定理与外接圆/内切圆尺规作图）生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.circle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.circle_tangent",
+    "name": "切线的判定、性质与切线长定理",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "直线与圆的位置关系、切线的判定定理与性质定理、过圆上一点画圆的切线（必学）；*切线长定理、*尺规过圆外一点作切线（课标带*选学内容，中考题库需按条款选学标记过滤）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:circle:c04",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标圆条文④（必学切线判定与性质）及⑥⑦（选学*切线长定理与外切线尺规作图）生成，中考练习按条款选学隔离，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.circle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.arc_sector",
+    "name": "弧长、扇形面积与圆锥侧面积",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "弧长公式、扇形面积公式、正多边形的概念及正多边形与圆的关系；圆锥侧面展开图及其侧面积/全面积计算（教学应用拓展）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:circle:c08",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标圆条文⑧⑨生成（修正正多边形为非选学，标注圆锥侧面积为立体展开派生拓展），待审核",
+    "legacy_mapping_codes": [
+      "math.geo.circle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.proof_logic",
+    "name": "命题、定理、公理与演绎推理证明",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "定义、命题、真假命题、定理与公理（基本事实）体系、逆命题与逆定理、反证法证明。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:logic:c01",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c02",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c03",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c04",
+      "cs:math:2022-errata:s4:geom:content_req:logic:c05"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标命题定理条文①~⑤生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.lines",
+      "math.geo.triangle"
+    ]
+  },
+  {
+    "code": "math_cand.geo.transformations",
+    "name": "图形的变化",
+    "domain": "geom",
+    "parent_code": "math_cand.geo",
+    "level": 2,
+    "description": "轴对称、旋转、平移、相似变换与投影三视图。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c03",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c01",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c02",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c03",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c04",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c05",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c06",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c07",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c08",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c09",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c10",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c01",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c02",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c03",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c04",
+      "cs:math:2022-errata:s4:geom:acad_req:transform:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标几何主题2归集，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.transform",
+      "math.geo.similar",
+      "math.geo.trig"
+    ]
+  },
+  {
+    "code": "math_cand.geo.transform_symmetry",
+    "name": "图形的轴对称、平移与旋转",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.transformations",
+    "level": 3,
+    "description": "轴对称与轴对称图形性质、平移性质与向量平移、旋转与中心对称图形性质、线段角及几何图形的变换与折叠问题。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_axial:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c03",
+      "cs:math:2022-errata:s4:geom:content_req:transform_rot:c04",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c01",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c02",
+      "cs:math:2022-errata:s4:geom:content_req:transform_trans:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标轴对称、旋转、平移条文整合生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.transform"
+    ]
+  },
+  {
+    "code": "math_cand.geo.similarity",
+    "name": "相似多边形、相似三角形与比例线段",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.transformations",
+    "level": 3,
+    "description": "成比例线段、平行线分线段成比例定理、相似多边形与相似三角形的判定定理与性质定理、位似变换。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:similar:c01",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c02",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c03",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c04",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c05",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c06",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c07"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标相似条文①~⑦生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.similar"
+    ]
+  },
+  {
+    "code": "math_cand.geo.trigonometry",
+    "name": "锐角三角函数与解直角三角形",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.transformations",
+    "level": 3,
+    "description": "锐角正弦、余弦、正切概念与计算、30°/45°/60°特殊角的三角函数值、解直角三角形及测量仰角俯角方位角等实际应用。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:similar:c08",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c09",
+      "cs:math:2022-errata:s4:geom:content_req:similar:c10"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标相似条文⑧~⑩锐角三角函数生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.trig"
+    ]
+  },
+  {
+    "code": "math_cand.geo.projection_views",
+    "name": "投影与三视图",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.transformations",
+    "level": 3,
+    "description": "中心投影与平行投影（正投影）、简单几何体（柱体、锥体、球）的三视图绘制与识别、由三视图还原实物立体图形。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:projection:c01",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c02",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c03",
+      "cs:math:2022-errata:s4:geom:content_req:projection:c04"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标投影条文①~④生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.lines"
+    ]
+  },
+  {
+    "code": "math_cand.geo.coordinates",
+    "name": "平面直角坐标系与图形坐标变化",
+    "domain": "geom",
+    "parent_code": "math_cand.geo",
+    "level": 2,
+    "description": "平面直角坐标系、点的位置与坐标对应、图形在平移/轴对称/旋转变换下的坐标变化规律及简单位似坐标特征。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c01",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c02",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c03",
+      "cs:math:2022-errata:s4:geom:content_req:coord_pos:c04",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c01",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c02",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c03",
+      "cs:math:2022-errata:s4:geom:content_req:coord_motion:c04",
+      "cs:math:2022-errata:s4:geom:acad_req:coord:c03"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标图形与坐标主题条文生成，待审核",
+    "legacy_mapping_codes": [
+      "math.geo.transform"
+    ]
+  },
+  {
+    "code": "math_cand.stat_prob",
+    "name": "统计与概率",
+    "domain": "stat_prob",
+    "parent_code": null,
+    "level": 1,
+    "description": "抽样与数据分析、随机事件的概率两大主题。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c01",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c02",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c03",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c04",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c05",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c06",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c07",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c08",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c09",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c10",
+      "cs:math:2022-errata:s4:stat_prob:content_req:probability:c01",
+      "cs:math:2022-errata:s4:stat_prob:content_req:probability:c02",
+      "cs:math:2022-errata:s4:stat_prob:acad_req:stats:c01",
+      "cs:math:2022-errata:s4:stat_prob:acad_req:prob:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标统计与概率领域条文自动汇聚，待审核",
+    "legacy_mapping_codes": [
+      "math.stat_prob"
+    ]
+  },
+  {
+    "code": "math_cand.stat.data_analysis",
+    "name": "抽样调查与数据分析",
+    "domain": "stat_prob",
+    "parent_code": "math_cand.stat_prob",
+    "level": 2,
+    "description": "普查与抽样调查、数据的收集整理（频数分布表、直方图、统计图）、集中趋势与离散程度指标分析。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c01",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c02",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c03",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c04",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c05",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c06",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c07",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c08",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c09",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c10",
+      "cs:math:2022-errata:s4:stat_prob:acad_req:stats:c01"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标统计主题1归集，待审核",
+    "legacy_mapping_codes": [
+      "math.stat.data"
+    ]
+  },
+  {
+    "code": "math_cand.stat.sampling_collection",
+    "name": "抽样调查与数据收集整理",
+    "domain": "stat_prob",
+    "parent_code": "math_cand.stat.data_analysis",
+    "level": 3,
+    "description": "数据处理过程与问卷设计、普查与简单随机抽样、扇形统计图绘制与直观描述、数据分类活动、频数分布表与频数直方图制作与分析、统计图表选择与数据收集。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c01",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c02",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c03",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c06",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c07",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c09"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标抽样与数据分析条文①②③⑥⑦⑨生成，待审核",
+    "legacy_mapping_codes": [
+      "math.stat.data"
+    ]
+  },
+  {
+    "code": "math_cand.stat.central_dispersion",
+    "name": "数据集中趋势与离散程度度量",
+    "domain": "stat_prob",
+    "parent_code": "math_cand.stat.data_analysis",
+    "level": 3,
+    "description": "平均数（加权平均数）、中位数、众数的计算与集中趋势描述、极差与方差（离差平方和）的计算与离散程度刻画、用样本平均数和方差估计总体特征、依据数据分析结果进行简单推断与预测。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c04",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c05",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c08",
+      "cs:math:2022-errata:s4:stat_prob:content_req:sampling:c10"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标抽样与数据分析条文④⑤⑧⑩生成，待审核",
+    "legacy_mapping_codes": [
+      "math.stat.data"
+    ]
+  },
+  {
+    "code": "math_cand.prob.probability",
+    "name": "随机事件的概率及计算",
+    "domain": "stat_prob",
+    "parent_code": "math_cand.stat_prob",
+    "level": 2,
+    "description": "确定事件与随机事件、概率的意义、频率与概率关系、列表法与树状图法计算两步随机事件概率。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:stat_prob:content_req:probability:c01",
+      "cs:math:2022-errata:s4:stat_prob:content_req:probability:c02",
+      "cs:math:2022-errata:s4:stat_prob:acad_req:prob:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标概率主题2归集，待审核",
+    "legacy_mapping_codes": [
+      "math.prob.basic"
+    ]
+  },
+  {
+    "code": "math_cand.comp_prac",
+    "name": "综合与实践",
+    "domain": "comp_prac",
+    "parent_code": null,
+    "level": 1,
+    "description": "跨学科项目式学习、现实情境数学建模、探究式活动与数学课题研究。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c01",
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c02",
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c03",
+      "cs:math:2022-errata:s4:comp_prac:acad_req:modeling:c01"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标综合与实践领域条文自动汇聚，待审核",
+    "legacy_mapping_codes": [
+      "math.adv.new_definition",
+      "math.geo.comprehensive"
+    ]
+  },
+  {
+    "code": "math_cand.prac.project_modeling",
+    "name": "跨学科项目式学习与数学建模",
+    "domain": "comp_prac",
+    "parent_code": "math_cand.comp_prac",
+    "level": 2,
+    "description": "在真实生活与跨学科情境中发现数学问题、提出假设、建立方程/不等式/函数/几何模型求解并检验反思。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c01",
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c03",
+      "cs:math:2022-errata:s4:comp_prac:acad_req:modeling:c01"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标综合与实践项目式学习条文(1)(3)及学业要求生成，待审核",
+    "legacy_mapping_codes": [
+      "math.adv.new_definition"
+    ]
+  },
+  {
+    "code": "math_cand.prac.exploration_new_definition",
+    "name": "数学探究活动与课题实践",
+    "domain": "comp_prac",
+    "parent_code": "math_cand.comp_prac",
+    "level": 2,
+    "description": "课标综合与实践领域的数学探究活动与课题研究（依据课标第(2)条：经历分工合作、试验调查、建立模型、求解并解释现实问题）；中考'新定义题型'与'几何动点综合'属于高阶思维能力与题型特征，不作为课标跨学科实践的等价知识点，相关能力考查在历史映射中保留为待学科专家核定。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:comp_prac:content_req:modeling:c02"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "AI依据课标综合与实践条文(2)生成（收敛为数学课题探究与综合实践，剔除中考新定义题型的直接等同，题型维度保留待真实专家审核判定），待审核",
+    "legacy_mapping_codes": []
+  }
+]

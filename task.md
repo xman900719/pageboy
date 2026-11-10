@@ -20,7 +20,17 @@
   - [x] 4.2 验证生产脚本参数与权限隔离（`check_env_isolation.sh`）
   - [x] 4.3 提供生产环境执行命令与操作指南（遵循用户显式授权）
 
-- [x] **阶段 5：解析卷利用基础沉淀与文档同步**
-  - [x] 5.1 同步更新《four-subject-corpus.md》真题库原件来源与解析卷教研资产记录
-  - [x] 5.2 运行全量静态质检 `make verify`
-  - [x] 5.3 编制实施验收 Walkthrough 报告
+- [x] **阶段 6：P0-1 学生端与综合管理工作台的权限、API 和展示边界整改**
+  - [x] 6.1 服务端双凭据鉴权：`SHUTONG_ADMIN_TOKEN` 与 `SHUTONG_STUDENT_TOKEN` 独立，角色互斥调用返回 403
+  - [x] 6.2 学生端 API 数据隔离：练习与画像接口彻底剔除 `knowledge_ids`，收敛为自然语言 `topic` 与 `advice`
+  - [x] 6.3 学生前端边界收敛：移除“按知识点”筛选下拉框，剔除内部编码展示，`knowledge-labels.json` 零打入学生包
+  - [x] 6.4 契约与质量更新：更新 `contracts/openapi.yaml`、`acceptance.md`（AC-SEC-02, AC-ISO-01, AC-ISO-02）与人工验收指南
+  - [x] 6.5 全量测试回归与人工验收：pytest 174 项、Vitest 12 项、E2E 17/20 项全绿，Owner 点选核验放行并归档
+
+- [x] **阶段 7：修复 GitHub Actions CI 运行失败问题 (Run 42490836221)**
+  - [x] 7.1 问题溯源与根因分析（课标原件物理隔离、大文件 Git 禁入红线与 Fail-Closed 发布门禁交互逻辑）
+  - [x] 7.2 实施方案制定并编写 `implementation_plan.md`，已获用户确认
+  - [x] 7.3 优化 `fourcorpus.py` 与 `curriculum_standards.py` 校验顺序与测试环境合成原件协议
+  - [x] 7.4 在 `conftest.py` 中增加测试环境自动生成轻量合成原件与环境变量支持
+  - [x] 7.5 双环境（模拟 CI 干净工作区与宿主机带真实文件）本地全量回归测试
+  - [x] 7.6 提交代码并推送，验证 GitHub Actions CI 全绿放行

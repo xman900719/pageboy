@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/shutong/curriculum-standard-clause.schema.json",
+  "title": "CurriculumStandardClause",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clause_id",
+    "source_id",
+    "subject",
+    "stage",
+    "domain",
+    "part_title",
+    "domain_title",
+    "theme_title",
+    "sub_theme",
+    "section_type",
+    "clause_number",
+    "pdf_page",
+    "print_page",
+    "raw_text",
+    "is_elective",
+    "derived_requirement",
+    "review_status"
+  ],
+  "properties": {
+    "clause_id": {
+      "type": "string",
+      "pattern": "^cs:[a-z]+:[a-z0-9_-]+:s[1-4]:[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$",
+      "description": "条款全球统一引用代号，如 cs:math:2022-errata:s4:num_alg:num_expr:rat_num:c01"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^MOE-[0-9]{4}-[A-Z0-9_-]+$",
+      "description": "所关联的官方来源元数据 ID"
+    },
+    "subject": {
+      "enum": ["chinese", "math", "english", "physics"],
+      "description": "所属学科代码"
+    },
+    "stage": {
+      "enum": ["stage1", "stage2", "stage3", "stage4"],
+      "description": "课程学段，stage4 对应初中 7~9 年级"
+    },
+    "domain": {
+      "enum": [
+        "num_alg",
+        "geom",
+        "stat_prob",
+        "comp_prac",
+        "lang_usage",
+        "reading",
+        "writing",
+        "listening",
+        "speaking",
+        "matter",
+        "motion_energy",
+        "experiment"
+      ],
+      "description": "课程结构领域代码"
+    },
+    "part_title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "文件大章节，如 四、课程内容（初中部分）"
+    },
+    "domain_title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "领域分类标题，如 (一) 数与代数"
+    },
+    "theme_title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "主题标题，如 1. 数与式"
+    },
+    "sub_theme": {
+      "type": "string",
+      "minLength": 1,
+      "description": "子主题标题，如 (1) 有理数"
+    },
+    "section_type": {
+      "enum": ["content_requirement", "academic_requirement", "teaching_hint"],
+      "description": "栏目类型：内容要求、学业要求或教学提示"
+    },
+    "clause_number": {
+      "type": "string",
+      "minLength": 1,
+      "description": "条目原书编号或序号，如 ①、② 等"
+    },
+    "pdf_page": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "官方原件 PDF 物理页码"
+    },
+    "print_page": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "官方书籍印刷页码"
+    },
+    "raw_text": {
+      "type": "string",
+      "minLength": 5,
+      "description": "官方课程标准条款原文（逐字核对，保留原件印刷排版与字符特征）"
+    },
+    "standardized_text": {
+      "type": "string",
+      "minLength": 5,
+      "description": "公式与符号标准化表达（等价代数转写，用于检索与机器处理）"
+    },
+    "collation_note": {
+      "type": "string",
+      "minLength": 5,
+      "description": "人工核对与转写说明（如原件印刷排版、上下标转写区分等）"
+    },
+    "is_elective": {
+      "type": "boolean",
+      "description": "是否为选学内容（标*不作为考试要求）"
+    },
+    "derived_requirement": {
+      "type": "string",
+      "minLength": 2,
+      "description": "结构化拆解建议与学习目标（派生，不覆盖原文）"
+    },
+    "review_status": {
+      "enum": ["pending", "approved", "rejected"],
+      "description": "人工审核状态，AI 解析默认强约束为 pending"
+    },
+    "legacy_mappings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "description": "只读对应的存量81考点代码草案（只读映射对比，旧考点零修改）"
+    }
+  }
+}

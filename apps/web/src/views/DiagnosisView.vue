@@ -17,10 +17,9 @@ import Note from '../components/Note.vue'
 import PlanStepList from '../components/PlanStepList.vue'
 import ValidationPanel from '../components/ValidationPanel.vue'
 import type { NoticeTone } from '../components/Notice.vue'
-import { getKnowledgeLabel } from '../config/knowledge'
 
 type Notify = (text: string, tone?: NoticeTone) => void
-type Transition = { kid: string; from: string; to: string }
+type Transition = { topic: string; from: string; to: string }
 
 const props = defineProps<{
   client: ApiClient
@@ -99,7 +98,7 @@ watch(
       .profile(props.subject)
       .then(profile => {
         profiles.value = Object.fromEntries(
-          profile.knowledge.map(entry => [entry.knowledge_id, entry])
+          profile.knowledge.map(entry => [entry.topic, entry])
         )
       })
       .catch(() => {
@@ -112,9 +111,9 @@ watch(
 const transitions = computed<Transition[]>(() => {
   if (beforeSteps.value === null || planSteps.value === null) return []
   return planSteps.value.flatMap(after => {
-    const before = beforeSteps.value!.find(step => step.knowledge_id === after.knowledge_id)
+    const before = beforeSteps.value!.find(step => step.topic === after.topic)
     if (before === undefined || before.gap_type === after.gap_type) return []
-    return [{ kid: after.knowledge_id, from: GAP_LABELS[before.gap_type], to: GAP_LABELS[after.gap_type] }]
+    return [{ topic: after.topic, from: GAP_LABELS[before.gap_type], to: GAP_LABELS[after.gap_type] }]
   })
 })
 
@@ -202,10 +201,10 @@ async function onSubmitted(submitted: AttemptResult) {
   <section v-if="refreshed" class="card" aria-label="计划刷新结果">
     <h2>计划已刷新</h2>
     <template v-if="transitions.length > 0">
-      <p class="muted">本次诊断后，知识点状态发生了以下变化：</p>
+      <p class="muted">本次诊断后，考点状态发生了以下变化：</p>
       <ul class="transitions">
-        <li v-for="transition in transitions" :key="transition.kid">
-          <code class="kid">{{ getKnowledgeLabel(transition.kid) }}</code>
+        <li v-for="transition in transitions" :key="transition.topic">
+          <span class="step-topic">{{ transition.topic }}</span>
           <span>
             {{ transition.from }} → <b>{{ transition.to }}</b>
           </span>
@@ -213,10 +212,10 @@ async function onSubmitted(submitted: AttemptResult) {
       </ul>
     </template>
     <p v-else class="muted">
-      各知识点状态暂无变化；再积累一些独立未见题作答后，状态才会推进。
+      各考点状态暂无变化；再积累一些独立未见题作答后，状态才会推进。
     </p>
     <template v-if="planSteps !== null">
-      <h3 class="sub-head">刷新后的知识点状态</h3>
+      <h3 class="sub-head">刷新后的考点能力状态</h3>
       <PlanStepList :steps="planSteps" :threshold="planThreshold" :profiles="profiles" />
     </template>
   </section>

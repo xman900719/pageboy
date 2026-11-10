@@ -23,6 +23,7 @@ secrets/
 .DS_Store
 *.egg-info/
 *.tsbuildinfo
+*.zip
 site/
 .cache/
 .slim/deepwork/

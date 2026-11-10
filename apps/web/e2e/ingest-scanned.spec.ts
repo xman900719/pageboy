@@ -12,7 +12,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
-const TOKEN = 'test-journey-secret'
+const ADMIN_TOKEN = 'test-admin-secret'
+const STUDENT_TOKEN = 'test-student-secret'
 const API = process.env.ST008_API_BASE ?? 'http://127.0.0.1:18765'
 const PY_CMD = process.env.PY_CMD ?? '../../.venv/bin/python'
 
@@ -42,7 +43,7 @@ function buildScannedPdf(): Buffer {
 async function call<T = unknown>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await res.text()
@@ -52,13 +53,13 @@ async function call<T = unknown>(path: string, method = 'GET', body?: unknown): 
 
 test.beforeAll(async () => {
   // 幂等：worker 超时重启会重跑 beforeAll，按标题复用题源避免重复种子。
-  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources')
+  const existing = await call<{ id: string; source: { title: string } }[]>('/api/admin/sources?subject=chinese')
   const reused = existing.find(item => item.source.title === SOURCE_TITLE)
   const source = reused
     ? reused.id
     : (await call<{ id: string }>('/api/admin/sources', 'POST', {
         title: SOURCE_TITLE,
-        subject: 'math',
+        subject: 'chinese',
         rights_status: 'licensed',
         verified: true,
       })).id
@@ -76,20 +77,22 @@ test.beforeAll(async () => {
 
 async function enterSpace(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(STUDENT_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '主要视图' })).toBeVisible()
 }
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
-  await page.getByLabel('访问令牌').fill(TOKEN)
+  await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
 }
 
 test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确认导入→审核发布→练习渲染公式', async ({ page }) => {
   await enterAdminSpace(page)
+  // 切换至语文科目（专属于 J8 扫描件摄取与题库，避免污染数学纵向闭环）
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '语文' }).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })
@@ -148,11 +151,11 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await draftRow.getByRole('button', { name: '发布' }).click()
   await expect(page.getByRole('status')).toContainText('题目已发布')
 
-  // ⑥ 进入学生练习区按该知识点取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
+  // ⑥ 进入学生练习区按语文科目取题：扫描件誊写的题干公式渲染为 KaTeX（ST-013 链路复用）。
   await enterSpace(page)
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '语文' }).click()
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
   const practice = page.getByRole('region', { name: '练习控制' })
-  await practice.getByLabel('按知识点').selectOption(KID)
   await practice.getByRole('button', { name: '开始练习' }).click()
   const card = page.getByRole('region', { name: '题目' })
   await expect(card).toBeVisible()

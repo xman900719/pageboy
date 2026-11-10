@@ -1,0 +1,764 @@
+[
+  {
+    "code": "physics_cand.matter",
+    "name": "物质与微观结构",
+    "domain": "matter",
+    "parent_code": null,
+    "level": 1,
+    "description": "涵盖物态变化、物质物理属性、质量与密度、微观分子原子结构及宏观宇宙尺度的核心物质观念。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:matter:content_req:state_features:c01",
+      "cs:physics:2022:s4:matter:content_req:thermometer:c02",
+      "cs:physics:2022:s4:matter:content_req:phase_transition:c03",
+      "cs:physics:2022:s4:matter:content_req:water_cycle:c04",
+      "cs:physics:2022:s4:matter:content_req:prop_physical:c05",
+      "cs:physics:2022:s4:matter:content_req:mass_measure:c06",
+      "cs:physics:2022:s4:matter:content_req:density_understand:c07",
+      "cs:physics:2022:s4:matter:content_req:prop_impact:c08",
+      "cs:physics:2022:s4:matter:content_req:molecule_atom:c09",
+      "cs:physics:2022:s4:matter:content_req:nuclear_atom:c10",
+      "cs:physics:2022:s4:matter:content_req:universe_explore:c11",
+      "cs:physics:2022:s4:matter:content_req:scale_world:c12",
+      "cs:physics:2022:s4:matter:acad_req:matter_overview:c13",
+      "cs:physics:2022:s4:matter:acad_qual:physics_concept:c95"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应课标第一主题物质，待审核",
+    "legacy_mapping_codes": [
+      "physics.thermal",
+      "physics.mechanics"
+    ]
+  },
+  {
+    "code": "physics_cand.matter.thermal_state",
+    "name": "物态变化与吸放热",
+    "domain": "matter",
+    "parent_code": "physics_cand.matter",
+    "level": 2,
+    "description": "固液气三态特征、液体温度计原理使用、晶体非晶体熔化凝固、汽化液化、升华凝华吸放热规律与水循环应用。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:matter:content_req:state_features:c01",
+      "cs:physics:2022:s4:matter:content_req:thermometer:c02",
+      "cs:physics:2022:s4:matter:content_req:phase_transition:c03",
+      "cs:physics:2022:s4:matter:content_req:water_cycle:c04",
+      "cs:physics:2022:s4:experiment:content_req:exp_temperature:c65",
+      "cs:physics:2022:s4:experiment:content_req:inq_boiling:c72"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "细化六大物态变化与吸放热，待审核",
+    "legacy_mapping_codes": [
+      "physics.thermal.state"
+    ]
+  },
+  {
+    "code": "physics_cand.matter.density_prop",
+    "name": "质量与密度及物质物理属性",
+    "domain": "matter",
+    "parent_code": "physics_cand.matter",
+    "level": 2,
+    "description": "物质的弹性、磁性、导电导热等物理属性；质量概念与天平测量；密度概念公式 ρ=m/V、天平量筒测密度实验与误差分析。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:matter:content_req:prop_physical:c05",
+      "cs:physics:2022:s4:matter:content_req:mass_measure:c06",
+      "cs:physics:2022:s4:matter:content_req:density_understand:c07",
+      "cs:physics:2022:s4:matter:content_req:prop_impact:c08",
+      "cs:physics:2022:s4:experiment:content_req:exp_mass:c63",
+      "cs:physics:2022:s4:experiment:content_req:exp_density:c64"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "质量测量与密度实验考点，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.density"
+    ]
+  },
+  {
+    "code": "physics_cand.matter.micro_structure",
+    "name": "微观世界与分子动理论及尺度",
+    "domain": "matter",
+    "parent_code": "physics_cand.matter",
+    "level": 2,
+    "description": "物质的微观构成（分子、原子、原子核式结构模型）、人类对微观世界和宏观宇宙探索历程与物质世界空间尺度观念。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:matter:content_req:molecule_atom:c09",
+      "cs:physics:2022:s4:matter:content_req:nuclear_atom:c10",
+      "cs:physics:2022:s4:matter:content_req:universe_explore:c11",
+      "cs:physics:2022:s4:matter:content_req:scale_world:c12"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "微观粒子结构与宇宙尺度考点，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.density"
+    ]
+  },
+  {
+    "code": "physics_cand.motion_interaction",
+    "name": "运动和相互作用",
+    "domain": "motion_energy",
+    "parent_code": null,
+    "level": 1,
+    "description": "涵盖多种多样的运动形式、机械运动和力、声和光、电和磁的相互作用规律与物理模型。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:motion_relative:c14",
+      "cs:physics:2022:s4:motion_energy:content_req:kinetic_theory:c15",
+      "cs:physics:2022:s4:motion_energy:content_req:motion_forms:c16",
+      "cs:physics:2022:s4:motion_energy:content_req:length_time:c17",
+      "cs:physics:2022:s4:motion_energy:content_req:speed_calc:c18",
+      "cs:physics:2022:s4:motion_energy:content_req:force_common:c19",
+      "cs:physics:2022:s4:motion_energy:content_req:force_diagram:c20",
+      "cs:physics:2022:s4:motion_energy:content_req:newton_inertia:c21",
+      "cs:physics:2022:s4:motion_energy:content_req:simple_machine:c22",
+      "cs:physics:2022:s4:motion_energy:content_req:solid_pressure:c23",
+      "cs:physics:2022:s4:motion_energy:content_req:fluid_pressure:c24",
+      "cs:physics:2022:s4:motion_energy:content_req:buoyancy_archimedes:c25",
+      "cs:physics:2022:s4:motion_energy:content_req:sound_produce:c26",
+      "cs:physics:2022:s4:motion_energy:content_req:sound_features:c27",
+      "cs:physics:2022:s4:motion_energy:content_req:light_reflect_refract:c28",
+      "cs:physics:2022:s4:motion_energy:content_req:plane_mirror:c29",
+      "cs:physics:2022:s4:motion_energy:content_req:lens_imaging:c30",
+      "cs:physics:2022:s4:motion_energy:content_req:light_dispersion:c31",
+      "cs:physics:2022:s4:motion_energy:content_req:static_electricity:c32",
+      "cs:physics:2022:s4:motion_energy:content_req:magnetic_field:c33",
+      "cs:physics:2022:s4:motion_energy:content_req:current_magnetic:c34",
+      "cs:physics:2022:s4:motion_energy:content_req:magnetic_force_wire:c35",
+      "cs:physics:2022:s4:motion_energy:content_req:electromagnetic_induct:c36",
+      "cs:physics:2022:s4:motion_energy:content_req:electromagnetic_wave:c37",
+      "cs:physics:2022:s4:motion_energy:acad_req:motion_overview:c38"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应课标第二主题运动和相互作用，待审核",
+    "legacy_mapping_codes": [
+      "physics.acoustics_optics",
+      "physics.mechanics",
+      "physics.electromagnetism"
+    ]
+  },
+  {
+    "code": "physics_cand.motion.speed",
+    "name": "机械运动与速度计算",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "机械运动与参照物相对性、长度与时间测量、刻度尺停表规范使用、速度定义式 v=s/t 计算及测小车平均速度实验。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:motion_relative:c14",
+      "cs:physics:2022:s4:motion_energy:content_req:motion_forms:c16",
+      "cs:physics:2022:s4:motion_energy:content_req:length_time:c17",
+      "cs:physics:2022:s4:motion_energy:content_req:speed_calc:c18",
+      "cs:physics:2022:s4:experiment:content_req:exp_length_time:c66",
+      "cs:physics:2022:s4:experiment:content_req:exp_speed:c67"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "速度公式计算与运动测量，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.motion"
+    ]
+  },
+  {
+    "code": "physics_cand.force.basics",
+    "name": "力的概念与三要素及示意图",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "力的概念与作用效果（形变、改变运动状态）、力的三要素、力的受力分析示意图规范作图与相互作用力特点。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:force_diagram:c20"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "受力分析示意图作图技能，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.forces"
+    ]
+  },
+  {
+    "code": "physics_cand.force.gravity_friction",
+    "name": "重力、弹力与摩擦力",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "重力计算 G=mg、重心与竖直向下方向；弹簧测力计原理与测力；滑动摩擦力大小影响因素探究实验及增大减小摩擦方法。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:force_common:c19",
+      "cs:physics:2022:s4:experiment:content_req:exp_force:c68",
+      "cs:physics:2022:s4:experiment:content_req:inq_sliding_friction:c73"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "三种常见力综合分析，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.forces"
+    ]
+  },
+  {
+    "code": "physics_cand.force.newton_balance",
+    "name": "牛顿第一定律与二力平衡",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "牛顿第一定律理想实验科学推理；惯性是物体固有属性的辨析与安全解释；同一直线二力合成与二力平衡条件应用；在熟悉情境中运用科学模型与归纳演绎推理分析运动与力的关系。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:force_diagram:c20",
+      "cs:physics:2022:s4:motion_energy:content_req:newton_inertia:c21",
+      "cs:physics:2022:s4:motion_energy:acad_qual:scientific_thinking:c96"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "牛顿第一定律、二力平衡及科学思维模型推理论证核心素养，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.balance"
+    ]
+  },
+  {
+    "code": "physics_cand.force.pressure_fluid",
+    "name": "固体液体压强与大气压强流体压强",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "固体压强计算 p=F/S；探究液体内部压强特点与公式 p=ρgh；连通器原理；托里拆利实验测定大气压；流体压强与流速关系伯努利原理。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:solid_pressure:c23",
+      "cs:physics:2022:s4:motion_energy:content_req:fluid_pressure:c24",
+      "cs:physics:2022:s4:experiment:content_req:inq_liquid_pressure:c74"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "压强四大板块综合诊断，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.pressure"
+    ]
+  },
+  {
+    "code": "physics_cand.force.buoyancy",
+    "name": "浮力与阿基米德原理及浮沉条件",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "浮力产生原因（压力差）；阿基米德原理探究实验 F浮=G排=ρ液gV排；物体浮沉条件（漂浮、悬浮、沉底）及轮船潜水艇应用综合计算。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:buoyancy_archimedes:c25",
+      "cs:physics:2022:s4:experiment:content_req:inq_buoyancy:c75"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "阿基米德原理与浮沉条件中考重难点，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.buoyancy"
+    ]
+  },
+  {
+    "code": "physics_cand.force.simple_machine",
+    "name": "简单机械（杠杆与滑轮）",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "杠杆五要素与力臂作图；探究杠杆平衡条件 F1L1=F2L2 与省力费力杠杆分类；定滑轮、动滑轮与滑轮组省力及绳端距离计算。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:simple_machine:c22",
+      "cs:physics:2022:s4:experiment:content_req:inq_lever_balance:c76"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "简单机械作图与平衡计算，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.work"
+    ]
+  },
+  {
+    "code": "physics_cand.sound",
+    "name": "声现象与特性及噪声防治",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "声音由物体振动产生；介质传播与真空不能传声科学推理；空气声速；音调响度音色三要素辨析；超声次声应用与控制噪声途径。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:sound_produce:c26",
+      "cs:physics:2022:s4:motion_energy:content_req:sound_features:c27"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "声现象全要素，待审核",
+    "legacy_mapping_codes": [
+      "physics.sound"
+    ]
+  },
+  {
+    "code": "physics_cand.light.propagate_reflect",
+    "name": "光的直线传播与反射平面镜成像",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "光在同种均匀介质中沿直线传播与小孔成像；真空光速；光的反射定律探究实验与作图；平面镜成像特点探究实验与对称作图。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:light_reflect_refract:c28",
+      "cs:physics:2022:s4:motion_energy:content_req:plane_mirror:c29",
+      "cs:physics:2022:s4:experiment:content_req:inq_light_reflection:c77",
+      "cs:physics:2022:s4:experiment:content_req:inq_plane_mirror:c78"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "光沿直线传播与反射成像作图，待审核",
+    "legacy_mapping_codes": [
+      "physics.light.reflection_refraction"
+    ]
+  },
+  {
+    "code": "physics_cand.light.refract_dispersion",
+    "name": "光的折射与色散及不可见光",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "光的折射规律与光路作图、池水变浅筷子折断等折射现象解释；三棱镜白光色散、色光三原色与红外线紫外线应用。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:light_reflect_refract:c28",
+      "cs:physics:2022:s4:motion_energy:content_req:light_dispersion:c31"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "光的折射作图与色散规律，待审核",
+    "legacy_mapping_codes": [
+      "physics.light.reflection_refraction"
+    ]
+  },
+  {
+    "code": "physics_cand.light.lens_application",
+    "name": "透镜成像规律与眼睛视力矫正",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "凸透镜会聚与凹透镜发散特殊光线；探究凸透镜成像规律实验；照相机、投影仪、放大镜光学原理及近视远视眼成因与矫正方法。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:lens_imaging:c30",
+      "cs:physics:2022:s4:experiment:content_req:inq_lens_imaging:c79"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "透镜规律探究与光学仪器视力矫正应用，待审核",
+    "legacy_mapping_codes": [
+      "physics.light.lens"
+    ]
+  },
+  {
+    "code": "physics_cand.elec.charge_field",
+    "name": "静电现象与磁现象磁场",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "摩擦起电本质（电子转移）、两种电荷相互作用与验电器；磁体磁极、磁场与磁感线模型、地磁场特点及静电防范利用常识。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:static_electricity:c32",
+      "cs:physics:2022:s4:motion_energy:content_req:magnetic_field:c33"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "电荷基本性质与磁场基本模型，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.circuit",
+      "physics.elec.magnetism"
+    ]
+  },
+  {
+    "code": "physics_cand.elec.electromagnetism",
+    "name": "电与磁（电流磁效应与电磁感应）",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.motion_interaction",
+    "level": 2,
+    "description": "奥斯特实验电流磁效应；通电螺线管磁场与安培定则；电磁铁与电磁继电器；磁场对通电导线作用与电动机；法拉第电磁感应与发电机；电磁波传播与无线通信。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:current_magnetic:c34",
+      "cs:physics:2022:s4:motion_energy:content_req:magnetic_force_wire:c35",
+      "cs:physics:2022:s4:motion_energy:content_req:electromagnetic_induct:c36",
+      "cs:physics:2022:s4:motion_energy:content_req:electromagnetic_wave:c37",
+      "cs:physics:2022:s4:experiment:content_req:inq_solenoid_magnetic:c80",
+      "cs:physics:2022:s4:experiment:content_req:inq_induction_current:c81"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "电动机发电机原理对比与电磁感应，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.magnetism"
+    ]
+  },
+  {
+    "code": "physics_cand.energy",
+    "name": "能量与能源",
+    "domain": "motion_energy",
+    "parent_code": null,
+    "level": 1,
+    "description": "涵盖机械能、内能、电磁能、能量守恒与能源可持续发展的核心能量观念与计算综合。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:energy_forms:c39",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_transfer:c40",
+      "cs:physics:2022:s4:motion_energy:content_req:work_concept:c41",
+      "cs:physics:2022:s4:motion_energy:content_req:mech_energy:c42",
+      "cs:physics:2022:s4:motion_energy:content_req:work_power:c43",
+      "cs:physics:2022:s4:motion_energy:content_req:mech_efficiency:c44",
+      "cs:physics:2022:s4:motion_energy:content_req:machinery_history:c45",
+      "cs:physics:2022:s4:motion_energy:content_req:internal_heat:c46",
+      "cs:physics:2022:s4:motion_energy:content_req:specific_heat:c47",
+      "cs:physics:2022:s4:motion_energy:content_req:heat_engine:c48",
+      "cs:physics:2022:s4:motion_energy:content_req:power_supply:c49",
+      "cs:physics:2022:s4:motion_energy:content_req:ohm_law:c50",
+      "cs:physics:2022:s4:motion_energy:content_req:meters_use:c51",
+      "cs:physics:2022:s4:motion_energy:content_req:circuit_rules:c52",
+      "cs:physics:2022:s4:motion_energy:content_req:electric_power:c53",
+      "cs:physics:2022:s4:motion_energy:content_req:joule_law:c54",
+      "cs:physics:2022:s4:motion_energy:content_req:household_safety:c55",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_conservation:c56",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_efficiency:c57",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_direction:c58",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_resources:c59",
+      "cs:physics:2022:s4:motion_energy:content_req:nuclear_energy:c60",
+      "cs:physics:2022:s4:motion_energy:content_req:solar_sustainable:c61",
+      "cs:physics:2022:s4:motion_energy:acad_req:energy_overview:c62"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应课标第三主题能量，待审核",
+    "legacy_mapping_codes": [
+      "physics.thermal",
+      "physics.mechanics",
+      "physics.electromagnetism"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.transfer_concept",
+    "name": "能量、能量转化转移与功的概念",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "认识不同能量形式及其与生产生活的联系；实验认识能量转移与相互转化；理解功的两个必要因素及做功是能量转化的量度。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:energy_forms:c39",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_transfer:c40",
+      "cs:physics:2022:s4:motion_energy:content_req:work_concept:c41"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "能量基本观念与做功量度本质，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.work"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.work_power_eff",
+    "name": "机械功、功率与机械效率",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "机械功公式 W=Fs；功率物理意义及计算 P=W/t=Fv；有用功、总功与机械效率 η=W有/W总；测滑轮组斜面机械效率实验与提高效率途径。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:work_power:c43",
+      "cs:physics:2022:s4:motion_energy:content_req:mech_efficiency:c44",
+      "cs:physics:2022:s4:motion_energy:content_req:machinery_history:c45"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "机械功功率与效率综合计算，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.work"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.mech_energy_conserv",
+    "name": "动能、势能与机械能转化守恒",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "动能势能影响因素探究；动能与势能相互转化过程分析；机械能守恒条件及能量转化转移具有方向性与能量守恒定律。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:mech_energy:c42",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_conservation:c56",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_efficiency:c57",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_direction:c58"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "机械能守恒与能量转化方向性，待审核",
+    "legacy_mapping_codes": [
+      "physics.mech.work"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.internal_heat",
+    "name": "内能、比热容与热量计算",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "内能概念与改变内能两种方式（做功和热传递）；分子动理论；比热容探究实验；热量计算公式 Q=cmΔt 及水比热容大在生活中的应用。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:kinetic_theory:c15",
+      "cs:physics:2022:s4:motion_energy:content_req:internal_heat:c46",
+      "cs:physics:2022:s4:motion_energy:content_req:specific_heat:c47"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "内能比热容与热量综合计算，待审核",
+    "legacy_mapping_codes": [
+      "physics.thermal.heat"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.heat_engine",
+    "name": "燃料热值与热机四冲程及效率",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "燃料热值公式 Q=mq 或 Q=Vq；四冲程内燃机（吸气、压缩、做功、排气）工作循环与能量转化；热机效率概念与提高效率途径。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:internal_heat:c46",
+      "cs:physics:2022:s4:motion_energy:content_req:heat_engine:c48"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "内燃机冲程能量转化与热机效率，待审核",
+    "legacy_mapping_codes": [
+      "physics.thermal.heat"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.circuit_rules",
+    "name": "电路规律（电流、电压、电阻与滑动变阻器）",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "电源用电器能量转化；电路图绘制与串并联实物连接；串联并联电路电流与电压规律；电阻影响因素与滑动变阻器规范使用接法。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:power_supply:c49",
+      "cs:physics:2022:s4:motion_energy:content_req:meters_use:c51",
+      "cs:physics:2022:s4:motion_energy:content_req:circuit_rules:c52",
+      "cs:physics:2022:s4:experiment:content_req:exp_current:c69",
+      "cs:physics:2022:s4:experiment:content_req:exp_voltage:c70",
+      "cs:physics:2022:s4:experiment:content_req:inq_circuit_features:c82"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "电路基础连接与电表电学规律，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.circuit"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.ohm_law",
+    "name": "欧姆定律及其电路综合应用",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "探究电流与电压电阻关系实验；欧姆定律公式 I=U/R；伏安法测定定值电阻与小灯泡电阻实验；动态电路分析与极值范围综合计算。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:ohm_law:c50",
+      "cs:physics:2022:s4:experiment:content_req:exp_resistance:c71",
+      "cs:physics:2022:s4:experiment:content_req:inq_ohm_relation:c83"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "欧姆定律动态电路中考核心考点，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.ohm"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.electric_power_joule",
+    "name": "电功、电功率与焦耳定律",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "电能表参数读数与电功计算 W=UIt=Pt；电功率公式 P=UI 及推导式；额定与实际功率分析；焦耳定律探究实验与 Q=I²Rt 计算及电热利用防止。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:electric_power:c53",
+      "cs:physics:2022:s4:motion_energy:content_req:joule_law:c54"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "电功率与焦耳定律综合电学大题，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.power"
+    ]
+  },
+  {
+    "code": "physics_cand.energy.safety_and_conservation",
+    "name": "家庭电路安全用电与能量守恒能源发展",
+    "domain": "motion_energy",
+    "parent_code": "physics_cand.energy",
+    "level": 2,
+    "description": "家庭电路组成与三孔插座接地；试电笔使用与触电防护安全用电原则；可再生与不可再生能源分类；核能特点与太阳能利用及可持续发展观念。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:motion_energy:content_req:household_safety:c55",
+      "cs:physics:2022:s4:motion_energy:content_req:energy_resources:c59",
+      "cs:physics:2022:s4:motion_energy:content_req:nuclear_energy:c60",
+      "cs:physics:2022:s4:motion_energy:content_req:solar_sustainable:c61"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "家庭安全用电与能源可持续发展，待审核",
+    "legacy_mapping_codes": [
+      "physics.elec.power",
+      "physics.thermal.heat"
+    ]
+  },
+  {
+    "code": "physics_cand.experiment",
+    "name": "物理实验与科学探究能力",
+    "domain": "experiment",
+    "parent_code": null,
+    "level": 1,
+    "description": "涵盖21个必做实验、测量仪器规范操作、数据记录处理、误差分析及控制变量转换法科学探究能力。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:experiment:content_req:exp_mass:c63",
+      "cs:physics:2022:s4:experiment:content_req:exp_density:c64",
+      "cs:physics:2022:s4:experiment:content_req:exp_temperature:c65",
+      "cs:physics:2022:s4:experiment:content_req:exp_length_time:c66",
+      "cs:physics:2022:s4:experiment:content_req:exp_speed:c67",
+      "cs:physics:2022:s4:experiment:content_req:exp_force:c68",
+      "cs:physics:2022:s4:experiment:content_req:exp_current:c69",
+      "cs:physics:2022:s4:experiment:content_req:exp_voltage:c70",
+      "cs:physics:2022:s4:experiment:content_req:exp_resistance:c71",
+      "cs:physics:2022:s4:experiment:content_req:inq_boiling:c72",
+      "cs:physics:2022:s4:experiment:content_req:inq_sliding_friction:c73",
+      "cs:physics:2022:s4:experiment:content_req:inq_liquid_pressure:c74",
+      "cs:physics:2022:s4:experiment:content_req:inq_buoyancy:c75",
+      "cs:physics:2022:s4:experiment:content_req:inq_lever_balance:c76",
+      "cs:physics:2022:s4:experiment:content_req:inq_light_reflection:c77",
+      "cs:physics:2022:s4:experiment:content_req:inq_plane_mirror:c78",
+      "cs:physics:2022:s4:experiment:content_req:inq_lens_imaging:c79",
+      "cs:physics:2022:s4:experiment:content_req:inq_solenoid_magnetic:c80",
+      "cs:physics:2022:s4:experiment:content_req:inq_induction_current:c81",
+      "cs:physics:2022:s4:experiment:content_req:inq_circuit_features:c82",
+      "cs:physics:2022:s4:experiment:content_req:inq_ohm_relation:c83",
+      "cs:physics:2022:s4:experiment:acad_req:experiment_overview:c84",
+      "cs:physics:2022:s4:experiment:acad_qual:scientific_inquiry:c97"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应课标第四主题实验探究，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  },
+  {
+    "code": "physics_cand.exp.measuring_skills",
+    "name": "基本测量仪器规范使用与数据处理",
+    "domain": "experiment",
+    "parent_code": "physics_cand.experiment",
+    "level": 2,
+    "description": "掌握托盘天平、量筒、刻度尺、秒表、温度计、弹簧测力计、电流表、电压表等基础测量仪器规范使用、调零、量程选取与数据记录误差估算。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:experiment:content_req:exp_mass:c63",
+      "cs:physics:2022:s4:experiment:content_req:exp_density:c64",
+      "cs:physics:2022:s4:experiment:content_req:exp_temperature:c65",
+      "cs:physics:2022:s4:experiment:content_req:exp_length_time:c66",
+      "cs:physics:2022:s4:experiment:content_req:exp_speed:c67",
+      "cs:physics:2022:s4:experiment:content_req:exp_force:c68",
+      "cs:physics:2022:s4:experiment:content_req:exp_current:c69",
+      "cs:physics:2022:s4:experiment:content_req:exp_voltage:c70",
+      "cs:physics:2022:s4:experiment:content_req:exp_resistance:c71"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "9类测量型必做实验综合考查，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  },
+  {
+    "code": "physics_cand.exp.inquiry_methods",
+    "name": "科学探究方法（控制变量法、转换法与图像处理）",
+    "domain": "experiment",
+    "parent_code": "physics_cand.experiment",
+    "level": 2,
+    "description": "掌握控制变量法、转换法、等效替代法、科学推理法等物理研究方法；具备实验故障诊断、数据表格图像分析与探究结论科学表述能力。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:experiment:content_req:inq_boiling:c72",
+      "cs:physics:2022:s4:experiment:content_req:inq_sliding_friction:c73",
+      "cs:physics:2022:s4:experiment:content_req:inq_liquid_pressure:c74",
+      "cs:physics:2022:s4:experiment:content_req:inq_buoyancy:c75",
+      "cs:physics:2022:s4:experiment:content_req:inq_lever_balance:c76",
+      "cs:physics:2022:s4:experiment:content_req:inq_light_reflection:c77",
+      "cs:physics:2022:s4:experiment:content_req:inq_plane_mirror:c78",
+      "cs:physics:2022:s4:experiment:content_req:inq_lens_imaging:c79",
+      "cs:physics:2022:s4:experiment:content_req:inq_solenoid_magnetic:c80",
+      "cs:physics:2022:s4:experiment:content_req:inq_induction_current:c81",
+      "cs:physics:2022:s4:experiment:content_req:inq_circuit_features:c82",
+      "cs:physics:2022:s4:experiment:content_req:inq_ohm_relation:c83"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "12类探究型必做实验方法归纳，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  },
+  {
+    "code": "physics_cand.interdisciplinary",
+    "name": "跨学科实践与现代工程技术",
+    "domain": "comp_prac",
+    "parent_code": null,
+    "level": 1,
+    "description": "物理与日常生活实践作品制作、物理与重大工程科技成就（航天、深潜、高铁）的跨学科综合应用分析及社会责任观念。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:comp_prac:content_req:daily_problem:c85",
+      "cs:physics:2022:s4:comp_prac:content_req:daily_safety:c86",
+      "cs:physics:2022:s4:comp_prac:content_req:daily_low_carbon:c87",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_ancient:c88",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_modern:c89",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_info:c90",
+      "cs:physics:2022:s4:comp_prac:content_req:soc_energy:c91",
+      "cs:physics:2022:s4:comp_prac:content_req:soc_materials:c92",
+      "cs:physics:2022:s4:comp_prac:content_req:soc_achievements:c93",
+      "cs:physics:2022:s4:comp_prac:acad_req:interdisciplinary_overview:c94",
+      "cs:physics:2022:s4:comp_prac:acad_qual:attitude_responsibility:c98"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "对应课标第五主题跨学科实践，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  },
+  {
+    "code": "physics_cand.interdisciplinary.life_engineer",
+    "name": "物理与日常生活及工程技术实践",
+    "domain": "comp_prac",
+    "parent_code": "physics_cand.interdisciplinary",
+    "level": 2,
+    "description": "发现日常生活物理问题改良生活用品、分析用电交通安全隐患、了解我国古代龙骨水车赵州桥及现代桥梁高铁信息技术工程案例。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:comp_prac:content_req:daily_problem:c85",
+      "cs:physics:2022:s4:comp_prac:content_req:daily_safety:c86",
+      "cs:physics:2022:s4:comp_prac:content_req:daily_low_carbon:c87",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_ancient:c88",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_modern:c89",
+      "cs:physics:2022:s4:comp_prac:content_req:eng_info:c90"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "日常生活与工程技术跨学科实践，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  },
+  {
+    "code": "physics_cand.interdisciplinary.society_development",
+    "name": "物理与社会发展及新材料科技成就",
+    "domain": "comp_prac",
+    "parent_code": "physics_cand.interdisciplinary",
+    "level": 2,
+    "description": "能源开发对社会发展影响、前沿新材料（半导体超导体纳米材料）科技变革、两弹一星与国家重大科技突破及爱国奉献科学家精神。",
+    "source_clause_ids": [
+      "cs:physics:2022:s4:comp_prac:content_req:soc_energy:c91",
+      "cs:physics:2022:s4:comp_prac:content_req:soc_materials:c92",
+      "cs:physics:2022:s4:comp_prac:content_req:soc_achievements:c93"
+    ],
+    "is_elective": false,
+    "review_status": "pending",
+    "review_note": "社会发展新材料与重大科技成就跨学科，待审核",
+    "legacy_mapping_codes": [
+      "physics.exp.inquiry"
+    ]
+  }
+]

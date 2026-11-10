@@ -17,17 +17,17 @@ def snapshot(record):
     return {column.key: getattr(record, column.key) for column in inspect(record).mapper.column_attrs}
 
 
-def test_rule_change_rederives_without_touching_history(client, auth, db, published, monkeypatch):
+def test_rule_change_rederives_without_touching_history(client, student_auth, db, published, monkeypatch):
     # 经练习流产生真实 AnswerAttempt/Exposure 行：math.arithmetic 上 3 道 evaluation，答案混合（A/A/B）。
-    assert client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100, "minutes_per_day": 15}, headers=auth).status_code == 201
+    assert client.post("/api/goals", json={"subject": "math", "target_points": 90, "max_points": 100, "minutes_per_day": 15}, headers=student_auth).status_code == 201
     for i, answer in enumerate(["A", "A", "B"]):
-        item = client.get("/api/practice/next?subject=math&purpose=evaluation&knowledge_id=math.arithmetic", headers=auth).json()
-        r = client.post("/api/practice/attempts", json={"client_attempt_id": f"replay-{i}", "exposure_id": item["exposure_id"], "answer": answer}, headers=auth)
+        item = client.get("/api/practice/next?subject=math&purpose=evaluation", headers=student_auth).json()
+        r = client.post("/api/practice/attempts", json={"client_attempt_id": f"replay-{i}", "exposure_id": item["exposure_id"], "answer": answer}, headers=student_auth)
         assert r.status_code == 201
     original_model_version = guidance.MODEL_VERSION
     original_min_items = guidance.MIN_DISTINCT_ITEMS
     original_threshold = guidance.provisional_threshold
-    before_plan = client.get("/api/guidance/plan?subject=math", headers=auth).json()
+    before_plan = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
     assert before_plan["model_version"] == original_model_version
     assert before_plan["planning_threshold"] == 0.9
     attempts_before = [snapshot(r) for r in db.scalars(select(m.AnswerAttempt).order_by(m.AnswerAttempt.id)).all()]
@@ -40,13 +40,13 @@ def test_rule_change_rederives_without_touching_history(client, auth, db, publis
     monkeypatch.setattr(guidance, "provisional_threshold", lambda target_points, max_points: 0.5)
 
     # 重算画像/计划/复测：输出反映新规则（纯派生）。
-    profile = client.get("/api/guidance/profile?subject=math", headers=auth).json()
-    by_kid = {k["knowledge_id"]: k for k in profile["knowledge"]}
-    assert by_kid["math.arithmetic"]["sample_size"] == 3  # 历史行不变，样本量仍为 3
-    plan = client.get("/api/guidance/plan?subject=math", headers=auth).json()
+    profile = client.get("/api/guidance/profile?subject=math", headers=student_auth).json()
+    by_topic = {k["topic"]: k for k in profile["knowledge"]}
+    assert by_topic["基础算术运算"]["sample_size"] == 3  # 历史行不变，样本量仍为 3
+    plan = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
     assert plan["planning_threshold"] == 0.5
     assert plan["model_version"] == "guidance-heuristic-v0.2-test"
-    validation = client.get("/api/guidance/validation?subject=math", headers=auth)
+    validation = client.get("/api/guidance/validation?subject=math", headers=student_auth)
     assert validation.status_code == 200  # 红：当前无该路由（404），Phase-2 落地后转绿
     assert validation.json()["model_version"] == "guidance-heuristic-v0.2-test"
 
@@ -61,6 +61,6 @@ def test_rule_change_rederives_without_touching_history(client, auth, db, publis
     monkeypatch.setattr(guidance, "MIN_DISTINCT_ITEMS", original_min_items)
     monkeypatch.setattr(guidance, "MODEL_VERSION", original_model_version)
     monkeypatch.setattr(guidance, "provisional_threshold", original_threshold)
-    restored = client.get("/api/guidance/plan?subject=math", headers=auth).json()
+    restored = client.get("/api/guidance/plan?subject=math", headers=student_auth).json()
     assert restored["model_version"] == original_model_version
     assert restored["planning_threshold"] == 0.9

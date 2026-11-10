@@ -7,7 +7,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { getKnowledgeLabel } from '../src/config/knowledge'
 
-const TOKEN = 'test-journey-secret'
+const TOKEN = 'test-admin-secret'
 
 async function enterAdminSpace(page: Page): Promise<void> {
   await page.goto('/admin.html')
