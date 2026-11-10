@@ -33,4 +33,4 @@
   - [x] 7.3 优化 `fourcorpus.py` 与 `curriculum_standards.py` 校验顺序与测试环境合成原件协议
   - [x] 7.4 在 `conftest.py` 中增加测试环境自动生成轻量合成原件与环境变量支持
   - [x] 7.5 双环境（模拟 CI 干净工作区与宿主机带真实文件）本地全量回归测试
-  - [ ] 7.6 提交代码并推送，验证 GitHub Actions CI 全绿放行
+  - [x] 7.6 提交代码并推送，验证 GitHub Actions CI 全绿放行
