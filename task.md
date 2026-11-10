@@ -26,3 +26,11 @@
   - [x] 6.3 学生前端边界收敛：移除“按知识点”筛选下拉框，剔除内部编码展示，`knowledge-labels.json` 零打入学生包
   - [x] 6.4 契约与质量更新：更新 `contracts/openapi.yaml`、`acceptance.md`（AC-SEC-02, AC-ISO-01, AC-ISO-02）与人工验收指南
   - [x] 6.5 全量测试回归与人工验收：pytest 174 项、Vitest 12 项、E2E 17/20 项全绿，Owner 点选核验放行并归档
+
+- [x] **阶段 7：修复 GitHub Actions CI 运行失败问题 (Run 42490836221)**
+  - [x] 7.1 问题溯源与根因分析（课标原件物理隔离、大文件 Git 禁入红线与 Fail-Closed 发布门禁交互逻辑）
+  - [x] 7.2 实施方案制定并编写 `implementation_plan.md`，已获用户确认
+  - [x] 7.3 优化 `fourcorpus.py` 与 `curriculum_standards.py` 校验顺序与测试环境合成原件协议
+  - [x] 7.4 在 `conftest.py` 中增加测试环境自动生成轻量合成原件与环境变量支持
+  - [x] 7.5 双环境（模拟 CI 干净工作区与宿主机带真实文件）本地全量回归测试
+  - [ ] 7.6 提交代码并推送，验证 GitHub Actions CI 全绿放行

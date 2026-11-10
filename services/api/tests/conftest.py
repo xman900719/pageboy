@@ -1,5 +1,7 @@
 from __future__ import annotations
+import json
 import os
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -8,11 +10,50 @@ from sqlalchemy.pool import StaticPool
 from shutong.database import Base, get_db
 from shutong.main import app
 
+
+@pytest.fixture(autouse=True, scope="session")
+def setup_test_curriculum_standards():
+    """在测试环境中确保课程标准文件准备就绪，支持合成课标原件协议。"""
+    os.environ["SHUTONG_ALLOW_SYNTHETIC_STANDARDS"] = "1"
+    root = Path(__file__).resolve().parents[3]
+    pdf_dir = root / "private-data" / "curriculum_standards"
+    sources_path = root / "contracts" / "curriculum_sources.json"
+
+    local_name_map = {
+        "chinese": "义务教育语文课程标准（2022年版）.pdf",
+        "math": "义务教育数学课程标准（2022年版）（以此为准2022年5月9日）.pdf",
+        "english": "义务教育英语课程标准（2022年版）.pdf",
+        "physics": "义务教育物理课程标准（2022年版）.pdf",
+    }
+
+    if sources_path.is_file():
+        try:
+            with open(sources_path, "r", encoding="utf-8") as f:
+                sources = json.load(f)
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            for s in sources:
+                subj = s.get("subject")
+                fname = local_name_map.get(subj)
+                if not fname:
+                    continue
+                fpath = pdf_dir / fname
+                # 如果文件不存在，或者已存在但为轻量合成文件，写入最新的合成标记
+                if not fpath.exists() or (fpath.is_file() and fpath.stat().st_size < 1024):
+                    fpath.write_text(
+                        f"%PAGEBOY_SYNTHETIC_STANDARD:{s.get('file_sha256')}:{s.get('byte_size')}\n",
+                        encoding="utf-8"
+                    )
+        except Exception:
+            pass
+    yield
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("SHUTONG_ADMIN_TOKEN", "test-admin-secret")
     monkeypatch.setenv("SHUTONG_STUDENT_TOKEN", "test-student-secret")
     monkeypatch.setenv("SHUTONG_TOKEN", "test-admin-secret")
+    monkeypatch.setenv("SHUTONG_ALLOW_SYNTHETIC_STANDARDS", "1")
     engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     def override():
