@@ -424,10 +424,9 @@
     ],
     "is_elective": false,
     "review_status": "pending",
-    "review_note": "依据课标写作表达与微写作归集，待审核",
+    "review_note": "依据课标写作表达与微写作归集（ST-020-2B-02 落实方案A领域隔离，移除阅读旧码），待审核",
     "legacy_mappings": [
-      "chinese.writing.composition",
-      "chinese.reading.argumentative"
+      "chinese.writing.composition"
     ]
   },
   {
@@ -459,9 +458,7 @@
     ],
     "is_elective": false,
     "review_status": "pending",
-    "review_note": "对应中考微写作思辨性论述要求，待审核",
-    "legacy_mappings": [
-      "chinese.reading.argumentative"
-    ]
+    "review_note": "对应中考微写作思辨性论述要求（ST-020-2B-02 落实方案A领域隔离，清空阅读旧码），待审核",
+    "legacy_mappings": []
   }
 ]

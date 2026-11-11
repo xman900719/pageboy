@@ -1130,12 +1130,12 @@ def test_st020_2b01_chinese_zero_ghost_codes():
                 clause_ghosts.append((cl["clause_id"], lm))
     assert clause_ghosts == [], f"语文课标条款中仍存在幽灵旧码: {clause_ghosts}"
 
-    # 3. 验证保留项
+    # 3. 验证 ST-020-2B-02 方案 A 领域隔离实施结果
     c_map = {c["code"]: c for c in cands}
-    assert "chinese.reading.argumentative" in c_map["chinese_cand.writing.critical_micro_writing"]["legacy_mappings"]
+    assert c_map["chinese_cand.writing.critical_micro_writing"]["legacy_mappings"] == []
     comp_lms = c_map["chinese_cand.composition_expression"]["legacy_mappings"]
-    assert "chinese.writing.composition" in comp_lms
-    assert "chinese.reading.argumentative" in comp_lms
+    assert comp_lms == ["chinese.writing.composition"]
+    assert "chinese.reading.argumentative" not in comp_lms
 
 
 def test_st020_2b01_physics_micro_structure_no_density_mismatch():
@@ -1153,7 +1153,45 @@ def test_st020_2b01_physics_micro_structure_no_density_mismatch():
     assert "physics.mech.density" not in micro["legacy_mapping_codes"]
 
 
+def test_st020_2b02_chinese_writing_domain_isolation():
+    """
+    ST-020-2B-02 专项目标验证：语文写作域与阅读域旧码隔离（TASK-ERR-CH-03 方案 A）。
+    1. 正例断言：chinese_cand.writing.critical_micro_writing 的 legacy_mappings 为 []；
+    2. 反例断言：critical_micro_writing 绝不包含阅读旧码 chinese.reading.argumentative；
+    3. 正例断言：chinese_cand.composition_expression 的 legacy_mappings 仅保留 chinese.writing.composition；
+    4. 反例断言：composition_expression 绝不包含阅读旧码 chinese.reading.argumentative；
+    5. 条款断言：课标条款 critical_writing:c20 原有阅读关联保留为 ["chinese.reading.argumentative"]，
+       且 collation_note 明确载明“不得作为写作题目、成绩或画像的自动映射”；
+    6. 契约断言：chinese_legacy_taxonomy_mapping.json 保持现状，chinese.reading.argumentative 的指向
+       严格仅包含阅读候选，绝不包含任何写作候选节点。
+    """
+    # 1 & 2. 候选节点断言
+    cand_path = CONTRACTS_DIR / "chinese_knowledge_taxonomy_candidate.json"
+    cands = json.loads(cand_path.read_text(encoding="utf-8"))
+    c_map = {c["code"]: c for c in cands}
 
+    micro = c_map["chinese_cand.writing.critical_micro_writing"]
+    assert micro["legacy_mappings"] == []
+    assert "chinese.reading.argumentative" not in micro["legacy_mappings"]
+    assert "待审核" in micro["review_note"]
 
+    comp = c_map["chinese_cand.composition_expression"]
+    assert comp["legacy_mappings"] == ["chinese.writing.composition"]
+    assert "chinese.reading.argumentative" not in comp["legacy_mappings"]
+    assert "待审核" in comp["review_note"]
 
+    # 5. 条款断言
+    clauses_path = CONTRACTS_DIR / "curriculum_clauses_chinese.json"
+    clauses = json.loads(clauses_path.read_text(encoding="utf-8"))
+    cl_map = {c["clause_id"]: c for c in clauses}
+    c20 = cl_map["cs:chinese:2022:s4:writing:content_req:critical_writing:c20"]
+    assert c20["legacy_mappings"] == ["chinese.reading.argumentative"]
+    assert "不得作为写作题目、成绩或画像的自动映射" in c20["collation_note"]
 
+    # 6. 独立映射契约断言
+    mapping_path = CONTRACTS_DIR / "chinese_legacy_taxonomy_mapping.json"
+    mapping_data = json.loads(mapping_path.read_text(encoding="utf-8"))
+    mappings = {m["legacy_code"]: m for m in mapping_data["legacy_mappings"]}
+    arg_entry = mappings["chinese.reading.argumentative"]
+    assert "chinese_cand.writing.critical_micro_writing" not in arg_entry["target_candidate_codes"]
+    assert "chinese_cand.composition_expression" not in arg_entry["target_candidate_codes"]

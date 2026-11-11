@@ -122,5 +122,15 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
     - 全量后端测试：222 passed, 25 skipped（PostgreSQL 真实并发测试）, 0 failed（退出码 0，耗时 26.79s）；
     - OpenAPI 契约检查通过（`scripts/check_openapi.py`，退出码 0）；
     - 独立复核依据：`/media/xc/backup_ext4/code/ShuTong_ST-020-2B-01_Review_R2.zip`（SHA256: `9041844883fa4305905a7a8370ef944a84faa264226e44b33a5a4feb8cb62660`）。
-
-
+- **ST-020-2B-02（剩余静态契约风险定点整改）**：
+  - **状态**：`CLOSED`（2026-11-11，GPT R2 定点复核通过，Owner 同意关闭；不代表已合并或发布）
+  - **实施内容**：
+    1. 数学三元一次方程组选学隔离（`TASK-ERR-MA-01`）：将 `math_cand.eq.linear_system_3var` 的 `legacy_mapping_codes` 置为 `[]`，从 `math.eq.linear_system` 的 `target_candidate_codes` 中移除该节点，仅保留 `linear`、`linear_system` 两个原有目标，同步更新说明，实现选学物理隔离；
+    2. 语文微写作跨域旧码清除（`TASK-ERR-CH-03` 修订方案 A）：清空 `critical_micro_writing` 候选中的阅读旧码为 `[]`；`composition_expression` 保留 `chinese.writing.composition`、移除 `chinese.reading.argumentative`；`critical_writing:c20` 条款原有阅读关联保留，注明仅为课标覆盖完整性映射，不得作为写作题目、成绩或画像的自动映射；独立映射表保持现状；
+    3. 运行期缺口解耦：`TASK-ENG-ELEC-01..03` 单独保持 `OPEN`，零生产业务 Python、Alembic、数据库或部署修改；
+    4. Scope 审计区分整改前 29 项（25 结构性、2 新设、2 待裁决）与当前 28 项（26 结构性、2 新设、0 待裁决）；数学三元方程组选学语义错误单独列账。
+  - **验证证据与交付依据**：
+    - 37 项核心课标套件测试通过（退出码 0，5.35s）；
+    - 全量后端测试：225 passed, 25 skipped, 0 failed（退出码 0，耗时 24.23s）；
+    - OpenAPI 契约检查通过（`scripts/check_openapi.py`，退出码 0）；
+    - 最终复核依据：`/media/xc/backup_ext4/code/ShuTong_ST-020-2B-02_Review_R2.zip`（SHA256: `efc3f166730b06f43743d2ef6d91c09cf1ca0f955833b697b241de660aa2a0b5`）；12 契约、3 测试文件哈希守恒，离线审计 7/7 通过。

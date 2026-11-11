@@ -64,10 +64,20 @@
   - [x] 11.5 全量自动化测试回归（222 passed, 25 skipped, 0 failed，退出码 0，耗时 26.79s）与 OpenAPI 契约校验通过
   - [x] 11.6 ST-020-2B-01 独立复核第二轮验收核准，状态正式同步为 `CLOSED`（依据包 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-01_Review_R2.zip`，SHA256: `9041844883fa4305905a7a8370ef944a84faa264226e44b33a5a4feb8cb62660`）
 
-- [ ] **阶段 12：ST-020-2B-02 剩余静态契约风险定点清单与方案制定**
-  - [ ] 12.1 只读整理所有尚未关闭问题台账，严禁重开已关闭事项
-  - [ ] 12.2 专项核查 `math_cand.eq.linear_system_3var` 的选学属性与旧码 `math.eq.linear_system` 映射及语义
-  - [ ] 12.3 专项核查语文 `critical_micro_writing`、`composition_expression` 待教研裁决映射及其他未闭环映射差异
-  - [ ] 12.4 单独登记 `TASK-ENG-ELEC-01..03` 运行期选学过滤缺口，静态契约与运行期工程解耦
-  - [ ] 12.5 输出 `ShuTong_ST-020-2B-02_Proposal.md` 呈交 Owner 决策
-  - [ ] 12.6 打包生成 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-02_Scope_Review.zip` 交付包
+- [x] **阶段 12：ST-020-2B-02 剩余静态契约风险定点清单与方案制定**
+  - [x] 12.1 只读整理所有尚未关闭问题台账，严禁重开已关闭事项
+  - [x] 12.2 专项核查 `math_cand.eq.linear_system_3var` 的选学属性与旧码 `math.eq.linear_system` 映射及语义
+  - [x] 12.3 专项核查语文 `critical_micro_writing`、`composition_expression` 待教研裁决映射及其他未闭环映射差异
+  - [x] 12.4 单独登记 `TASK-ENG-ELEC-01..03` 运行期选学过滤缺口，静态契约与运行期工程解耦
+  - [x] 12.5 输出 `ShuTong_ST-020-2B-02_Proposal.md` 呈交 Owner 决策
+  - [x] 12.6 打包生成 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-02_Scope_Review.zip` 交付包
+
+- [x] **阶段 13：ST-020-2B-02 契约整改与独立复核（CLOSED）**
+  - [x] 13.1 数学 `TASK-ERR-MA-01`：清空 `math_cand.eq.linear_system_3var` 内嵌旧码，从 `math.eq.linear_system` 移除该节点，选学物理隔离
+  - [x] 13.2 语文 `TASK-ERR-CH-03`：落实方案 A，`critical_micro_writing` 清空阅读旧码，`composition_expression` 仅保留写作旧码，`c20` 保留阅读旧码并注记覆盖范围
+  - [x] 13.3 运行期缺口解耦：`TASK-ENG-ELEC-01..03` 保持 OPEN，零业务代码/数据库修改
+  - [x] 13.4 增加正反例断言（数学选学隔离、语文写作域隔离、守恒性与安全护栏）
+  - [x] 13.5 更正 Scope 审计分类：历史 Scope 29 项（25/2/2），当前 28 项（26 结构性、2 新设、0 待教研），三元方程语义错误单独列账
+  - [x] 13.6 全量测试回归（225 passed, 25 skipped, 0 failed, 24.23s）与 OpenAPI 校验 PASS
+  - [x] 13.7 已提交 R1 与 R2 Review 包，R2 定点复核通过（仅证据统计修正）
+  - [x] 13.8 ST-020-2B-02 终验关闭（R2 SHA256: `efc3f166730b06f43743d2ef6d91c09cf1ca0f955833b697b241de660aa2a0b5`；运行期 TASK-ENG-ELEC-01..03 继续 OPEN）

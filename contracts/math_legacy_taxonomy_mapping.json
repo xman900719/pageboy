@@ -54,11 +54,10 @@
       "action": "split",
       "target_candidate_codes": [
         "math_cand.eq.linear",
-        "math_cand.eq.linear_system",
-        "math_cand.eq.linear_system_3var"
+        "math_cand.eq.linear_system"
       ],
-      "mapping_reason": "原旧节点合并一元一次方程与二元一次方程组，新体系分别设立一元一次方程、二元一次方程组及三元一次方程组（选学*）；明确三元一次方程组为课标选学考点，不作为中考必考诊断默认池，需隔离维护。",
-      "compatibility_assurance": "历史题目对 math.eq.linear_system 的引用保持只读，严禁将历史题目静默迁移至选学考点 math_cand.eq.linear_system_3var。"
+      "mapping_reason": "原旧节点合并一元一次方程与二元一次方程组，新体系分别设立一元一次方程与二元一次方程组；三元一次方程组（选学*）作为课标选学考点独立设点，与必考旧码物理隔离，不建立映射关联。",
+      "compatibility_assurance": "历史题目对 math.eq.linear_system 的引用保持只读，仅映射至一元一次方程及二元一次方程组两个必学候选节点，严禁将历史题目迁移至选学考点 math_cand.eq.linear_system_3var。"
     },
     {
       "legacy_code": "math.eq.quadratic",
