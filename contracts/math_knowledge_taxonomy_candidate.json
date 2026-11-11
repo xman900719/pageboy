@@ -303,10 +303,8 @@
     ],
     "is_elective": true,
     "review_status": "pending",
-    "review_note": "AI依据课标方程条文④生成（课标带*选学条目，与必学诊断池严格隔离），待审核",
-    "legacy_mapping_codes": [
-      "math.eq.linear_system"
-    ]
+    "review_note": "AI依据课标方程条文④生成（课标带*选学条目，ST-020-2B-02 落实选学物理隔离，清空必考旧码），待审核",
+    "legacy_mapping_codes": []
   },
   {
     "code": "math_cand.eq.quadratic",

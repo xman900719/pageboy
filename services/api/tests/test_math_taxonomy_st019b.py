@@ -1240,3 +1240,52 @@ def test_circle_tangent_elective_isolation():
     }
     assert tangent_len["legacy_mapping_codes"] == []
 
+
+def test_math_st020_2b02_linear_system_3var_elective_isolation():
+    """
+    ST-020-2B-02 专项目标验证：数学三元一次方程组选学（*）与必考二元一次方程组物理隔离 (TASK-ERR-MA-01)。
+    1. 正例断言：math_cand.eq.linear_system_3var 属性为选学 (is_elective=True)；
+    2. 正例断言：math_cand.eq.linear_system_3var 的 legacy_mapping_codes 清空为 []；
+    3. 反例断言：math_cand.eq.linear_system_3var 绝不包含必考旧码 math.eq.linear_system；
+    4. 正例断言：必学候选节点 math_cand.eq.linear 与 math_cand.eq.linear_system 保持对 math.eq.linear_system 的映射；
+    5. 契约断言：math_legacy_taxonomy_mapping.json 中 math.eq.linear_system 的 target_candidate_codes
+       严格仅包含 ["math_cand.eq.linear", "math_cand.eq.linear_system"]，绝不包含 linear_system_3var；
+    6. 条款断言：对应课标条款 tri_sys:c04 为 is_elective=True 且 legacy_mappings=[]。
+    """
+    with open(CANDIDATE_PATH, "r", encoding="utf-8") as f:
+        cands = json.load(f)
+    cand_map = {c["code"]: c for c in cands}
+
+    three_var = cand_map["math_cand.eq.linear_system_3var"]
+    assert three_var["is_elective"] is True
+    assert three_var["legacy_mapping_codes"] == []
+    assert "math.eq.linear_system" not in three_var["legacy_mapping_codes"]
+    assert "待审核" in three_var["review_note"]
+
+    # 必学节点保持映射
+    linear = cand_map["math_cand.eq.linear"]
+    assert linear["is_elective"] is False
+    assert "math.eq.linear_system" in linear["legacy_mapping_codes"]
+
+    sys2 = cand_map["math_cand.eq.linear_system"]
+    assert sys2["is_elective"] is False
+    assert "math.eq.linear_system" in sys2["legacy_mapping_codes"]
+
+    # 独立映射契约断言
+    with open(MAPPING_PATH, "r", encoding="utf-8") as f:
+        mapping_data = json.load(f)
+    mappings = {m["legacy_code"]: m for m in mapping_data["legacy_mappings"]}
+    legacy_entry = mappings["math.eq.linear_system"]
+    assert legacy_entry["target_candidate_codes"] == [
+        "math_cand.eq.linear",
+        "math_cand.eq.linear_system"
+    ]
+    assert "math_cand.eq.linear_system_3var" not in legacy_entry["target_candidate_codes"]
+
+    # 条款契约断言
+    with open(CLAUSES_PATH, "r", encoding="utf-8") as f:
+        clauses = json.load(f)
+    c_map = {c["clause_id"]: c for c in clauses}
+    c04 = c_map["cs:math:2022-errata:s4:num_alg:content_req:tri_sys:c04"]
+    assert c04["is_elective"] is True
+    assert c04["legacy_mappings"] == []

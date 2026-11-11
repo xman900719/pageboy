@@ -621,3 +621,79 @@ def test_d_t04_four_subjects_joint_release_and_migration_compatibility(client, a
     run_alembic("upgrade", "head")
     run_alembic("check")
     mig_engine.dispose()
+
+
+def test_st020_2b02_conservation_and_safeguards():
+    """
+    ST-020-2B-02 全局守恒与权限安全护栏断言：
+    1. 候选知识点总数严格守恒为 135（语文25、数学48、英语28、物理34）；
+    2. 课标条款总数严格守恒为 312（语文34、数学150、英语30、物理98）；
+    3. 存量考点字典严格守恒为 81（语文18、数学24、英语18、物理21）；
+    4. 审核发布状态安全：全量 135 候选与 312 条款 100% 保持 pending 初始状态，无越权发布；
+    5. 幽灵旧码清零安全：四科候选与条款中幽灵旧码严格为 0；
+    6. 独立映射契约合法性：四科映射表中所有 target_candidate_codes 必须在 135 候选中真实存在。
+    """
+    import json
+    from shutong.corpus.taxonomy import TAXONOMY
+
+    root_dir = Path(__file__).resolve().parents[3]
+    contracts_dir = root_dir / "contracts"
+
+    # 1. 候选总数守恒
+    expected_cands = {"chinese": 25, "math": 48, "english": 28, "physics": 34}
+    total_cands = 0
+    all_cand_codes = set()
+    for subj, exp_count in expected_cands.items():
+        c_path = contracts_dir / f"{subj}_knowledge_taxonomy_candidate.json"
+        cands = json.loads(c_path.read_text(encoding="utf-8"))
+        assert len(cands) == exp_count, f"{subj} 候选数量偏离: 期望 {exp_count}, 实际 {len(cands)}"
+        total_cands += len(cands)
+        for c in cands:
+            all_cand_codes.add(c["code"])
+            assert c["review_status"] == "pending", f"候选 {c['code']} 状态异常: {c['review_status']}"
+    assert total_cands == 135, f"四科候选总数必须为 135，实际: {total_cands}"
+
+    # 2. 条款总数守恒
+    expected_clauses = {"chinese": 34, "math": 150, "english": 30, "physics": 98}
+    total_clauses = 0
+    for subj, exp_count in expected_clauses.items():
+        cl_path = contracts_dir / f"curriculum_clauses_{subj}.json"
+        clauses = json.loads(cl_path.read_text(encoding="utf-8"))
+        assert len(clauses) == exp_count, f"{subj} 条款数量偏离: 期望 {exp_count}, 实际 {len(clauses)}"
+        total_clauses += len(clauses)
+        for cl in clauses:
+            assert cl["review_status"] == "pending", f"条款 {cl['clause_id']} 状态异常: {cl['review_status']}"
+    assert total_clauses == 312, f"四科条款总数必须为 312，实际: {total_clauses}"
+
+    # 3. 存量考点 81 字典守恒
+    expected_legacy = {"chinese": 18, "math": 24, "english": 18, "physics": 21}
+    total_legacy = 0
+    for subj, exp_count in expected_legacy.items():
+        actual_count = len(TAXONOMY.get(subj, []))
+        assert actual_count == exp_count, f"{subj} 存量考点数量偏离: 期望 {exp_count}, 实际 {actual_count}"
+        total_legacy += actual_count
+    assert total_legacy == 81, f"存量考点总盘必须为 81，实际: {total_legacy}"
+
+    # 4. 幽灵旧码清零断言
+    for subj in ["chinese", "math", "english", "physics"]:
+        valid_codes = {n["code"] for n in TAXONOMY.get(subj, [])}
+        c_path = contracts_dir / f"{subj}_knowledge_taxonomy_candidate.json"
+        cands = json.loads(c_path.read_text(encoding="utf-8"))
+        for c in cands:
+            lms = c.get("legacy_mapping_codes") or c.get("legacy_mappings") or []
+            for lm in lms:
+                assert lm in valid_codes, f"{subj} 候选 {c['code']} 包含非法幽灵码: {lm}"
+
+        cl_path = contracts_dir / f"curriculum_clauses_{subj}.json"
+        clauses = json.loads(cl_path.read_text(encoding="utf-8"))
+        for cl in clauses:
+            for lm in cl.get("legacy_mappings", []):
+                assert lm in valid_codes, f"{subj} 条款 {cl['clause_id']} 包含非法幽灵码: {lm}"
+
+    # 5. 映射表目标候选存在性断言
+    for subj in ["chinese", "math", "english", "physics"]:
+        m_path = contracts_dir / f"{subj}_legacy_taxonomy_mapping.json"
+        m_data = json.loads(m_path.read_text(encoding="utf-8"))
+        for entry in m_data.get("legacy_mappings", []):
+            for tc in entry.get("target_candidate_codes", []):
+                assert tc in all_cand_codes, f"{subj} 映射表旧考点 {entry['legacy_code']} 指向未知候选节点: {tc}"
