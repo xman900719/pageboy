@@ -4,7 +4,7 @@
 涵盖：
 1. 课标条款采录完整性与 Schema 校验（全量149条官方条文、补齐代数式⑨与综合与实践(3)、9条学业要求官方原文与派生要求分离）
 2. 独立官方课标结构清单与全量条文 100% 独立覆盖率核算
-3. 候选知识体系与课标条文双向完备溯源（47个候选节点、pending 初始态）
+3. 候选知识体系与课标条文双向完备溯源（48个候选节点、pending 初始态）
 4. 新旧 24 考点可审计映射与历史只读保护（81考点总盘不变、历史关联不被重写）
 5. 知识库版本发布强门禁（涵盖两大核心负例：旧24节点全部approved但无新候选被拒、新候选缺少任一节点被拒、引用无效条款被拒、未审核及驳回被拒、全量批准后发布不可变快照）
 6. 管理端与学生端权限强隔离（学生角色与匿名访问绝对拦截）
@@ -31,13 +31,13 @@ MAPPING_PATH = ROOT / "contracts/math_legacy_taxonomy_mapping.json"
 
 
 def test_math_curriculum_clauses_completeness_and_integrity():
-    """验证149条初中数学课程标准官方条款全集的完备性与契约约束（F01整改项验证）。"""
+    """验证150条初中数学课程标准官方条款全集的完备性与契约约束（F01整改项与ST-020-RM-01验证）。"""
     assert CLAUSES_PATH.is_file(), "Missing contracts/curriculum_clauses_math.json"
     with open(CLAUSES_PATH, "r", encoding="utf-8") as f:
         clauses = json.load(f)
 
-    # 验证全量条款数已补齐为 149 条
-    assert len(clauses) == 149, f"Expected 149 math clauses, got {len(clauses)}"
+    # 验证全量条款数已补齐为 150 条（ST-020-RM-01：圆章节由9条拆分为10条）
+    assert len(clauses) == 150, f"Expected 150 math clauses, got {len(clauses)}"
 
     clause_ids = set()
     domain_counts = {"num_alg": 0, "geom": 0, "stat_prob": 0, "comp_prac": 0}
@@ -65,7 +65,7 @@ def test_math_curriculum_clauses_completeness_and_integrity():
         assert c["review_status"] == "pending"
 
     assert domain_counts["num_alg"] == 52, f"Expected 52 num_alg clauses, got {domain_counts['num_alg']}"
-    assert domain_counts["geom"] == 79, f"Expected 79 geom clauses, got {domain_counts['geom']}"
+    assert domain_counts["geom"] == 80, f"Expected 80 geom clauses, got {domain_counts['geom']}"
     assert domain_counts["stat_prob"] == 14, f"Expected 14 stat_prob clauses, got {domain_counts['stat_prob']}"
     assert domain_counts["comp_prac"] == 4, f"Expected 4 comp_prac clauses, got {domain_counts['comp_prac']}"
 
@@ -125,7 +125,7 @@ def test_independent_official_math_curriculum_clauses_audit():
         ("geom", "content_req:intersect_parallel", 7),     # 相交平行 ①~⑦
         ("geom", "content_req:triangle", 11),              # 三角形 ①~⑪
         ("geom", "content_req:quadrilateral", 4),          # 四边形 ①~④
-        ("geom", "content_req:circle", 9),                 # 圆 ①~⑨
+        ("geom", "content_req:circle", 10),                # 圆 ①~⑩ (含②垂径定理 c01b，ST-020-RM-01修复)
         ("geom", "content_req:logic", 5),                  # 定义命题定理 ①~⑤
         ("geom", "content_req:transform_axial", 4),        # 轴对称 ①~④
         ("geom", "content_req:transform_rot", 4),          # 旋转 ①~④
@@ -145,7 +145,7 @@ def test_independent_official_math_curriculum_clauses_audit():
     ]
 
     total_expected_count = sum(count for _, _, count in independent_expected_specs)
-    assert total_expected_count == 149, f"Independent expected count must be 149, got {total_expected_count}"
+    assert total_expected_count == 150, f"Independent expected count must be 150, got {total_expected_count}"
 
     # 核算每一项独立规格均在采录数据中精确匹配
     for domain, sub_tag, count in independent_expected_specs:
@@ -154,7 +154,7 @@ def test_independent_official_math_curriculum_clauses_audit():
 
 
 def test_math_candidate_taxonomy_coverage_and_bidirectional_traceability():
-    """验证47个候选知识点体系与全量149条课标条文的100%双向溯源覆盖。"""
+    """验证48个候选知识点体系与全量150条课标条文的100%双向溯源覆盖。"""
     assert CANDIDATE_PATH.is_file(), "Missing contracts/math_knowledge_taxonomy_candidate.json"
     with open(CANDIDATE_PATH, "r", encoding="utf-8") as f:
         candidates = json.load(f)
@@ -162,9 +162,9 @@ def test_math_candidate_taxonomy_coverage_and_bidirectional_traceability():
     with open(CLAUSES_PATH, "r", encoding="utf-8") as f:
         clauses = json.load(f)
     all_clause_ids = {c["clause_id"] for c in clauses}
-    assert len(all_clause_ids) == 149
+    assert len(all_clause_ids) == 150
 
-    assert len(candidates) == 47, f"Expected 47 candidate nodes, got {len(candidates)}"
+    assert len(candidates) == 48, f"Expected 48 candidate nodes, got {len(candidates)}"
 
     cand_codes = set()
     covered_clause_ids = set()
@@ -227,10 +227,10 @@ def test_legacy_math_nodes_mapping_and_historical_protection():
 
 def test_admin_knowledge_api_and_review_workflow(client, auth):
     """测试知识库管理接口：条款查询、新旧映射、初始化入库与单点专家人工审核。"""
-    # 1. 查询课标条款（应为149条）
+    # 1. 查询课标条款（应为150条，含新增circle:c01b）
     res_clauses = client.get("/api/admin/knowledge/clauses?subject=math", headers=auth)
     assert res_clauses.status_code == 200
-    assert len(res_clauses.json()) == 149
+    assert len(res_clauses.json()) == 150
 
     # 按领域过滤
     res_num_alg = client.get("/api/admin/knowledge/clauses?subject=math&domain=num_alg", headers=auth)
@@ -246,13 +246,13 @@ def test_admin_knowledge_api_and_review_workflow(client, auth):
     # 3. 初始化候选知识点入库
     res_seed = client.post("/api/admin/knowledge/candidates/seed?subject=math", headers=auth)
     assert res_seed.status_code == 201
-    assert res_seed.json()["total_nodes"] >= 47
+    assert res_seed.json()["total_nodes"] >= 48
 
     # 4. 获取入库候选列表
     res_cands = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_cands.status_code == 200
     cand_nodes = res_cands.json()
-    assert len(cand_nodes) >= 47
+    assert len(cand_nodes) >= 48
     sample_node = cand_nodes[0]
     assert sample_node["review_status"] == "pending"
 
@@ -290,23 +290,23 @@ def test_candidate_nodes_query_scenarios(client, auth):
     """
     测试候选知识点查询接口的契约权威性与解耦隔离（F01/B01 核心契约验证）：
     覆盖 6 大场景：
-    1. 空数据库：精确返回 47 个待初始化候选节点（is_seeded=False, review_status=pending）。
-    2. 仅存量旧 24 个考点：依然精确返回 47 个新候选节点，无任何旧考点混入，全部 is_seeded=False。
-    3. 部分新候选入库（例如仅创建前 5 个）：完整返回 47 个节点，已入库的 is_seeded=True，未入库的 is_seeded=False。
+    1. 空数据库：精确返回 48 个待初始化候选节点（is_seeded=False, review_status=pending）。
+    2. 仅存量旧 24 个考点：依然精确返回 48 个新候选节点，无任何旧考点混入，全部 is_seeded=False。
+    3. 部分新候选入库（例如仅创建前 5 个）：完整返回 48 个节点，已入库的 is_seeded=True，未入库的 is_seeded=False。
     4. 数据库中真实审核状态（approved, pending, rejected）共存：真实反映在接口输出中，不被契约默认值静默覆盖。
-    5. 数据库中存在额外的 math_cand.* 异常节点：不污染候选展示列表，候选集合恒定为 47 个契约定义节点。
-    6. 旧 24 个考点与新 47 个候选全量共存：只返回 47 个新候选，旧考点严格隔离。
+    5. 数据库中存在额外的 math_cand.* 异常节点：不污染候选展示列表，候选集合恒定为 48 个契约定义节点。
+    6. 旧 24 个考点与新 48 个候选全量共存：只返回 48 个新候选，旧考点严格隔离。
     """
     with open(CANDIDATE_PATH, "r", encoding="utf-8") as f:
         contract_cands = json.load(f)
-    assert len(contract_cands) == 47
+    assert len(contract_cands) == 48
     contract_codes = [c["code"] for c in contract_cands]
 
     # 场景 1：空数据库
     res_empty = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_empty.status_code == 200
     cands_empty = res_empty.json()
-    assert len(cands_empty) == 47
+    assert len(cands_empty) == 48
     for item in cands_empty:
         assert item["code"].startswith("math_cand.")
         assert item["id"] is None
@@ -324,7 +324,7 @@ def test_candidate_nodes_query_scenarios(client, auth):
     res_leg = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_leg.status_code == 200
     cands_leg = res_leg.json()
-    assert len(cands_leg) == 47
+    assert len(cands_leg) == 48
     for item in cands_leg:
         assert item["code"].startswith("math_cand.")
         assert not item["code"].startswith("math.num_alg.")
@@ -354,7 +354,7 @@ def test_candidate_nodes_query_scenarios(client, auth):
     res_partial = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_partial.status_code == 200
     cands_partial = res_partial.json()
-    assert len(cands_partial) == 47
+    assert len(cands_partial) == 48
     for item in cands_partial:
         if item["code"] in seeded_5_codes:
             assert item["is_seeded"] is True
@@ -404,18 +404,18 @@ def test_candidate_nodes_query_scenarios(client, auth):
     res_rogue = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_rogue.status_code == 200
     cands_rogue = res_rogue.json()
-    assert len(cands_rogue) == 47, f"Expected 47 candidate nodes, got {len(cands_rogue)}"
+    assert len(cands_rogue) == 48, f"Expected 48 candidate nodes, got {len(cands_rogue)}"
     rogue_codes = [c["code"] for c in cands_rogue]
     assert rogue_codes == contract_codes
     assert "math_cand.extra.unapproved_rogue" not in rogue_codes
 
-    # 场景 6：旧 24 考点与新 47 候选全量共存
+    # 场景 6：旧 24 考点与新 48 候选全量共存
     res_seed = client.post("/api/admin/knowledge/candidates/seed?subject=math", headers=auth)
     assert res_seed.status_code == 201
     res_all = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth)
     assert res_all.status_code == 200
     cands_all = res_all.json()
-    assert len(cands_all) == 47
+    assert len(cands_all) == 48
     for item in cands_all:
         assert item["code"].startswith("math_cand.")
         assert item["is_seeded"] is True
@@ -426,15 +426,15 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     """
     测试正式版本发布的强门禁机制（F02整改项强化验证）：
     涵盖完整负例防御断言与全流程门禁：
-    - R01：仅旧 24 节点全部 approved，47 个新候选均不存在时，必须拒绝发布。
-    - R02：新候选缺少任一节点（如 46/47 approved），必须拒绝发布。
-    - R03：47 个候选全获批，但数据库多出 1 个额外活跃候选节点，必须拒绝发布。
+    - R01：仅旧 24 节点全部 approved，48 个新候选均不存在时，必须拒绝发布。
+    - R02：新候选缺少任一节点（如 47/48 approved），必须拒绝发布。
+    - R03：48 个候选全获批，但数据库多出 1 个额外活跃候选节点，必须拒绝发布。
     - R04：存在 pending 或 rejected 候选节点，必须拒绝发布。
     - R05：候选节点来源条款为空列表，必须拒绝发布。
     - R06：候选节点引用不存在的官方课标条款，必须拒绝发布。
     - R07：缺乏必要审核人或审核意见，必须拒绝发布。
     - R08：节点实质内容更新产生新版本后未审核，必须拒绝发布。
-    - R09：全量 47 个候选 approved 且证据完备时，发布不可变快照成功。
+    - R09：全量 48 个候选 approved 且证据完备时，发布不可变快照成功。
     - R10：重复发布同一版本，必须返回 409 拒绝。
     """
     # =========================================================================
@@ -471,18 +471,18 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     assert "历史兼容考点不能独立满足新版发布条件" in res_neg1.json()["detail"]
 
     # =========================================================================
-    # 负例 2：新候选缺少任一节点（例如仅创建了前 46 个节点且全通过，缺少第 47 个）-> 必须拒绝发布
+    # 负例 2：新候选缺少任一节点（例如仅创建了前 47 个节点且全通过，缺少第 48 个）-> 必须拒绝发布
     # =========================================================================
     with open(CANDIDATE_PATH, "r", encoding="utf-8") as f:
         candidates = json.load(f)
-    assert len(candidates) == 47
+    assert len(candidates) == 48
 
-    # 手动录入前 46 个节点并审核通过（故意跳过最后一个候选节点）
-    cands_46 = candidates[:-1]
+    # 手动录入前 47 个节点并审核通过（故意跳过最后一个候选节点）
+    cands_sub = candidates[:-1]
     last_cand = candidates[-1]
 
     created_ids = []
-    for c in sorted(cands_46, key=lambda x: x.get("level", 3)):
+    for c in sorted(cands_sub, key=lambda x: x.get("level", 3)):
         c_resp = client.post(
             "/api/admin/knowledge/nodes",
             json={
@@ -509,7 +509,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
                 headers=auth
             )
 
-    # 此时 46 个节点均已 approved，但缺少第 47 个节点 -> 尝试发布必须返回 400！
+    # 此时 47 个节点均已 approved，但缺少第 48 个节点 -> 尝试发布必须返回 400！
     res_neg2 = client.post(
         "/api/admin/knowledge/releases",
         json={
@@ -526,9 +526,9 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     assert last_cand["code"] in res_neg2.json()["detail"]
 
     # =========================================================================
-    # 补齐第 47 个节点，但测试其他异常状态拦截
+    # 补齐第 48 个节点，但测试其他异常状态拦截
     # =========================================================================
-    c47_resp = client.post(
+    c_last_resp = client.post(
         "/api/admin/knowledge/nodes",
         json={
             "subject": "math",
@@ -540,10 +540,10 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
         },
         headers=auth
     )
-    assert c47_resp.status_code == 201
-    nid_47 = c47_resp.json()["id"]
+    assert c_last_resp.status_code == 201
+    nid_last = c_last_resp.json()["id"]
 
-    # 负例 4A：第 47 个节点为 pending 状态 -> 尝试发布必须返回 400！
+    # 负例 4A：第 48 个节点为 pending 状态 -> 尝试发布必须返回 400！
     res_neg4a = client.post(
         "/api/admin/knowledge/releases",
         json={
@@ -556,9 +556,9 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     assert res_neg4a.status_code == 400
     assert "未通过" in res_neg4a.json()["detail"]
 
-    # 负例 4B：第 47 个节点为 rejected 状态 -> 尝试发布必须返回 400！
+    # 负例 4B：第 48 个节点为 rejected 状态 -> 尝试发布必须返回 400！
     client.post(
-        f"/api/admin/knowledge/nodes/{nid_47}/review",
+        f"/api/admin/knowledge/nodes/{nid_last}/review",
         json={
             "reviewer_id": "math_auditor",
             "review_status": "rejected",
@@ -579,11 +579,11 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     assert "未通过" in res_neg4b.json()["detail"]
 
     # =========================================================================
-    # 负例 3：全量 47 个候选已 approved，但数据库多出 1 个额外活跃候选节点 -> 必须拒绝发布
+    # 负例 3：全量 48 个候选已 approved，但数据库多出 1 个额外活跃候选节点 -> 必须拒绝发布
     # =========================================================================
-    # 先批准第 47 个节点
+    # 先批准第 48 个节点
     client.post(
-        f"/api/admin/knowledge/nodes/{nid_47}/review",
+        f"/api/admin/knowledge/nodes/{nid_last}/review",
         json={
             "reviewer_id": "math_panel_chair",
             "review_status": "approved",
@@ -630,13 +630,13 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     # =========================================================================
     # 负例 5：候选节点来源条款为空列表 -> 必须拒绝发布 (F02/B03)
     # =========================================================================
-    ver_47 = db.scalars(
+    ver_last = db.scalars(
         select(m.KnowledgeNodeVersion)
-        .where(m.KnowledgeNodeVersion.node_id == nid_47)
+        .where(m.KnowledgeNodeVersion.node_id == nid_last)
         .order_by(m.KnowledgeNodeVersion.version.desc())
     ).first()
-    orig_cids = list(ver_47.source_clause_ids or [])
-    ver_47.source_clause_ids = []
+    orig_cids = list(ver_last.source_clause_ids or [])
+    ver_last.source_clause_ids = []
     db.commit()
 
     res_neg_empty_source = client.post(
@@ -654,7 +654,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     # =========================================================================
     # 负例 6：候选节点引用不存在的官方课标条款 -> 必须拒绝发布
     # =========================================================================
-    ver_47.source_clause_ids = ["cs:math:2022-errata:fake_clause_nonexistent_999"]
+    ver_last.source_clause_ids = ["cs:math:2022-errata:fake_clause_nonexistent_999"]
     db.commit()
 
     res_neg_invalid_clause = client.post(
@@ -672,8 +672,8 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     # =========================================================================
     # 负例 7：候选节点审核证据不完整（如 reviewer_id 纯空格）-> 必须拒绝发布
     # =========================================================================
-    ver_47.source_clause_ids = orig_cids
-    ver_47.reviewer_id = "   "
+    ver_last.source_clause_ids = orig_cids
+    ver_last.reviewer_id = "   "
     db.commit()
 
     res_neg_missing_evidence = client.post(
@@ -689,7 +689,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     assert "缺乏完整的人工审核证据" in res_neg_missing_evidence.json()["detail"] or "审核证据不完整" in res_neg_missing_evidence.json()["detail"]
 
     # 恢复合法审核证据
-    ver_47.reviewer_id = "math_panel_chair"
+    ver_last.reviewer_id = "math_panel_chair"
     db.commit()
 
     # =========================================================================
@@ -728,7 +728,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
 
     # =========================================================================
     # 负例 8b (P0-2)：人工修订导致节点名称与磁盘候选契约实质不符 -> 必须坚决拒绝发布 (400)
-    # 47个候选审核通过 → 修订一个节点名称，使其与契约明显不同 → 再次审核 → 尝试发布 -> 预期必须拒绝
+    # 48个候选审核通过 → 修订一个节点名称，使其与契约明显不同 → 再次审核 → 尝试发布 -> 预期必须拒绝
     # =========================================================================
     res_drift_blocked = client.post(
         "/api/admin/knowledge/releases",
@@ -762,7 +762,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
                 "subject": "math",
                 "release_version": "v2022.1.0-official-signed",
                 "published_by": "admin_owner",
-                "summary": "全量47个候选考点通过学科专家审核后的正式版本"
+                "summary": "全量48个候选考点通过学科专家审核后的正式版本"
             },
             headers=auth
         )
@@ -770,7 +770,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
         release_info = res_release_ok.json()
         assert release_info["release_version"] == "v2022.1.0-official-signed"
         assert release_info["status"] == "published"
-        assert release_info["total_nodes"] == 47
+        assert release_info["total_nodes"] == 48
         assert release_info["curriculum_source_id"] == "MOE-2022-MATH-ERRATA-20220509"
     finally:
         cand_path.write_text(orig_cands, encoding="utf-8")
@@ -779,7 +779,7 @@ def test_release_gate_enforcement_and_negative_cases(client, auth, db):
     rel_db = db.scalar(select(m.KnowledgeTaxonomyRelease).where(m.KnowledgeTaxonomyRelease.release_version == "v2022.1.0-official-signed"))
     assert rel_db is not None
     snapshot_nodes = rel_db.snapshot["nodes"]
-    assert len(snapshot_nodes) == 47
+    assert len(snapshot_nodes) == 48
     for sn in snapshot_nodes:
         assert sn["code"].startswith("math_cand.")
         assert not sn["code"].startswith("math.num_alg.")
@@ -823,9 +823,9 @@ def test_node_version_revision_and_source_clauses_api_integration(client, auth):
     assert res_seed.status_code == 201
 
     cands = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth).json()
-    assert len(cands) == 47
+    assert len(cands) == 48
 
-    # 2. 全量批准 47 个节点的第一版本
+    # 2. 全量批准 48 个节点的第一版本
     for c in cands:
         client.post(
             f"/api/admin/knowledge/nodes/{c['id']}/review",
@@ -938,7 +938,7 @@ def test_node_version_revision_and_source_clauses_api_integration(client, auth):
         assert res_pub_ok.status_code == 201
         release_data = res_pub_ok.json()
         assert release_data["status"] == "published"
-        assert release_data["total_nodes"] == 47
+        assert release_data["total_nodes"] == 48
     finally:
         cand_path.write_text(orig_cands, encoding="utf-8")
 
@@ -958,7 +958,7 @@ def test_candidate_seed_contract_diff_and_sync_workflow(client, auth):
     # 1. 导入初始契约候选
     res_seed1 = client.post("/api/admin/knowledge/candidates/seed?subject=math", headers=auth)
     assert res_seed1.status_code == 201
-    assert res_seed1.json()["seeded_count"] == 47
+    assert res_seed1.json()["seeded_count"] == 48
     assert res_seed1.json()["revised_count"] == 0
 
     # 2. 幂等性校验：在契约未变动时重复调用 seed，不创建重复版本
@@ -967,7 +967,7 @@ def test_candidate_seed_contract_diff_and_sync_workflow(client, auth):
     assert res_seed_idem.json()["seeded_count"] == 0
     assert res_seed_idem.json()["revised_count"] == 0
 
-    # 3. 全量批准 47 个候选
+    # 3. 全量批准 48 个候选
     cands = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth).json()
     for c in cands:
         client.post(
@@ -996,7 +996,7 @@ def test_candidate_seed_contract_diff_and_sync_workflow(client, auth):
 
         # 6. 管理查询显示最新版本与 pending 状态
         cands_updated = client.get("/api/admin/knowledge/candidates?subject=math", headers=auth).json()
-        assert len(cands_updated) == 47
+        assert len(cands_updated) == 48
         revised_node = next(c for c in cands_updated if c["code"] == cand_list[0]["code"])
         assert revised_node["version"] == 2
         assert revised_node["name"] == "有理数及其运算（2026年修订版）"
@@ -1035,7 +1035,7 @@ def test_candidate_seed_contract_diff_and_sync_workflow(client, auth):
             headers=auth
         )
         assert res_release_ok.status_code == 201
-        assert res_release_ok.json()["total_nodes"] == 47
+        assert res_release_ok.json()["total_nodes"] == 48
     finally:
         # 严格恢复原始契约文件
         with open(CANDIDATE_PATH, "w", encoding="utf-8") as f:
@@ -1142,25 +1142,64 @@ def test_curriculum_clauses_semantic_mapping_precision():
     assert samp_c04 in central_disp and samp_c05 in central_disp
     assert samp_c04 not in samp_collect and samp_c05 not in samp_collect
 
-    # 5. 验证圆与选学标记
+    # 5. 验证圆与选学标记（ST-020-RM-01 专项目标断言）
+    circle_c01 = "cs:math:2022-errata:s4:geom:content_req:circle:c01"
+    circle_c01b = "cs:math:2022-errata:s4:geom:content_req:circle:c01b"
+    circle_c02 = "cs:math:2022-errata:s4:geom:content_req:circle:c02"
+    circle_c03 = "cs:math:2022-errata:s4:geom:content_req:circle:c03"
     circle_c04 = "cs:math:2022-errata:s4:geom:content_req:circle:c04"
     circle_c05 = "cs:math:2022-errata:s4:geom:content_req:circle:c05"
     circle_c06 = "cs:math:2022-errata:s4:geom:content_req:circle:c06"
     circle_c07 = "cs:math:2022-errata:s4:geom:content_req:circle:c07"
+    circle_c08 = "cs:math:2022-errata:s4:geom:content_req:circle:c08"
     circle_c09 = "cs:math:2022-errata:s4:geom:content_req:circle:c09"
 
     circle_basic = cand_map["math_cand.geo.circle_basic"]["source_clause_ids"]
     circle_tangent = cand_map["math_cand.geo.circle_tangent"]["source_clause_ids"]
+    geo_all = cand_map["math_cand.geo"]["source_clause_ids"]
+    geo_prop = cand_map["math_cand.geo.properties"]["source_clause_ids"]
     arc_sector = cand_map["math_cand.geo.arc_sector"]
 
+    # 验证 c01 与 c01b 的集合等值继承
+    assert circle_c01 in circle_basic and circle_c01b in circle_basic, "circle_basic must retain both c01 and c01b!"
+    assert circle_c01 in geo_all and circle_c01b in geo_all, "math_cand.geo must retain both c01 and c01b!"
+    assert circle_c01 in geo_prop and circle_c01b in geo_prop, "math_cand.geo.properties must retain both c01 and c01b!"
+
+    # 验证 c01 与 c01b 原文与属性
+    assert c_map[circle_c01]["clause_number"] == "①"
+    assert "探索并掌握点与圆的位置关系" in c_map[circle_c01]["raw_text"]
+    assert c_map[circle_c01]["is_elective"] is False
+    assert c_map[circle_c01b]["clause_number"] == "②"
+    assert c_map[circle_c01b]["raw_text"] == "探索并证明垂径定理：垂直于弦的直径平分弦以及弦所对的两条弧。"
+    assert c_map[circle_c01b]["is_elective"] is False
+    assert c_map[circle_c01b]["review_status"] == "pending"
+
+    # 验证 c02~c05 序号与正文修复
+    assert c_map[circle_c02]["clause_number"] == "③"
+    assert "圆内接四边形的对角互补" in c_map[circle_c02]["raw_text"]
+    assert c_map[circle_c03]["clause_number"] == "④"
+    assert c_map[circle_c04]["clause_number"] == "⑤"
+    assert c_map[circle_c04]["raw_text"] == "了解直线与圆的位置关系，掌握切线的概念（例 75）。"
+    assert "探索切线与过切点的半径的关系" not in c_map[circle_c04]["raw_text"], "Old 2011 text must be removed from c04!"
+    assert c_map[circle_c05]["clause_number"] == "⑥"
+    assert "作圆的内接正方形和内接正六边形" in c_map[circle_c05]["raw_text"]
+
+    # 验证切线节点与选学标记 (ST-020-2B-01 选学强隔离：c06、c07 剥离至 circle_tangent_length)
     assert circle_c04 in circle_tangent, "Tangent determination c04 must belong to circle_tangent!"
     assert circle_c04 not in circle_basic
     assert circle_c05 in circle_basic, "Inscribed/circumscribed circle c05 belongs to circle_basic!"
-    assert circle_c06 in circle_tangent and circle_c07 in circle_tangent
+    assert circle_c06 not in circle_tangent and circle_c07 not in circle_tangent, "c06 and c07 must be isolated from circle_tangent!"
+    circle_tangent_len = cand_map["math_cand.geo.circle_tangent_length"]["source_clause_ids"]
+    assert circle_c06 in circle_tangent_len and circle_c07 in circle_tangent_len, "c06 and c07 belong to elective circle_tangent_length!"
+    assert c_map[circle_c06]["clause_number"] == "⑦"
     assert c_map[circle_c06]["is_elective"] is True
+    assert c_map[circle_c07]["clause_number"] == "⑧"
     assert c_map[circle_c07]["is_elective"] is True
 
-    # 正多边形 c09 为非选学
+    # 验证 c08、c09 为非选学
+    assert c_map[circle_c08]["clause_number"] == "⑨"
+    assert c_map[circle_c08]["is_elective"] is False
+    assert c_map[circle_c09]["clause_number"] == "⑩"
     assert c_map[circle_c09]["is_elective"] is False
     assert "*正多边形与圆（选学*）" not in arc_sector["description"], "Regular polygons must not be marked elective in arc_sector description!"
 
@@ -1178,4 +1217,26 @@ def test_curriculum_clauses_semantic_mapping_precision():
     assert mappings["math.geo.comprehensive"]["action"] == "pending_human_review"
     assert mappings["math.adv.new_definition"]["action"] == "pending_human_review"
     assert mapping_data["summary"]["pending_human_review_count"] == 2
+
+
+def test_circle_tangent_elective_isolation():
+    """ST-020-2B-01 专项目标验证：数学必学切线与选学切线长定理强隔离。"""
+    with open(CANDIDATE_PATH, "r", encoding="utf-8") as f:
+        cands = json.load(f)
+    cand_map = {c["code"]: c for c in cands}
+
+    tangent = cand_map["math_cand.geo.circle_tangent"]
+    assert tangent["is_elective"] is False
+    assert tangent["source_clause_ids"] == ["cs:math:2022-errata:s4:geom:content_req:circle:c04"]
+    assert "math.geo.circle" in tangent["legacy_mapping_codes"]
+
+    tangent_len = cand_map["math_cand.geo.circle_tangent_length"]
+    assert tangent_len["is_elective"] is True
+    assert tangent_len["parent_code"] == "math_cand.geo.properties"
+    assert tangent_len["level"] == 3
+    assert set(tangent_len["source_clause_ids"]) == {
+        "cs:math:2022-errata:s4:geom:content_req:circle:c06",
+        "cs:math:2022-errata:s4:geom:content_req:circle:c07"
+    }
+    assert tangent_len["legacy_mapping_codes"] == []
 

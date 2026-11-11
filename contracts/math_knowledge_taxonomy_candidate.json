@@ -517,6 +517,7 @@
       "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c03",
       "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c04",
       "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01b",
       "cs:math:2022-errata:s4:geom:content_req:circle:c02",
       "cs:math:2022-errata:s4:geom:content_req:circle:c03",
       "cs:math:2022-errata:s4:geom:content_req:circle:c04",
@@ -612,6 +613,7 @@
       "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c03",
       "cs:math:2022-errata:s4:geom:content_req:quadrilateral:c04",
       "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01b",
       "cs:math:2022-errata:s4:geom:content_req:circle:c02",
       "cs:math:2022-errata:s4:geom:content_req:circle:c03",
       "cs:math:2022-errata:s4:geom:content_req:circle:c04",
@@ -788,6 +790,7 @@
     "description": "圆的对称性、弧/弦/圆心角关系、垂径定理及其推论、圆周角定理及其推论（直径所对圆周角为直角）、三角形外心与内心概念、三角形外接圆与内切圆尺规作图。",
     "source_clause_ids": [
       "cs:math:2022-errata:s4:geom:content_req:circle:c01",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c01b",
       "cs:math:2022-errata:s4:geom:content_req:circle:c02",
       "cs:math:2022-errata:s4:geom:content_req:circle:c03",
       "cs:math:2022-errata:s4:geom:content_req:circle:c05"
@@ -801,22 +804,36 @@
   },
   {
     "code": "math_cand.geo.circle_tangent",
-    "name": "切线的判定、性质与切线长定理",
+    "name": "切线的判定与性质",
     "domain": "geom",
     "parent_code": "math_cand.geo.properties",
     "level": 3,
-    "description": "直线与圆的位置关系、切线的判定定理与性质定理、过圆上一点画圆的切线（必学）；*切线长定理、*尺规过圆外一点作切线（课标带*选学内容，中考题库需按条款选学标记过滤）。",
+    "description": "直线与圆的位置关系、切线的判定定理与性质定理、过圆上一点画圆的切线（必学）。",
     "source_clause_ids": [
-      "cs:math:2022-errata:s4:geom:content_req:circle:c04",
-      "cs:math:2022-errata:s4:geom:content_req:circle:c06",
-      "cs:math:2022-errata:s4:geom:content_req:circle:c07"
+      "cs:math:2022-errata:s4:geom:content_req:circle:c04"
     ],
     "is_elective": false,
     "review_status": "pending",
-    "review_note": "AI依据课标圆条文④（必学切线判定与性质）及⑥⑦（选学*切线长定理与外切线尺规作图）生成，中考练习按条款选学隔离，待审核",
+    "review_note": "AI依据课标圆条文④（必学切线判定与性质）生成，已剥离选学切线长定理（ST-020-2B-01），待审核",
     "legacy_mapping_codes": [
       "math.geo.circle"
     ]
+  },
+  {
+    "code": "math_cand.geo.circle_tangent_length",
+    "name": "切线长定理与切线尺规作图（选学）",
+    "domain": "geom",
+    "parent_code": "math_cand.geo.properties",
+    "level": 3,
+    "description": "*探索并证明切线长定理：过圆外一点的两条切线长相等；*能用尺规作图：过圆外一点作圆的切线（课标带*选学内容）。",
+    "source_clause_ids": [
+      "cs:math:2022-errata:s4:geom:content_req:circle:c06",
+      "cs:math:2022-errata:s4:geom:content_req:circle:c07"
+    ],
+    "is_elective": true,
+    "review_status": "pending",
+    "review_note": "ST-020-2B-01 从 circle_tangent 独立剥离的选学节点，待审核",
+    "legacy_mapping_codes": []
   },
   {
     "code": "math_cand.geo.arc_sector",

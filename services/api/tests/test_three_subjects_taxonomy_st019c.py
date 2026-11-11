@@ -924,7 +924,7 @@ def test_f03_release_gate_and_contract_consistency(client, admin_auth):
         assert snap["curriculum_source_id"] == "MOE-2022-MATH-ERRATA-20220509"
         assert len(snap["curriculum_sources"]) >= 1
         assert snap["curriculum_sources"][0]["file_sha256"] == "1183b95c58a65eaac4c456f2d2b329bbe42f65a6482993edb537e3eaf8baa144"
-        assert snap["total_nodes"] == 47
+        assert snap["total_nodes"] == 48
         sample_node = snap["nodes"][0]
         assert "parent_node_id" in sample_node
         assert "parent_code" in sample_node
@@ -934,6 +934,226 @@ def test_f03_release_gate_and_contract_consistency(client, admin_auth):
     finally:
         sources_file.write_text(orig_sources, encoding="utf-8")
         cand_file.write_text(orig_cands, encoding="utf-8")
+
+
+def test_chinese_st020_rm02_clause_accuracy_and_schema():
+    """
+    ST-020-RM-02 专项定点验收：
+    1. 验证新增内容要求条款 c03a 原文、元数据及 Schema 强合规；
+    2. 验证教学提示 c03 主键、原文、教学提示类型及历史引用未被破坏；
+    3. 验证 idiom_vocabulary 与 base_accumulation 两个知识点节点双向引用闭环、无重复、无悬空；
+    4. 验证存量 18 个旧映射、其他三科契约及审核状态不受任何干扰。
+    """
+    # 1. 验证新增内容要求条款 c03a（含全文不变性强断言）
+    schema_path = SCHEMAS_DIR / "curriculum-standard-clause.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+
+    chinese_clauses_path = CONTRACTS_DIR / "curriculum_clauses_chinese.json"
+    clauses = json.loads(chinese_clauses_path.read_text(encoding="utf-8"))
+    c_map = {c["clause_id"]: c for c in clauses}
+
+    c03a_id = "cs:chinese:2022:s4:lang_usage:content_req:vocabulary_req:c03a"
+    assert c03a_id in c_map, f"未找到新增条款: {c03a_id}"
+    c03a = c_map[c03a_id]
+
+    # Schema 合规强断言
+    errors = list(validator.iter_errors(c03a))
+    assert not errors, f"新增条款 c03a 未通过 Schema 校验: {errors[0].message if errors else ''}"
+
+    # 元数据与全文不变断言
+    assert c03a["subject"] == "chinese"
+    assert c03a["stage"] == "stage4"
+    assert c03a["domain"] == "lang_usage"
+    assert c03a["section_type"] == "content_requirement"
+    assert c03a["clause_number"] == "积累与梳理四级③"
+    assert c03a["pdf_page"] == 29
+    assert c03a["print_page"] == 22
+    assert c03a["review_status"] == "pending"
+    assert c03a["is_elective"] is False
+    expected_c03a_raw = "继续丰富自己的积累。分类整理、欣赏、交流所积累的词语、名句、诗文等，并在日常读写活动中积极运用，提升自身的中华文化修养。"
+    assert c03a["raw_text"] == expected_c03a_raw, "新增条款 c03a 全文必须保持严格不变！"
+
+    # 2. 验证保留教学提示条款 c03（含全文不变性与 R2 标点差异明确记载断言）
+    c03_id = "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03"
+    assert c03_id in c_map, f"未找到教学提示条款: {c03_id}"
+    c03 = c_map[c03_id]
+
+    errors_c03 = list(validator.iter_errors(c03))
+    assert not errors_c03, f"条款 c03 未通过 Schema 校验: {errors_c03[0].message if errors_c03 else ''}"
+    assert c03["clause_id"] == c03_id, "主键必须严格保持不变"
+    assert c03["section_type"] == "teaching_hint", "条款类型必须保持为教学提示"
+    assert c03["clause_number"] == "积累与梳理教学提示③"
+    assert c03["pdf_page"] == 29
+    assert c03["print_page"] == 22
+
+    # 全文不变断言：raw_text 必须逐字完全保持既有历史字面值不变
+    expected_c03_raw = (
+        "诵读、积累与梳理，重在培养兴趣、语感和习惯。引导学生增强语言积累和梳理的意识，"
+        "教给学生语言积累和梳理的方法，注重积累、梳理与运用相结合。诵读材料要选择脍炙人口的千古名篇和名言名句，"
+        "既要有文化内涵，又要短小精悍，朗朗上口。提倡日积月累，不要贪多求快，提倡熟读成诵，不要死记硬背。"
+        "引导学生借助信息技术等多种方式汇总、梳理自己积累的语言材料，建立自己的创意语言资料库，并能学以致用。"
+    )
+    assert c03["raw_text"] == expected_c03_raw, "教学提示 c03.raw_text 全文必须严格保持不变！"
+
+    # R2 GPT Review 校准断言：明确记载既有逗号与官方分号的历史差异，不得有不准确的‘完全一致’声明
+    assert "【ST-020-RM-02 校准说明】" in c03["collation_note"]
+    assert "content_req 为历史命名遗留" in c03["collation_note"]
+    assert "逗号" in c03["collation_note"] and "分号" in c03["collation_note"], "collation_note 必须明确记载逗号与官方分号的历史差异！"
+    assert "完全一致" not in c03["collation_note"], "collation_note 不得含有不准确的‘完全一致’断言！"
+
+    # R2 standardized_text 优化断言：忠实概括兴趣、语感、习惯、积累方法及学以致用要求
+    for required_keyword in ["兴趣", "语感", "习惯", "方法", "学以致用"]:
+        assert required_keyword in c03["standardized_text"], f"standardized_text 必须忠实涵盖关键词 '{required_keyword}'"
+
+    # 3. 验证知识点节点双向引用闭环、无重复、无悬空
+    chinese_cand_path = CONTRACTS_DIR / "chinese_knowledge_taxonomy_candidate.json"
+    cands = json.loads(chinese_cand_path.read_text(encoding="utf-8"))
+    cand_map = {cand["code"]: cand for cand in cands}
+
+    assert "chinese_cand.base.idiom_vocabulary" in cand_map
+    assert "chinese_cand.base_accumulation" in cand_map
+
+    idiom_sources = cand_map["chinese_cand.base.idiom_vocabulary"]["source_clause_ids"]
+    base_sources = cand_map["chinese_cand.base_accumulation"]["source_clause_ids"]
+
+    # 包含 c03a 与 c03
+    assert c03a_id in idiom_sources, "idiom_vocabulary 必须包含新增 c03a 条款引用"
+    assert c03_id in idiom_sources, "idiom_vocabulary 必须保留原有 c03 教学提示引用"
+    assert len(idiom_sources) == len(set(idiom_sources)), "idiom_vocabulary 的 source_clause_ids 存在重复引用"
+
+    assert c03a_id in base_sources, "base_accumulation 必须包含新增 c03a 条款引用"
+    assert c03_id in base_sources, "base_accumulation 必须保留原有 c03 教学提示引用"
+    assert len(base_sources) == len(set(base_sources)), "base_accumulation 的 source_clause_ids 存在重复引用"
+
+    # 全量悬空引用检查
+    all_clause_ids = set(c_map.keys())
+    for cand in cands:
+        for cid in cand.get("source_clause_ids", []):
+            assert cid in all_clause_ids, f"候选节点 {cand['code']} 存在悬空引用: {cid}"
+
+    # 4. 验证存量 18 个旧映射不受影响
+    mapping_path = CONTRACTS_DIR / "chinese_legacy_taxonomy_mapping.json"
+    mapping_data = json.loads(mapping_path.read_text(encoding="utf-8"))
+    assert len(mapping_data["legacy_mappings"]) == 18
+
+    # 5. 验证其他学科契约完整性不受干扰
+    for other_subj in ["math", "english", "physics"]:
+        other_clauses = json.loads((CONTRACTS_DIR / f"curriculum_clauses_{other_subj}.json").read_text(encoding="utf-8"))
+        assert len(other_clauses) >= 15
+        for oc in other_clauses:
+            assert oc["review_status"] == "pending"
+
+
+def test_chinese_st020_rm03_classical_vocab_accuracy_and_schema():
+    """
+    ST-020-RM-03 专项定点验收与 ISS-EN-01A 误报保护断言：
+    1. 验证 classical_vocab:c28 原文已完整补齐末句“背诵优秀诗文80篇（段）。”；
+    2. 验证 classical_vocab:c28 元数据与 Draft202012Validator Schema 强合规；
+    3. 验证知识点节点 chinese_cand.prose.classical_vocab 关联无悬空；
+    4. 阶段 B 保护验证：断言 phonetics:c03 真实包含第 6 项，严禁删除或篡改。
+    """
+    schema_path = SCHEMAS_DIR / "curriculum-standard-clause.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+
+    chinese_clauses_path = CONTRACTS_DIR / "curriculum_clauses_chinese.json"
+    clauses = json.loads(chinese_clauses_path.read_text(encoding="utf-8"))
+    c_map = {c["clause_id"]: c for c in clauses}
+
+    c28_id = "cs:chinese:2022:s4:reading:content_req:classical_vocab:c28"
+    assert c28_id in c_map, f"未找到条款: {c28_id}"
+    c28 = c_map[c28_id]
+
+    # Schema 校验
+    errors = list(validator.iter_errors(c28))
+    assert not errors, f"条款 c28 未通过 Schema 校验: {errors[0].message if errors else ''}"
+
+    # 元数据断言
+    assert c28["subject"] == "chinese"
+    assert c28["stage"] == "stage4"
+    assert c28["domain"] == "reading"
+    assert c28["section_type"] == "content_requirement"
+    assert c28["clause_number"] == "文言文阅读四级·实词虚词"
+    assert c28["pdf_page"] == 22
+    assert c28["print_page"] == 15
+    assert c28["review_status"] == "pending"
+    assert c28["is_elective"] is False
+
+    # 原文完整性强断言：必须完整包含官方原件第 15 页第 6 条全文（含末句“背诵优秀诗文80篇（段）。”）
+    expected_c28_raw = "诵读古代诗词，阅读浅易文言文，能借助注释和工具书理解基本内容。注重积累、感悟和运用，提高自己的欣赏品位。背诵优秀诗文80篇（段）。"
+    assert c28["raw_text"] == expected_c28_raw, "c28.raw_text 必须包含官方原件完整的三句话（含末句背诵要求）"
+    assert "【ST-020-RM-03 补齐末句】" in c28["collation_note"]
+
+    # 知识点溯源检查
+    chinese_cand_path = CONTRACTS_DIR / "chinese_knowledge_taxonomy_candidate.json"
+    cands = json.loads(chinese_cand_path.read_text(encoding="utf-8"))
+    cand_map = {cand["code"]: cand for cand in cands}
+    assert "chinese_cand.prose.classical_vocab" in cand_map
+    assert c28_id in cand_map["chinese_cand.prose.classical_vocab"]["source_clause_ids"]
+
+    # 阶段 B 保护验证：验证英语 phonetics:c03 包含第 6 项，证实 ISS-EN-01A 误报保护生效
+    english_clauses_path = CONTRACTS_DIR / "curriculum_clauses_english.json"
+    en_clauses = json.loads(english_clauses_path.read_text(encoding="utf-8"))
+    en_map = {c["clause_id"]: c for c in en_clauses}
+    en_c03 = en_map["cs:english:2022:s4:lang_usage:content_req:phonetics:c03"]
+    assert "6. 查词典时，运用音标知识学习单词的发音。" in en_c03["raw_text"], "英语 phonetics:c03 第 6 项必须严格保留，不得误删！"
+
+
+def test_st020_2b01_chinese_zero_ghost_codes():
+    """
+    ST-020-2B-01 专项定点验收：语文幽灵旧码清理验证。
+    1. 候选知识点 JSON (chinese_knowledge_taxonomy_candidate.json) 中内嵌 legacy_mappings 幽灵码为 0；
+    2. 课标条款 JSON (curriculum_clauses_chinese.json) 中内嵌 legacy_mappings 幽灵码为 0；
+    3. 保留项验证：critical_micro_writing 与 composition_expression 跨领域映射完整保留。
+    """
+    from shutong.corpus.taxonomy import TAXONOMY
+    valid_codes = {n["code"] for n in TAXONOMY["chinese"]}
+
+    # 1. 验证候选知识点
+    cand_path = CONTRACTS_DIR / "chinese_knowledge_taxonomy_candidate.json"
+    cands = json.loads(cand_path.read_text(encoding="utf-8"))
+    cand_ghosts = []
+    for c in cands:
+        for lm in c.get("legacy_mappings", []):
+            if lm not in valid_codes:
+                cand_ghosts.append((c["code"], lm))
+    assert cand_ghosts == [], f"语文候选知识点中仍存在幽灵旧码: {cand_ghosts}"
+
+    # 2. 验证课标条款
+    clauses_path = CONTRACTS_DIR / "curriculum_clauses_chinese.json"
+    clauses = json.loads(clauses_path.read_text(encoding="utf-8"))
+    clause_ghosts = []
+    for cl in clauses:
+        for lm in cl.get("legacy_mappings", []):
+            if lm not in valid_codes:
+                clause_ghosts.append((cl["clause_id"], lm))
+    assert clause_ghosts == [], f"语文课标条款中仍存在幽灵旧码: {clause_ghosts}"
+
+    # 3. 验证保留项
+    c_map = {c["code"]: c for c in cands}
+    assert "chinese.reading.argumentative" in c_map["chinese_cand.writing.critical_micro_writing"]["legacy_mappings"]
+    comp_lms = c_map["chinese_cand.composition_expression"]["legacy_mappings"]
+    assert "chinese.writing.composition" in comp_lms
+    assert "chinese.reading.argumentative" in comp_lms
+
+
+def test_st020_2b01_physics_micro_structure_no_density_mismatch():
+    """
+    ST-020-2B-01 专项定点验收：物理微观结构跨领域错配清除验证。
+    1. physics_cand.matter.micro_structure 的 legacy_mapping_codes 清空为 []；
+    2. 确保不存在 physics.mech.density 错配。
+    """
+    phys_path = CONTRACTS_DIR / "physics_knowledge_taxonomy_candidate.json"
+    phys_cands = json.loads(phys_path.read_text(encoding="utf-8"))
+    p_map = {c["code"]: c for c in phys_cands}
+
+    micro = p_map["physics_cand.matter.micro_structure"]
+    assert micro["legacy_mapping_codes"] == [], f"micro_structure 映射码必须为空列表，实际: {micro['legacy_mapping_codes']}"
+    assert "physics.mech.density" not in micro["legacy_mapping_codes"]
+
+
+
 
 
 

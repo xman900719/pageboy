@@ -93,3 +93,34 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
 
 生产根目录已平滑迁移至独立挂载大容量数据盘 `/media/xc/backup_ext4/prod-env/pageboy`。通过 `scripts/check_env_isolation.sh` 实施环境隔离自检护栏，确保开发树无生产配置密钥、无真实附件且开发用户无 docker 组提权。
 
+## ST-020 课标与知识库条款最小整改状态（2026-11-10）
+
+- **ST-020-RM-01（数学圆章节条款拆分与勘误）**：
+  - **状态**：`CLOSED`（维持 CLOSED）
+  - **验收结论**：已完成验收，圆章节 ①~⑩ 条款全集齐备，必学/选学严格区分，存量保护回归全绿；不再补包、重做或重复审核。
+  - **证据位置**：`contracts/curriculum_clauses_math.json`、`services/api/tests/test_math_taxonomy_st019b.py`。
+- **ST-020-RM-02（语文第四学段积累与梳理内容要求补齐与教学提示校准）**：
+  - **状态**：`CLOSED`（Owner 已批准，2026-11-10）
+  - **验收结论**：GPT 第二轮独立验收通过，无阻断项，无须第三轮挑战。新增 c03a 内容要求条款（全文字面值锁定）；保留并校准 c03 教学提示（记载逗号与官方分号历史差异，忠实概括五大核心要素）；知识点双向溯源 100%；定点与回归测试全绿。
+  - **最终依据路径**：`/media/xc/backup_ext4/code/ShuTong_ST-020-RM-02_Review_R2.zip`（SHA256: `cef91a3b3b6f110dfba1cfc6ef855da7121c9a6bd147f601d9ce535cad0ac155`）。
+- **ST-020-RM-03（语文第四学段文言文实词条款末句补齐与 ISS-EN-01A 误报纠正）**：
+  - **状态**：`CLOSED`（GPT 第三轮最终验收通过，2026-11-10）
+  - **验收结论**：GPT 第一轮至第三轮 Review 确认 c28 补齐、ISS-EN-01A 纠正为误报、主要证据与 SHA256 清单全项一致通过，无阻断项，闭环完成整改。
+  - **最终依据路径**：`/media/xc/backup_ext4/code/ShuTong_ST-020-RM-03_Review_R3.zip`（SHA256: `06d5a36ed95a3104f92509dbfd54ad06a63a5dd9b1a0d75e9e74bc3b81f1b021`）。
+- **ST-020-2A（四科知识点库全量只读审核准备）**：
+  - **状态**：`CLOSED`（2026-11-11，三轮 GPT 独立审核与最终证据收口完毕）
+  - **关闭依据**：经 GPT 第一轮、第二轮、第三轮独立审核及最终证据收口验收通过。四项遗留问题（A1: RM-02 归档哈希锁定为官方闭环真值 `cef91a3b...`；A2: 官方发文字号统一校准为官方印发字号 `教材〔2022〕2号`；A3: `vocabulary_req:c03a` 来源标签校准为纯 RM-02 整改验收，试点集去重后总覆盖率保持 71/241 守恒；A4: 工作区 Git HEAD、porcelain v2、二进制补丁及 `data/st020_1_negative_controls.json` 证据完整对齐）全项闭环修复。
+  - **最终依据路径**：`/media/xc/backup_ext4/code/ShuTong_ST-020-2A_Closeout.md`（最终收口报告）及 `/media/xc/backup_ext4/code/ShuTong_ST-020-2A_Audit_Baseline_Review_R3.zip`（R3 审核证据包）。
+- **ST-020-2B-01（三大高风险方向静态契约定点整改）**：
+  - **状态**：`CLOSED`（GPT 独立复核第二轮核准通过，2026-11-11）
+  - **实施内容**：
+    1. 数学必学与选学切线隔离（`TASK-ERR-MA-02`）：将 `math_cand.geo.circle_tangent` 剥离选学条款 `circle:c06` 与 `circle:c07`，保留必学条款 `circle:c04`；新增独立选学节点 `math_cand.geo.circle_tangent_length`（`is_elective: true`，挂载于 `math_cand.geo.properties`），数学候选节点扩充为 48 个。
+    2. 语文幽灵旧码单向清理（`TASK-ERR-CH-01, 02, 04`）：将 16 个候选节点与 22 条条款中内嵌的非法幽灵旧码单向对齐为合法存量旧码；严格保留 `critical_micro_writing` 与 `composition_expression` 待核实跨领域映射；两契约文件内幽灵旧码降为 0。
+    3. 物理微观结构跨域错配清除（`TASK-ERR-PH-01`）：将 `physics_cand.matter.micro_structure` 节点的 `legacy_mapping_codes` 清空为 `[]`，消除力学密度错配。
+  - **验证证据与交付依据**：
+    - 64 项核心课标套件测试通过（退出码 0，5.65s）；
+    - 全量后端测试：222 passed, 25 skipped（PostgreSQL 真实并发测试）, 0 failed（退出码 0，耗时 26.79s）；
+    - OpenAPI 契约检查通过（`scripts/check_openapi.py`，退出码 0）；
+    - 独立复核依据：`/media/xc/backup_ext4/code/ShuTong_ST-020-2B-01_Review_R2.zip`（SHA256: `9041844883fa4305905a7a8370ef944a84faa264226e44b33a5a4feb8cb62660`）。
+
+
