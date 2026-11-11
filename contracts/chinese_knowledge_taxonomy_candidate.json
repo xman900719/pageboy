@@ -12,6 +12,7 @@
       "cs:chinese:2022:s4:lang_usage:content_req:phonetics:c01",
       "cs:chinese:2022:s4:lang_usage:content_req:character:c02",
       "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03",
+      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary_req:c03a",
       "cs:chinese:2022:s4:lang_usage:content_req:syntax:c04",
       "cs:chinese:2022:s4:lang_usage:content_req:punctuation:c05",
       "cs:chinese:2022:s4:lang_usage:content_req:culture:c06",
@@ -22,15 +23,7 @@
     "review_status": "pending",
     "review_note": "依据课标基础型任务群归集，待审核",
     "legacy_mappings": [
-      "chinese.base",
-      "chinese.base.phonetics",
-      "chinese.base.character",
-      "chinese.base.idiom",
-      "chinese.base.grammar",
-      "chinese.base.punctuation",
-      "chinese.base.literature",
-      "chinese.base.calligraphy",
-      "chinese.base.comprehensive"
+      "chinese.base"
     ]
   },
   {
@@ -78,7 +71,8 @@
     "level": 2,
     "description": "初中常用词语与成语含义理解、感情色彩褒贬辨析、适用对象及语境搭配正误判断。",
     "source_clause_ids": [
-      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03"
+      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03",
+      "cs:chinese:2022:s4:lang_usage:content_req:vocabulary_req:c03a"
     ],
     "is_elective": false,
     "review_status": "pending",
@@ -101,7 +95,7 @@
     "review_status": "pending",
     "review_note": "对应语法修辞与病句修改条文，待审核",
     "legacy_mappings": [
-      "chinese.base.grammar"
+      "chinese.base.syntax"
     ]
   },
   {
@@ -136,8 +130,7 @@
     "review_status": "pending",
     "review_note": "对应文化常识与名家书法鉴赏条文，待审核",
     "legacy_mappings": [
-      "chinese.base.literature",
-      "chinese.base.calligraphy"
+      "chinese.base.culture"
     ]
   },
   {
@@ -159,7 +152,7 @@
     "review_status": "pending",
     "review_note": "对应情境表达与跨学科综合性学习，待审核",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -180,12 +173,7 @@
     "review_status": "pending",
     "review_note": "依据课标古诗文阅读要求归集，待审核",
     "legacy_mappings": [
-      "chinese.ancient",
-      "chinese.ancient.poetry_recite",
-      "chinese.ancient.poetry_appreciate",
-      "chinese.ancient.prose_word",
-      "chinese.ancient.prose_sentence",
-      "chinese.ancient.prose_content"
+      "chinese.poetry_classical"
     ]
   },
   {
@@ -202,7 +190,7 @@
     "review_status": "pending",
     "review_note": "对应初中必背诗文背诵默写要求，待审核",
     "legacy_mappings": [
-      "chinese.ancient.poetry_recite"
+      "chinese.poetry.dictation"
     ]
   },
   {
@@ -219,7 +207,7 @@
     "review_status": "pending",
     "review_note": "对应古代诗词意境艺术手法鉴赏，待审核",
     "legacy_mappings": [
-      "chinese.ancient.poetry_appreciate"
+      "chinese.poetry.appreciation"
     ]
   },
   {
@@ -236,7 +224,7 @@
     "review_status": "pending",
     "review_note": "对应文言实词虚词理解要求，待审核",
     "legacy_mappings": [
-      "chinese.ancient.prose_word"
+      "chinese.prose.classical"
     ]
   },
   {
@@ -253,7 +241,7 @@
     "review_status": "pending",
     "review_note": "对应文言断句与翻译要求，待审核",
     "legacy_mappings": [
-      "chinese.ancient.prose_sentence"
+      "chinese.prose.classical"
     ]
   },
   {
@@ -270,7 +258,7 @@
     "review_status": "pending",
     "review_note": "对应文言文主旨理解与对比探究，待审核",
     "legacy_mappings": [
-      "chinese.ancient.prose_content"
+      "chinese.prose.classical"
     ]
   },
   {
@@ -297,11 +285,7 @@
     "review_status": "pending",
     "review_note": "依据课标现代文多文体阅读与整本书阅读归集，待审核",
     "legacy_mappings": [
-      "chinese.reading",
-      "chinese.reading.practical",
-      "chinese.reading.non_continuous",
-      "chinese.reading.literary",
-      "chinese.reading.argumentative"
+      "chinese.reading"
     ]
   },
   {
@@ -319,7 +303,7 @@
     "review_status": "pending",
     "review_note": "对应说明性文本信息筛选与说明方法品析，待审核",
     "legacy_mappings": [
-      "chinese.reading.practical"
+      "chinese.reading.informative"
     ]
   },
   {
@@ -336,7 +320,7 @@
     "review_status": "pending",
     "review_note": "对应多模态非连续性文本综合分析，待审核",
     "legacy_mappings": [
-      "chinese.reading.non_continuous"
+      "chinese.reading.informative"
     ]
   },
   {
@@ -354,7 +338,7 @@
     "review_status": "pending",
     "review_note": "对应文学作品情节脉络与人物塑造，待审核",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -372,7 +356,7 @@
     "review_status": "pending",
     "review_note": "对应文学语言品味与主旨领悟，待审核",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -424,7 +408,7 @@
     "review_status": "pending",
     "review_note": "对应整本书阅读任务群核心要求，待审核",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.classic.reading"
     ]
   },
   {

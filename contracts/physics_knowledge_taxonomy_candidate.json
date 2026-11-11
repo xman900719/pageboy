@@ -90,9 +90,7 @@
     "is_elective": false,
     "review_status": "pending",
     "review_note": "微观粒子结构与宇宙尺度考点，待审核",
-    "legacy_mapping_codes": [
-      "physics.mech.density"
-    ]
+    "legacy_mapping_codes": []
   },
   {
     "code": "physics_cand.motion_interaction",

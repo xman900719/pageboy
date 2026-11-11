@@ -34,3 +34,40 @@
   - [x] 7.4 在 `conftest.py` 中增加测试环境自动生成轻量合成原件与环境变量支持
   - [x] 7.5 双环境（模拟 CI 干净工作区与宿主机带真实文件）本地全量回归测试
   - [x] 7.6 提交代码并推送，验证 GitHub Actions CI 全绿放行
+
+- [x] **阶段 8：ST-020 课标与知识库条款最小整改**
+  - [x] 8.1 ST-020-RM-01（数学圆章节条款拆分与勘误）：`CLOSED`（验收通过，不再补包重做）
+  - [x] 8.2 ST-020-RM-02（语文积累与梳理内容要求补齐与教学提示校准）：`CLOSED`（Owner 批准，GPT R2 验收通过，最终依据 `/media/xc/backup_ext4/code/ShuTong_ST-020-RM-02_Review_R2.zip`）
+  - [x] 8.3 纠正 ISS-EN-01A 错误判断：核验官方原件表 9 包含第 6 项，标记为误报，锁定 `phonetics:c03.raw_text`
+  - [x] 8.4 ST-020-RM-03：课标原文错误定点整改与 Review R3 最终验收通过，状态 `CLOSED`（依据 `/media/xc/backup_ext4/code/ShuTong_ST-020-RM-03_Review_R3.zip`）
+
+- [x] **阶段 9：ST-020-2A 四科知识点库全量只读审核准备**
+  - [x] 9.1 读取现有 ST-020 审核记录与 RM-01/02/03 最终验收结论
+  - [x] 9.2 记录本地 Git Commit 与全量关键文件 SHA256 基线
+  - [x] 9.3 核查四科官方课标原件物理存在与来源登记完整性
+  - [x] 9.4 建立四科条款与候选知识点审核库存台账
+  - [x] 9.5 合并已有问题清单并完成五分级（已关闭、已确认未整改、误报、待核实、设计建议）
+  - [x] 9.6 深度排查未完成映射差异与选学隔离风险
+  - [x] 9.7 制定分批审核顺序、覆盖标准与独立验收门禁
+  - [x] 9.8 编写打包脚本并生成交付包 `ShuTong_ST-020-2A_Audit_Baseline_Review.zip`
+
+- [x] **阶段 10：ST-020-2A 最终收口与 2B-01 方案准备**
+  - [x] 10.1 最终四项证据收口（RM-02 归档哈希锁定为官方真值 `cef91a3b...`、发文字号校准为 `教材〔2022〕2号`、条款 `c03a` 来源属性纯正化且去重总覆盖率 71/241 守恒、生成工作区 Git HEAD/补丁/负例控制证据）
+  - [x] 10.2 生成收口报告 `/media/xc/backup_ext4/code/ShuTong_ST-020-2A_Closeout.md` 并标记 `ST-020-2A = CLOSED`
+  - [x] 10.3 编制三大高风险方向实施方案 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-01_Proposal.md` 呈交 Owner
+
+- [x] **阶段 11：ST-020-2B-01 三大高风险方向静态契约定点整改**
+  - [x] 11.1 方向 1（数学）：剥离 `math_cand.geo.circle_tangent` 选学条款，新增独立选学节点 `math_cand.geo.circle_tangent_length`（`is_elective: true`），数学候选扩至 48 个
+  - [x] 11.2 方向 2（语文）：单向清理 16 个候选节点与 22 条条款中内嵌的非法幽灵旧码，幽灵码清零；保留微写作等合法跨域映射
+  - [x] 11.3 方向 3（物理）：清空 `physics_cand.matter.micro_structure` 节点的力学密度错配映射
+  - [x] 11.4 测试断言升级：更新四科总候选数至 135，增加切线选学隔离、语文 0 幽灵码及物理错配清除专项断言
+  - [x] 11.5 全量自动化测试回归（222 passed, 25 skipped, 0 failed，退出码 0，耗时 26.79s）与 OpenAPI 契约校验通过
+  - [x] 11.6 ST-020-2B-01 独立复核第二轮验收核准，状态正式同步为 `CLOSED`（依据包 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-01_Review_R2.zip`，SHA256: `9041844883fa4305905a7a8370ef944a84faa264226e44b33a5a4feb8cb62660`）
+
+- [ ] **阶段 12：ST-020-2B-02 剩余静态契约风险定点清单与方案制定**
+  - [ ] 12.1 只读整理所有尚未关闭问题台账，严禁重开已关闭事项
+  - [ ] 12.2 专项核查 `math_cand.eq.linear_system_3var` 的选学属性与旧码 `math.eq.linear_system` 映射及语义
+  - [ ] 12.3 专项核查语文 `critical_micro_writing`、`composition_expression` 待教研裁决映射及其他未闭环映射差异
+  - [ ] 12.4 单独登记 `TASK-ENG-ELEC-01..03` 运行期选学过滤缺口，静态契约与运行期工程解耦
+  - [ ] 12.5 输出 `ShuTong_ST-020-2B-02_Proposal.md` 呈交 Owner 决策
+  - [ ] 12.6 打包生成 `/media/xc/backup_ext4/code/ShuTong_ST-020-2B-02_Scope_Review.zip` 交付包

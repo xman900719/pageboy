@@ -45,7 +45,7 @@
     "review_status": "pending",
     "legacy_mappings": [
       "chinese.base.character",
-      "chinese.base.calligraphy"
+      "chinese.base.culture"
     ]
   },
   {
@@ -97,6 +97,30 @@
     ]
   },
   {
+    "clause_id": "cs:chinese:2022:s4:lang_usage:content_req:vocabulary_req:c03a",
+    "source_id": "MOE-2022-CHINESE",
+    "subject": "chinese",
+    "stage": "stage4",
+    "domain": "lang_usage",
+    "part_title": "四、课程内容",
+    "domain_title": "（一）基础型学习任务群",
+    "theme_title": "1. 语言文字积累与梳理",
+    "sub_theme": "词语积累与典故运用",
+    "section_type": "content_requirement",
+    "clause_number": "积累与梳理四级③",
+    "pdf_page": 29,
+    "print_page": 22,
+    "raw_text": "继续丰富自己的积累。分类整理、欣赏、交流所积累的词语、名句、诗文等，并在日常读写活动中积极运用，提升自身的中华文化修养。",
+    "standardized_text": "继续丰富语言积累，分类整理、欣赏、交流词语、名句、诗文，并在日常读写活动中积极运用，提升文化修养。",
+    "collation_note": "【ST-020-RM-02 增补条款】依据教育部2022年版语文课程标准原件第22页（PDF第29页）基础型学习任务群第四学段内容要求第(3)条进行采录与校对，文字完全一致；正式人工复核状态为 pending。",
+    "is_elective": false,
+    "derived_requirement": "分类整理、欣赏、交流词语、名句、诗文等语言积累，并在读写活动中规范运用",
+    "review_status": "pending",
+    "legacy_mappings": [
+      "chinese.base.idiom"
+    ]
+  },
+  {
     "clause_id": "cs:chinese:2022:s4:lang_usage:content_req:vocabulary:c03",
     "source_id": "MOE-2022-CHINESE",
     "subject": "chinese",
@@ -111,8 +135,8 @@
     "pdf_page": 29,
     "print_page": 22,
     "raw_text": "诵读、积累与梳理，重在培养兴趣、语感和习惯。引导学生增强语言积累和梳理的意识，教给学生语言积累和梳理的方法，注重积累、梳理与运用相结合。诵读材料要选择脍炙人口的千古名篇和名言名句，既要有文化内涵，又要短小精悍，朗朗上口。提倡日积月累，不要贪多求快，提倡熟读成诵，不要死记硬背。引导学生借助信息技术等多种方式汇总、梳理自己积累的语言材料，建立自己的创意语言资料库，并能学以致用。",
-    "standardized_text": "分类整理成语典故与名句名篇，准确理解词语在具体语境中的感情色彩、词义与搭配，学以致用。",
-    "collation_note": "经人工逐字核对，与教育部2022年版语文课程标准原件第22页（PDF第29页）教学提示第(3)条完全一致",
+    "standardized_text": "重在培养语言积累与梳理的兴趣、语感和良好习惯，教给积累与梳理方法，注重积累、梳理与运用相结合，诵读名篇名句，借助信息技术建立创意语言资料库并学以致用。（教学提示）",
+    "collation_note": "【ST-020-RM-02 校准说明】本条款实为教育部2022年版语文课程标准原件第22-23页（PDF第29-30页）基础型学习任务群第四学段【教学提示】第(3)条。clause_id 中的 content_req 为历史命名遗留，按契约保留以确保历史引用兼容；本条款 raw_text 保留既有历史文本不变，其在‘不要贪多求快’后为逗号‘，’，官方原件相应位置为分号‘；’，在此明确记载该标点历史差异；正式人工复核状态为 pending。",
     "is_elective": false,
     "derived_requirement": "掌握词语与成语在特定语境中的语义辨析、褒贬色彩与得体运用",
     "review_status": "pending",
@@ -141,7 +165,7 @@
     "derived_requirement": "从具体语言实例出发辨析修改六大常见病句，掌握常见修辞手法表达效果",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.grammar"
+      "chinese.base.syntax"
     ]
   },
   {
@@ -189,8 +213,7 @@
     "derived_requirement": "掌握节气民俗、古代称谓、文学流派与名家书法作品鉴赏常识",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.literature",
-      "chinese.base.calligraphy"
+      "chinese.base.culture"
     ]
   },
   {
@@ -214,7 +237,7 @@
     "derived_requirement": "掌握情境拟写标语通知、提炼活动主题与得体交流口语交际能力",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -238,7 +261,7 @@
     "derived_requirement": "说明性文本信息筛选、主要内容概括与说明对象特征把握",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.practical"
+      "chinese.reading.informative"
     ]
   },
   {
@@ -262,7 +285,7 @@
     "derived_requirement": "科技说明文说明方法辨析与说明语言准确性严密性品析",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.practical"
+      "chinese.reading.informative"
     ]
   },
   {
@@ -286,7 +309,7 @@
     "derived_requirement": "非连续性文本图文信息转换、图表趋势分析与多材料信息对比整合",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.non_continuous"
+      "chinese.reading.informative"
     ]
   },
   {
@@ -310,7 +333,7 @@
     "derived_requirement": "把握记叙文散文小说的叙事脉络、叙述顺序与行文线索",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -334,7 +357,7 @@
     "derived_requirement": "分析文学作品中的人物形象特征与性格品格，掌握多种人物描写手法",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -358,7 +381,7 @@
     "derived_requirement": "品味文学语言的生动性与富有表现力词句，分析修辞与表现手法的作用",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -382,7 +405,7 @@
     "derived_requirement": "感悟作品主旨与作者情感态度，进行个性化审美探究与启示感悟",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.reading.narrative"
     ]
   },
   {
@@ -406,7 +429,7 @@
     "derived_requirement": "鉴赏古代诗词意象与意境，把握诗歌主旨与作者思想感情，品析炼字与修辞手法",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.ancient.poetry_appreciate"
+      "chinese.poetry.appreciation"
     ]
   },
   {
@@ -550,7 +573,7 @@
     "derived_requirement": "初中必读名著关键情节脉络、核心人物性格专题探究与阅读体会笔记",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.reading.literary"
+      "chinese.classic.reading"
     ]
   },
   {
@@ -574,7 +597,7 @@
     "derived_requirement": "综合运用多学科实验与观察所得，规范撰写实验研究报告与科学小论文",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -598,7 +621,7 @@
     "derived_requirement": "设计问卷访谈，完成统计分析并规范撰写校园调查报告",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -622,7 +645,7 @@
     "derived_requirement": "围绕社会热点检索整理材料，列出发言提纲并清晰有理表达观点",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -646,7 +669,7 @@
     "derived_requirement": "围绕核心价值观与科学理性专题开展合作探究与成果汇报",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -670,7 +693,7 @@
     "derived_requirement": "撰写文化活动策划方案，制作宣传海报并运用多种媒介展示成果",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.base.comprehensive"
+      "chinese.base.expression"
     ]
   },
   {
@@ -694,7 +717,7 @@
     "derived_requirement": "中考统编初中古诗文名句理解性默写，无添字、漏字、错别字",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.ancient.poetry_recite"
+      "chinese.poetry.dictation"
     ]
   },
   {
@@ -711,14 +734,14 @@
     "clause_number": "文言文阅读四级·实词虚词",
     "pdf_page": 22,
     "print_page": 15,
-    "raw_text": "诵读古代诗词，阅读浅易文言文，能借助注释和工具书理解基本内容。注重积累、感悟和运用，提高自己的欣赏品位。",
+    "raw_text": "诵读古代诗词，阅读浅易文言文，能借助注释和工具书理解基本内容。注重积累、感悟和运用，提高自己的欣赏品位。背诵优秀诗文80篇（段）。",
     "standardized_text": "借助注释与工具书理解浅易文言文，掌握常见文言实词（通假字、古今异义、词类活用、一词多义）及高频虚词的意义和用法。",
-    "collation_note": "经人工逐字核对，与教育部2022版课标第15页原件一致",
+    "collation_note": "【ST-020-RM-03 补齐末句】依据教育部2022版语文课标印刷第15页（PDF第22页）第四学段学段要求第6条完整原文补齐末句‘背诵优秀诗文80篇（段）。’，经逐字核对与原件完全一致；正式人工复核状态为 pending。",
     "is_elective": false,
     "derived_requirement": "掌握常见文言实词通假活用、古今异义与常见文言虚词在语境中的含义",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.ancient.prose_word"
+      "chinese.prose.classical"
     ]
   },
   {
@@ -742,7 +765,7 @@
     "derived_requirement": "文言文断句停顿划分与文中重点陈述句、判断句、被动句、倒装句的准确翻译",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.ancient.prose_sentence"
+      "chinese.prose.classical"
     ]
   },
   {
@@ -766,7 +789,7 @@
     "derived_requirement": "文言文思想内容整体把握、作者观点态度分析与课内外对比阅读探究",
     "review_status": "pending",
     "legacy_mappings": [
-      "chinese.ancient.prose_content"
+      "chinese.prose.classical"
     ]
   },
   {

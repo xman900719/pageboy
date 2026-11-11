@@ -4,7 +4,7 @@ ST-019-D 四科集成技术验收专项测试套件：
 - D-T01: 四科共存与学科隔离（同库四科初始化、合法关联、跨学科非法关联拒绝、单科学科操作零污染）
 - D-T02: 历史数据与学生证据保护（建立真实存量历史知识点节点及题目关联，验证旧节点不删除、node_version不变、学生作答不被改写，新候选v1->v2重置为pending）
 - D-T03: 管理与学生业务链路隔离（角色鉴权隔离、未审批数据边界、多学科学生练习链路防污染）
-- D-T04: 四科联合发布与迁移兼容性（四科同库134节点初始化、发布互不串扰、完整快照深度相等、Alembic 正向升级数据保留与降级破坏性回退验证）
+- D-T04: 四科联合发布与迁移兼容性（四科同库135节点初始化、发布互不串扰、完整快照深度相等、Alembic 正向升级数据保留与降级破坏性回退验证）
 """
 from __future__ import annotations
 
@@ -66,14 +66,14 @@ def _make_and_publish_question(client, auth: dict, source_id: str, stem: str, kn
 def test_d_t01_four_subjects_coexistence_and_subject_isolation(client, admin_auth):
     """
     D-T01: 四科共存与学科隔离集成测试。
-    1. 同一隔离数据库同时初始化四科（语文25、数学47、英语28、物理34，共134候选）；
+    1. 同一隔离数据库同时初始化四科（语文25、数学48、英语28、物理34，共135候选）；
     2. 验证四科候选编码与归属正确无混淆；
     3. 验证四科各自合法的本学科题目-知识点关联创建成功；
     4. 验证跨学科非法关联（语数、英物、数语、物英）均被 422 SUBJECT_MISMATCH 强行拒绝；
     5. 对单科（英语）进行候选版本修订与审核状态更新，断言其余三科候选数量、版本及状态零污染。
     """
     subjects = ["chinese", "math", "english", "physics"]
-    expected_counts = {"chinese": 25, "math": 47, "english": 28, "physics": 34}
+    expected_counts = {"chinese": 25, "math": 48, "english": 28, "physics": 34}
 
     # 1. 在同一个测试库中同时初始化四科候选
     seeded_nodes = {}
@@ -95,9 +95,9 @@ def test_d_t01_four_subjects_coexistence_and_subject_isolation(client, admin_aut
             assert c["review_status"] == "pending"
         seeded_nodes[subj] = cands
 
-    # 验证同库中活跃候选节点总数为 134
+    # 验证同库中活跃候选节点总数为 135
     total_active_cands = sum(len(cands) for cands in seeded_nodes.values())
-    assert total_active_cands == 134, f"四科总候选数期望 134，实际 {total_active_cands}"
+    assert total_active_cands == 135, f"四科总候选数期望 135，实际 {total_active_cands}"
 
     # 2. 为四科各创建一道本学科题目
     question_versions = {}
@@ -448,8 +448,8 @@ def test_d_t03_admin_student_business_pipeline_isolation(client, admin_auth, stu
 
 def test_d_t04_four_subjects_joint_release_and_migration_compatibility(client, admin_auth, tmp_path):
     """
-    D-T04: 四科联合发布与迁移兼容性集成测试（B1 纠正迁移无损证明，B2 补足四科134节点及深度快照比对）。
-    1. 同一测试库初始化四科候选（合计134个），存在未审核候选的学科（英语）发布正式版本被强行拒绝 (400)；
+    D-T04: 四科联合发布与迁移兼容性集成测试（B1 纠正迁移无损证明，B2 补足四科135节点及深度快照比对）。
+    1. 同一测试库初始化四科候选（合计135个），存在未审核候选的学科（英语）发布正式版本被强行拒绝 (400)；
     2. 全量审核通过的学科（语文）发布正式版本成功 (201)，生成完整不可变历史快照；
     3. 随后对未发布学科（英语）进行候选节点演变，已发布的语文学科快照保持绝对深度相等；
     4. Alembic 迁移验证：正向升级完整保留历史数据，架构降级为丢弃新增表数据的破坏性回退，再次升级通过一致性检查。
@@ -459,12 +459,12 @@ def test_d_t04_four_subjects_joint_release_and_migration_compatibility(client, a
         seed_resp = client.post(f"/api/admin/knowledge/candidates/seed?subject={s}", headers=admin_auth)
         assert seed_resp.status_code == 201
 
-    # 验证四科在同一测试数据库中全部初始化，总数精确等于 134
+    # 验证四科在同一测试数据库中全部初始化，总数精确等于 135
     total_cands = sum(
         len(client.get(f"/api/admin/knowledge/candidates?subject={s}", headers=admin_auth).json())
         for s in ["chinese", "math", "english", "physics"]
     )
-    assert total_cands == 134, f"四科总候选数期望 134，实际 {total_cands}"
+    assert total_cands == 135, f"四科总候选数期望 135，实际 {total_cands}"
 
     # 负例：英语候选处于 pending，尝试发布英语正式版本 -> 400 强行拒绝
     pub_eng_bad = client.post(
