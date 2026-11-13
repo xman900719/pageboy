@@ -107,6 +107,90 @@ components:
       - answer
       title: AttemptIn
       type: object
+    BatchNodeReviewIn:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/BatchNodeReviewItem'
+          maxItems: 200
+          minItems: 1
+          title: Items
+          type: array
+      required:
+      - items
+      title: BatchNodeReviewIn
+      type: object
+    BatchNodeReviewItem:
+      properties:
+        node_id:
+          minLength: 1
+          title: Node Id
+          type: string
+        review_opinion:
+          minLength: 1
+          title: Review Opinion
+          type: string
+        review_status:
+          enum:
+          - approved
+          - rejected
+          title: Review Status
+          type: string
+        reviewer_id:
+          maxLength: 40
+          minLength: 1
+          title: Reviewer Id
+          type: string
+      required:
+      - node_id
+      - reviewer_id
+      - review_status
+      - review_opinion
+      title: BatchNodeReviewItem
+      type: object
+    DomainRadarItemOut:
+      description: 一级知识领域掌握度聚合统计（供成长状态雷达/条形展示）。
+      properties:
+        domain_code:
+          title: Domain Code
+          type: string
+        domain_name:
+          title: Domain Name
+          type: string
+        insufficient_count:
+          title: Insufficient Count
+          type: integer
+        mastered_count:
+          title: Mastered Count
+          type: integer
+        observed_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Observed Rate
+        tested_topics:
+          title: Tested Topics
+          type: integer
+        total_topics:
+          title: Total Topics
+          type: integer
+        untested_count:
+          title: Untested Count
+          type: integer
+        weak_count:
+          title: Weak Count
+          type: integer
+      required:
+      - domain_code
+      - domain_name
+      - total_topics
+      - tested_topics
+      - mastered_count
+      - weak_count
+      - insufficient_count
+      - untested_count
+      title: DomainRadarItemOut
+      type: object
     ErratumIn:
       properties:
         note:
@@ -147,6 +231,84 @@ components:
       - minutes_per_day
       title: GoalIn
       type: object
+    GrowthStatusOut:
+      description: 学生成长状态总览：优势、薄弱、领域雷达与当前目标。
+      properties:
+        current_goal:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Current Goal
+        developing:
+          items:
+            $ref: '#/components/schemas/KnowledgeMasteryItemOut'
+          title: Developing
+          type: array
+        disclaimer:
+          title: Disclaimer
+          type: string
+        domain_radar:
+          items:
+            $ref: '#/components/schemas/DomainRadarItemOut'
+          title: Domain Radar
+          type: array
+        model_version:
+          title: Model Version
+          type: string
+        planning_threshold:
+          title: Planning Threshold
+          type: number
+        recent_wrong_count:
+          title: Recent Wrong Count
+          type: integer
+        release_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Release Version
+        strengths:
+          items:
+            $ref: '#/components/schemas/KnowledgeMasteryItemOut'
+          title: Strengths
+          type: array
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        summary_counts:
+          additionalProperties:
+            type: integer
+          title: Summary Counts
+          type: object
+        untested_highlights:
+          items:
+            $ref: '#/components/schemas/KnowledgeMasteryItemOut'
+          title: Untested Highlights
+          type: array
+        weaknesses:
+          items:
+            $ref: '#/components/schemas/KnowledgeMasteryItemOut'
+          title: Weaknesses
+          type: array
+      required:
+      - subject
+      - model_version
+      - planning_threshold
+      - summary_counts
+      - strengths
+      - weaknesses
+      - developing
+      - untested_highlights
+      - domain_radar
+      - recent_wrong_count
+      - disclaimer
+      title: GrowthStatusOut
+      type: object
     HTTPValidationError:
       properties:
         detail:
@@ -173,6 +335,128 @@ components:
       - confirmed_by_human
       - questions
       title: ImportConfirmationIn
+      type: object
+    KnowledgeEdgeOut:
+      description: 知识图谱关系边（层级隶属或前置依赖）。
+      properties:
+        edge_type:
+          enum:
+          - hierarchy
+          - prerequisite
+          title: Edge Type
+          type: string
+        relation:
+          title: Relation
+          type: string
+        source:
+          title: Source
+          type: string
+        target:
+          title: Target
+          type: string
+      required:
+      - source
+      - target
+      - relation
+      - edge_type
+      title: KnowledgeEdgeOut
+      type: object
+    KnowledgeGraphOut:
+      description: 学生端知识图谱：已发布非选学节点、关系边与掌握状态高亮。
+      properties:
+        edges:
+          items:
+            $ref: '#/components/schemas/KnowledgeEdgeOut'
+          title: Edges
+          type: array
+        model_version:
+          title: Model Version
+          type: string
+        nodes:
+          items:
+            $ref: '#/components/schemas/KnowledgeMasteryItemOut'
+          title: Nodes
+          type: array
+        release_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Release Version
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        summary_counts:
+          additionalProperties:
+            type: integer
+          title: Summary Counts
+          type: object
+      required:
+      - subject
+      - model_version
+      - summary_counts
+      - nodes
+      - edges
+      title: KnowledgeGraphOut
+      type: object
+    KnowledgeMasteryItemOut:
+      description: 单个知识节点的掌握状态与统计信息。
+      properties:
+        code:
+          title: Code
+          type: string
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        domain:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Domain
+        is_leaf:
+          title: Is Leaf
+          type: boolean
+        level:
+          title: Level
+          type: integer
+        mastery_status:
+          enum:
+          - mastered
+          - weak
+          - insufficient
+          - untested
+          title: Mastery Status
+          type: string
+        name:
+          title: Name
+          type: string
+        observed_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Observed Rate
+        parent_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Code
+        sample_size:
+          title: Sample Size
+          type: integer
+      required:
+      - code
+      - name
+      - level
+      - is_leaf
+      - sample_size
+      - mastery_status
+      title: KnowledgeMasteryItemOut
       type: object
     LinkIn:
       properties:
@@ -304,6 +588,259 @@ components:
       required:
       - name
       title: NodeVersionIn
+      type: object
+    PracticeQuestionPayloadOut:
+      description: 学生端作答题面载荷（严禁包含参考答案）。
+      properties:
+        exposure_id:
+          title: Exposure Id
+          type: string
+        group_context:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Group Context
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        media_attachment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Attachment Id
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        purpose:
+          title: Purpose
+          type: string
+        question_version_id:
+          title: Question Version Id
+          type: string
+        selection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Selection Reason
+        stem:
+          title: Stem
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        unseen_at_exposure:
+          title: Unseen At Exposure
+          type: boolean
+      required:
+      - exposure_id
+      - question_version_id
+      - purpose
+      - unseen_at_exposure
+      - stem
+      - kind
+      - options
+      - max_points
+      - subject
+      title: PracticeQuestionPayloadOut
+      type: object
+    PracticeSessionCompleteOut:
+      description: 练习交卷结算结果与本轮错题清单。
+      properties:
+        answered_count:
+          title: Answered Count
+          type: integer
+        correct_count:
+          title: Correct Count
+          type: integer
+        session_id:
+          title: Session Id
+          type: string
+        status:
+          const: completed
+          title: Status
+          type: string
+        subjective_count:
+          title: Subjective Count
+          type: integer
+        wrong_count:
+          title: Wrong Count
+          type: integer
+        wrong_items:
+          items:
+            $ref: '#/components/schemas/WrongQuestionSummaryOut'
+          title: Wrong Items
+          type: array
+      required:
+      - session_id
+      - status
+      - answered_count
+      - correct_count
+      - wrong_count
+      - subjective_count
+      - wrong_items
+      title: PracticeSessionCompleteOut
+      type: object
+    PracticeSessionCreateIn:
+      description: 创建一轮智能综合练习或阶段诊断的请求载荷。
+      properties:
+        focus_knowledge_code:
+          anyOf:
+          - maxLength: 120
+            type: string
+          - type: 'null'
+          title: Focus Knowledge Code
+        purpose:
+          default: training
+          enum:
+          - training
+          - evaluation
+          title: Purpose
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        target_count:
+          default: 5
+          maximum: 20.0
+          minimum: 1.0
+          title: Target Count
+          type: integer
+      required:
+      - subject
+      title: PracticeSessionCreateIn
+      type: object
+    PracticeSessionItemPlanOut:
+      description: 练习轮次内单个编排槽位及作答进度。
+      properties:
+        answered:
+          title: Answered
+          type: boolean
+        attempt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attempt Id
+        earned_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Earned Points
+        focus_knowledge_codes:
+          items:
+            type: string
+          title: Focus Knowledge Codes
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        question_version_id:
+          title: Question Version Id
+          type: string
+        selection_reason:
+          title: Selection Reason
+          type: string
+        seq:
+          title: Seq
+          type: integer
+      required:
+      - seq
+      - question_version_id
+      - selection_reason
+      - focus_knowledge_codes
+      - answered
+      - max_points
+      title: PracticeSessionItemPlanOut
+      type: object
+    PracticeSessionOut:
+      description: 练习会话总览与当前待作答题目。
+      properties:
+        completed_count:
+          title: Completed Count
+          type: integer
+        composition_summary:
+          additionalProperties:
+            type: integer
+          title: Composition Summary
+          type: object
+        current_item:
+          anyOf:
+          - $ref: '#/components/schemas/PracticeQuestionPayloadOut'
+          - type: 'null'
+        focus_knowledge_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Focus Knowledge Code
+        id:
+          title: Id
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/PracticeSessionItemPlanOut'
+          title: Items
+          type: array
+        purpose:
+          enum:
+          - training
+          - evaluation
+          title: Purpose
+          type: string
+        status:
+          enum:
+          - active
+          - in_progress
+          - completed
+          title: Status
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        target_count:
+          title: Target Count
+          type: integer
+        total_items:
+          title: Total Items
+          type: integer
+      required:
+      - id
+      - subject
+      - purpose
+      - status
+      - target_count
+      - total_items
+      - completed_count
+      - composition_summary
+      - items
+      title: PracticeSessionOut
       type: object
     QuestionIn:
       properties:
@@ -849,6 +1386,101 @@ components:
       - published_by
       title: TaxonomyReleaseIn
       type: object
+    TutorMessageIn:
+      description: 学生在 AI 苏格拉底引导会话中的回复。
+      properties:
+        content:
+          maxLength: 1000
+          minLength: 1
+          title: Content
+          type: string
+      required:
+      - content
+      title: TutorMessageIn
+      type: object
+    TutorSessionOut:
+      description: AI 错题引导会话状态与对话轮次列表。
+      properties:
+        attempt_id:
+          title: Attempt Id
+          type: string
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        started:
+          title: Started
+          type: boolean
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        stem:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stem
+        student_answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Answer
+        turns:
+          items:
+            $ref: '#/components/schemas/TutorTurnOut'
+          title: Turns
+          type: array
+      required:
+      - started
+      - attempt_id
+      title: TutorSessionOut
+      type: object
+    TutorTurnOut:
+      description: AI 错题引导单轮对话记录。
+      properties:
+        content:
+          title: Content
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: string
+        role:
+          enum:
+          - assistant
+          - user
+          title: Role
+          type: string
+        sanitized_guard_triggered:
+          title: Sanitized Guard Triggered
+          type: boolean
+        turn_index:
+          title: Turn Index
+          type: integer
+      required:
+      - id
+      - turn_index
+      - role
+      - content
+      - sanitized_guard_triggered
+      - created_at
+      title: TutorTurnOut
+      type: object
     ValidationError:
       properties:
         ctx:
@@ -874,6 +1506,88 @@ components:
       - msg
       - type
       title: ValidationError
+      type: object
+    WrongQuestionSummaryOut:
+      description: 错题汇总卡片信息（不直接下发标准答案，由 AI 引导启发）。
+      properties:
+        attempt_id:
+          title: Attempt Id
+          type: string
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created At
+        earned_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Earned Points
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_codes:
+          items:
+            type: string
+          title: Knowledge Codes
+          type: array
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        question_version_id:
+          title: Question Version Id
+          type: string
+        selection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Selection Reason
+        stem:
+          title: Stem
+          type: string
+        student_answer:
+          title: Student Answer
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        tutor_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tutor Session Id
+      required:
+      - attempt_id
+      - question_version_id
+      - subject
+      - stem
+      - kind
+      - options
+      - student_answer
+      - max_points
+      - knowledge_codes
+      - knowledge_titles
+      title: WrongQuestionSummaryOut
       type: object
 info:
   title: 书童 ShuTong API
@@ -1316,6 +2030,38 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Create Node
+  /api/admin/knowledge/nodes/batch-review:
+    post:
+      description: 批量审核候选知识点：每条必须具备真实审核人与非空依据意见，原子提交。
+      operationId: batch_review_nodes_api_admin_knowledge_nodes_batch_review_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchNodeReviewIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Batch Review Nodes
   /api/admin/knowledge/nodes/{node_id}/deprecate:
     post:
       operationId: deprecate_node_api_admin_knowledge_nodes__node_id__deprecate_post
@@ -2177,6 +2923,46 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Set Goal
+  /api/growth/status:
+    get:
+      description: 返回学生成长状态：优势知识点、薄弱不足、领域雷达、近期错题数与当前学习目标。
+      operationId: growth_status_api_growth_status_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrowthStatusOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Growth Status
+      tags:
+      - learning
   /api/guidance/plan:
     get:
       operationId: plan_api_guidance_plan_get
@@ -2325,6 +3111,46 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Validation
+  /api/knowledge/graph:
+    get:
+      description: 返回学生端知识图谱（已发布非选学节点 + 层级/前置边 + 学生实时掌握状态高亮）。
+      operationId: knowledge_graph_api_knowledge_graph_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeGraphOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Knowledge Graph
+      tags:
+      - learning
   /api/practice/attempts:
     get:
       description: 评分来源溯源列表：作答行 origin 与自评记录并列可审计；自评不进 get_evidence/profile。
@@ -2557,6 +3383,198 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Resume Item
+  /api/practice/sessions:
+    post:
+      description: 结合知识点体系、题库曝光历史与学生能力缺失综合编制一轮智能练习，并露出第 1 题。
+      operationId: create_practice_session_api_practice_sessions_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PracticeSessionCreateIn'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Create Practice Session
+      tags:
+      - learning
+  /api/practice/sessions/{session_id}:
+    get:
+      description: 查询练习会话当前进度与待作答题面（只读，不新增曝光）。
+      operationId: get_practice_session_api_practice_sessions__session_id__get
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Practice Session
+      tags:
+      - learning
+  /api/practice/sessions/{session_id}/complete:
+    post:
+      description: 结束本轮练习并结算错题清单（不直接返回正确答案，由 AI 引导讲评）。
+      operationId: complete_practice_session_api_practice_sessions__session_id__complete_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeSessionCompleteOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Complete Practice Session
+      tags:
+      - learning
+  /api/practice/sessions/{session_id}/next:
+    post:
+      description: 获取当前练习会话的下一道待作答题目（已有未作答曝光时直接续答）。
+      operationId: next_session_item_api_practice_sessions__session_id__next_post
+      parameters:
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          title: Session Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Next Session Item
+      tags:
+      - learning
+  /api/practice/wrong-attempts:
+    get:
+      description: 列出学生指定学科近期错题记录，支持随时打开 AI 苏格拉底引导复习。
+      operationId: list_wrong_attempts_api_practice_wrong_attempts_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/WrongQuestionSummaryOut'
+                title: Response List Wrong Attempts Api Practice Wrong Attempts Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Wrong Attempts
+      tags:
+      - learning
   /api/school-exams:
     get:
       operationId: get_school_exams_api_school_exams_get
@@ -2864,6 +3882,117 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Subjects
+  /api/tutor/attempts/{attempt_id}:
+    get:
+      description: 读取指定作答记录关联的 AI 错题引导对话（尚未发起时返回 started=false）。
+      operationId: get_tutor_for_attempt_api_tutor_attempts__attempt_id__get
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Tutor For Attempt
+      tags:
+      - learning
+  /api/tutor/attempts/{attempt_id}/start:
+    post:
+      description: 启动 AI 苏格拉底式错题引导（幂等：已启动直接返回历史对话，绝不直接泄露答案）。
+      operationId: start_tutor_for_attempt_api_tutor_attempts__attempt_id__start_post
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Start Tutor For Attempt
+      tags:
+      - learning
+  /api/tutor/sessions/{tutor_session_id}/message:
+    post:
+      description: 发送学生思考回复并获取 AI 下一轮苏格拉底引导提示。
+      operationId: send_tutor_message_api_tutor_sessions__tutor_session_id__message_post
+      parameters:
+      - in: path
+        name: tutor_session_id
+        required: true
+        schema:
+          title: Tutor Session Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TutorMessageIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Send Tutor Message
+      tags:
+      - learning
   /health/live:
     get:
       operationId: live_health_live_get

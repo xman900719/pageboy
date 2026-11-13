@@ -20,8 +20,10 @@
 | AC-VAL-02 | 不可比或证据不足不能宣称涨分 | compare_validation+validation 端点：不足即 cannot_compare/CANNOT_COMPARE，相等不宣称 improved，恒 score_prediction None+免责声明；[ST-005 证据](st-005-math-loop.md) |
 | AC-SEC-01 | 私人校卷附件不会经真题接口泄露 | 无任何字节读取路由；存储键不进响应/OpenAPI；与内容台账/题目草稿/发布/练习结构性隔离；[ST-006 证据](st-006-school-papers.md) |
 | AC-SEC-02 | 管理端与学生端凭据双向隔离授权 | 服务端双凭据鉴权（SHUTONG_ADMIN_TOKEN 与 SHUTONG_STUDENT_TOKEN 独立）；角色互斥调用返回 403，错误/缺失返回 401，未配置/相同返回 503；管理 API 必须经 require_admin 校验；[P0-1 证据](checklists/07-p01-isolation.md) |
-| AC-ISO-01 | 学生 API 彻底剔除内部知识点数据 | 学生端接口（/api/practice/next, /api/guidance/*）彻底移除 knowledge_id(s) 与内部审核状态，收敛为服务端派生的自然语言 topic 与 advice；服务端纯函数派生，不破坏历史曝光与诊断可比性；[P0-1 证据](checklists/07-p01-isolation.md) |
-| AC-ISO-02 | 学生前端收敛与知识标签包物理隔离 | 学生端完全移除知识点筛选与内部编码展示；knowledge-labels.json 仅管理端引用，学生端打包零泄露；LocalStorage 分别存储 shutong.student_token 与 shutong.admin_token；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-ISO-01 | 学生 API 隔离与受控知识图谱开放 | 历史接口（`/api/practice/next` 等）继续彻底移除内部 `knowledge_id(s)` 且禁止 `knowledge_id` 参数筛选；经产品演进确认，新增学生端图谱/成长/会话接口（`/api/knowledge/graph`, `/api/growth/status`, `/api/practice/sessions`）仅返回**已审核发布的非选学知识点结构与实时掌握状态**，不暴露内部审核意见、来源条款与正确答案；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-ISO-02 | 学生前端三视图与双令牌物理隔离 | 学生前端升级为「练习 · 成长状态 · 知识点展示」三标签页；LocalStorage 严格物理隔离 `shutong.student_token` 与 `shutong.admin_token`；管理审核标签包与未审核/选学内容不进学生端图谱与组卷；[P0-1 证据](checklists/07-p01-isolation.md) |
+| AC-V2-01 | 智能综合组卷与成长可视化 | 基于已发布知识图谱、前置关系与学生能力短板在 `guidance.py` 纯函数编制有限题数练习；成长状态清晰展示优势/不足/雷达与阶段验证；AI 错题讲解严格采用苏格拉底引导并经服务端防泄密守卫校验 |
+| AC-V2-02 | 四科全量候选节点审核与正式发布 | 数学(48)/语文(25)/英语(28)/物理(34) 共 135 个候选节点全量逐条关联课标条款通过审核，全部 4 科 `v2022.1.0` 发布快照经官方 PDF 原件 SHA256 强门禁校验入库 |
 | AC-STD-01 | 四科课标官方来源与哈希基线核验 | 教育部教材〔2022〕2号官方原件、下载URL、字节数、PDF物理总页数与SHA256核验通过；数学确认采录教育部官网标注以此为准的2022年5月9日修正版；北京市中考改革（京教计〔2023〕44号）适用政策基线核实；[ST-019-A 证据](st-019-a-curriculum-baseline.md) |
 | AC-STD-02 | 课标条款双页码定位与未审状态隔离 | 规范化条款引用代码，严格区分PDF物理页码与书籍印刷页码（物理页>=印刷页）；采录数学初中第四学段典型核心条文原文；选学标记（*号不作考试要求）；AI解析默认强约束为 pending 未审核状态；存量81个历史考点零覆盖；[ST-019-A 证据](st-019-a-curriculum-baseline.md) |
 | AC-STD-03 | 数学权威知识库候选采录与发布强门禁 | 149条初中数学官方课标条文100%覆盖；47个候选考点全量溯源并保持 pending；旧24考点可审计映射（保留15/重命名1/拆分6/待审2）；正式版本发布强门禁（负例防御拦截：无新候选被拒、缺任一节点被拒、未审核及驳回被拒）；独立审核整改 V2.1 闭环（三角形/四边形/统计/圆/代数式条款精确定向与选学纠偏） |

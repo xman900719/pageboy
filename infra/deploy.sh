@@ -59,18 +59,26 @@ fi
 
 smoke() {
   local tag="$1"
-  local live ready subjects web
+  local live ready subjects admin_check graph_check web
+  local admin_tok="${SHUTONG_ADMIN_TOKEN:-${SHUTONG_TOKEN:-}}"
+  local student_tok="${SHUTONG_STUDENT_TOKEN:-}"
+  [[ -n "$admin_tok" ]] || { echo "SMOKE FAIL: missing SHUTONG_ADMIN_TOKEN / SHUTONG_TOKEN" >&2; return 1; }
+  [[ -n "$student_tok" ]] || { echo "SMOKE FAIL: missing SHUTONG_STUDENT_TOKEN" >&2; return 1; }
   live="$(curl -fsS --max-time 10 "$API_BASE_URL/health/live")"
   ready="$(curl -fsS --max-time 10 "$API_BASE_URL/health/ready")"
   # app_revision 与镜像标签一致，才承认"这个构建在服务"（ST-017）。
   grep -q "\"app_revision\":\"$tag\"" <<<"$live" || { echo "SMOKE FAIL: /health/live 未报告 $tag：$live" >&2; return 1; }
   grep -q '"env":"prod"' <<<"$live" || { echo "SMOKE FAIL: /health/live 未报告 env=prod：$live" >&2; return 1; }
   grep -q '"status":"ready"' <<<"$ready" || { echo "SMOKE FAIL: /health/ready: $ready" >&2; return 1; }
-  subjects="$(curl -fsS --max-time 10 -H "Authorization: Bearer $SHUTONG_TOKEN" "$API_BASE_URL/api/subjects")"
+  admin_check="$(curl -fsS --max-time 10 -H "Authorization: Bearer $admin_tok" "$API_BASE_URL/api/admin/verify")"
+  grep -q '"role":"admin"' <<<"$admin_check" || { echo "SMOKE FAIL: /api/admin/verify: $admin_check" >&2; return 1; }
+  subjects="$(curl -fsS --max-time 10 -H "Authorization: Bearer $student_tok" "$API_BASE_URL/api/subjects")"
   grep -q '"math"' <<<"$subjects" || { echo "SMOKE FAIL: /api/subjects: $subjects" >&2; return 1; }
+  graph_check="$(curl -fsS --max-time 10 -H "Authorization: Bearer $student_tok" "$API_BASE_URL/api/knowledge/graph?subject=math")"
+  grep -q '"nodes"' <<<"$graph_check" || { echo "SMOKE FAIL: /api/knowledge/graph: $graph_check" >&2; return 1; }
   web="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 10 "$WEB_BASE_URL/")"
   [[ "$web" == "200" ]] || { echo "SMOKE FAIL: web root HTTP $web" >&2; return 1; }
-  echo "SMOKE OK ($tag): live+ready+subjects+web"
+  echo "SMOKE OK ($tag): live+ready+admin+subjects+graph+web"
 }
 
 wait_healthy() {

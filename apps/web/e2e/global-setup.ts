@@ -95,6 +95,10 @@ async function seed(): Promise<void> {
   for (let i = 1; i <= 10; i++) {
     await publishQuestion(sourceA, choice(`虚构测试数据：差距题 ${i}。`, { knowledge_ids: ['math.gap'] }))
   }
+  // 1b) 映射至新课标节点 math_cand.num.real / math_cand.num.rational 的 12 道练习题，供知识图谱、阶段诊断与定向练习验证。
+  for (let i = 1; i <= 12; i++) {
+    await publishQuestion(sourceA, choice(`虚构测试数据：实数与有理数综合题 ${i}。`, { knowledge_ids: ['math.num.real'] }))
+  }
   // 2) math.ok ×4：前两题共享阅读材料。
   const groupContext = '虚构测试数据：阅读材料文本——两道题共享这一段材料。'
   for (const stem of ['虚构测试数据：对照阅读题 1。', '虚构测试数据：对照阅读题 2。']) {

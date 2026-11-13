@@ -32,6 +32,17 @@ class NodeReviewIn(BaseModel):
     review_opinion: str = Field(min_length=1)
 
 
+class BatchNodeReviewItem(BaseModel):
+    node_id: str = Field(min_length=1)
+    reviewer_id: str = Field(min_length=1, max_length=40)
+    review_status: Literal["approved", "rejected"]
+    review_opinion: str = Field(min_length=1)
+
+
+class BatchNodeReviewIn(BaseModel):
+    items: list[BatchNodeReviewItem] = Field(min_length=1, max_length=200)
+
+
 class TaxonomyReleaseIn(BaseModel):
     subject: Subject
     release_version: str = Field(min_length=1, max_length=40)
@@ -518,12 +529,13 @@ def seed_candidate_nodes(subject: Subject = "math", db: Session = Depends(get_db
                 n.status = "deprecated"
                 deprecated += 1
 
-    # 3. 创建新节点或重新激活已被 deprecated 的契约节点
+    # 3. 创建新节点或重新激活已被 deprecated 的契约节点，并同步选学标记（TASK-ENG-ELEC-02）
     reactivated_codes: set[str] = set()
     for c in cands_sorted:
         code = c["code"]
+        is_elec = bool(c.get("is_elective", False))
         if code not in code_to_node:
-            node = m.KnowledgeNode(subject=subject, code=code, status="active")
+            node = m.KnowledgeNode(subject=subject, code=code, status="active", is_elective=is_elec)
             db.add(node)
             db.flush()
             code_to_node[code] = node
@@ -533,6 +545,8 @@ def seed_candidate_nodes(subject: Subject = "math", db: Session = Depends(get_db
             if node.status != "active":
                 node.status = "active"
                 reactivated_codes.add(code)
+            if bool(node.is_elective) != is_elec:
+                node.is_elective = is_elec
 
     # 4. 维护父节点层级关系，并执行学科归属、孤儿与环路安全检查
     parent_changes: dict[str, str | None] = {}
@@ -680,6 +694,37 @@ def review_node(node_id: str, p: NodeReviewIn, db: Session = Depends(get_db)):
         "reviewer_id": latest_ver.reviewer_id,
         "reviewed_at": latest_ver.reviewed_at.isoformat()
     }
+
+
+@router.post("/knowledge/nodes/batch-review")
+def batch_review_nodes(p: BatchNodeReviewIn, db: Session = Depends(get_db)):
+    """批量审核候选知识点：每条必须具备真实审核人与非空依据意见，原子提交。"""
+    from datetime import datetime, timezone
+    now_dt = datetime.now(timezone.utc)
+    results = []
+    for item in p.items:
+        if not item.reviewer_id.strip() or not item.review_opinion.strip():
+            raise HTTPException(422, detail=f"节点 {item.node_id} 审核人与意见不能为空")
+        node = db.get(m.KnowledgeNode, item.node_id)
+        if node is None:
+            raise HTTPException(404, detail=f"node not found: {item.node_id}")
+        if node.status != "active":
+            raise HTTPException(409, detail=f"NODE_NOT_ACTIVE: {node.code}")
+        latest_ver = _latest(db, node.id)
+        if latest_ver is None:
+            raise HTTPException(404, detail=f"node version not found: {item.node_id}")
+        latest_ver.review_status = item.review_status
+        latest_ver.reviewer_id = item.reviewer_id.strip()
+        latest_ver.review_opinion = item.review_opinion.strip()
+        latest_ver.reviewed_at = now_dt
+        results.append({
+            "node_id": node.id,
+            "code": node.code,
+            "version": latest_ver.version,
+            "review_status": latest_ver.review_status,
+        })
+    db.commit()
+    return {"reviewed_count": len(results), "items": results}
 
 
 @router.post("/knowledge/releases", status_code=201)
@@ -860,6 +905,9 @@ def publish_taxonomy_release(p: TaxonomyReleaseIn, db: Session = Depends(get_db)
             "id": n.id,
             "code": n.code,
             "name": ver.name,
+            "domain": c_item.get("domain"),
+            "level": c_item.get("level"),
+            "is_elective": bool(c_item.get("is_elective", False)),
             "parent_id": n.parent_id,
             "parent_node_id": ver.parent_node_id,
             "parent_code": ver.parent_code,

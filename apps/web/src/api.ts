@@ -26,6 +26,145 @@ export interface NextItem {
   options: string[]
   max_points: number
   subject: Subject
+  selection_reason?: string | null
+  knowledge_titles?: string[]
+}
+
+export interface PracticeSessionItemPlan {
+  seq: number
+  question_version_id: string
+  selection_reason: string
+  focus_knowledge_codes: string[]
+  answered: boolean
+  attempt_id: string | null
+  earned_points: number | null
+  max_points: number
+}
+
+export interface PracticeSession {
+  id: string
+  subject: Subject
+  purpose: Purpose
+  status: 'active' | 'in_progress' | 'completed'
+  target_count: number
+  total_items: number
+  completed_count: number
+  focus_knowledge_code?: string | null
+  composition_summary: Record<string, number>
+  items: PracticeSessionItemPlan[]
+  current_item: NextItem | null
+}
+
+export interface WrongQuestionSummary {
+  attempt_id: string
+  question_version_id: string
+  subject: Subject
+  stem: string
+  kind: Kind
+  options: string[]
+  student_answer: string
+  earned_points: number | null
+  max_points: number
+  selection_reason?: string | null
+  knowledge_codes: string[]
+  knowledge_titles: string[]
+  tutor_session_id?: string | null
+  created_at?: string | null
+}
+
+export interface PracticeSessionComplete {
+  session_id: string
+  status: 'completed'
+  answered_count: number
+  correct_count: number
+  wrong_count: number
+  subjective_count: number
+  wrong_items: WrongQuestionSummary[]
+}
+
+export interface TutorTurn {
+  id: string
+  turn_index: number
+  role: 'assistant' | 'user'
+  content: string
+  sanitized_guard_triggered: boolean
+  created_at: string
+}
+
+export interface TutorSession {
+  started: boolean
+  id?: string | null
+  attempt_id: string
+  status?: string | null
+  model_name?: string | null
+  stem?: string | null
+  student_answer?: string | null
+  knowledge_titles: string[]
+  turns: TutorTurn[]
+}
+
+export type MasteryStatus = 'mastered' | 'weak' | 'insufficient' | 'untested'
+
+export interface KnowledgeMasteryItem {
+  code: string
+  name: string
+  domain?: string | null
+  parent_code?: string | null
+  level: number
+  description?: string | null
+  is_leaf: boolean
+  sample_size: number
+  observed_rate: number | null
+  mastery_status: MasteryStatus
+}
+
+export interface DomainRadarItem {
+  domain_code: string
+  domain_name: string
+  total_topics: number
+  tested_topics: number
+  mastered_count: number
+  weak_count: number
+  insufficient_count: number
+  untested_count: number
+  observed_rate: number | null
+}
+
+export interface GrowthStatus {
+  subject: Subject
+  model_version: string
+  release_version?: string | null
+  planning_threshold: number
+  summary_counts: Record<string, number>
+  strengths: KnowledgeMasteryItem[]
+  weaknesses: KnowledgeMasteryItem[]
+  developing: KnowledgeMasteryItem[]
+  untested_highlights: KnowledgeMasteryItem[]
+  domain_radar: DomainRadarItem[]
+  recent_wrong_count: number
+  current_goal?: {
+    version: number
+    target_points: number
+    max_points: number
+    minutes_per_day: number
+  } | null
+  disclaimer: string
+}
+
+export interface KnowledgeEdge {
+  source: string
+  target: string
+  relation: string
+  edge_type: 'hierarchy' | 'prerequisite'
+}
+
+export interface KnowledgeGraph {
+  subject: Subject
+  release_version?: string | null
+  model_version: string
+  summary_counts: Record<string, number>
+  nodes: KnowledgeMasteryItem[]
+  edges: KnowledgeEdge[]
 }
 
 export interface AttemptResult {
@@ -283,8 +422,20 @@ export interface Client {
   adminSeedCandidates(subject?: Subject): Promise<{ subject: Subject; seeded_count: number; total_nodes: number }>
   adminKnowledgeLegacyMapping(subject?: Subject): Promise<LegacyMappingResult>
   adminReviewNode(nodeId: string, review: { reviewer_id: string; review_status: 'approved' | 'rejected'; review_opinion: string }): Promise<unknown>
+  adminBatchReviewNodes(items: { node_id: string; reviewer_id: string; review_status: 'approved' | 'rejected'; review_opinion: string }[]): Promise<{ reviewed_count: number }>
   adminPublishRelease(release: { subject: Subject; release_version: string; published_by: string; summary?: string }): Promise<unknown>
   adminKnowledgeReleases(subject?: Subject): Promise<TaxonomyRelease[]>
+  /* 智能练习会话、AI 错题引导、成长状态与知识图谱。 */
+  createPracticeSession(input: { subject: Subject; targetCount?: number; purpose?: Purpose; focusKnowledgeCode?: string | null }): Promise<PracticeSession>
+  getPracticeSession(sessionId: string): Promise<PracticeSession>
+  nextPracticeSessionItem(sessionId: string): Promise<PracticeSession>
+  completePracticeSession(sessionId: string): Promise<PracticeSessionComplete>
+  wrongAttempts(subject: Subject, limit?: number): Promise<WrongQuestionSummary[]>
+  getTutorForAttempt(attemptId: string): Promise<TutorSession>
+  startTutorForAttempt(attemptId: string): Promise<TutorSession>
+  sendTutorMessage(tutorSessionId: string, content: string): Promise<TutorSession>
+  growthStatus(subject: Subject): Promise<GrowthStatus>
+  knowledgeGraph(subject: Subject): Promise<KnowledgeGraph>
 }
 
 export interface CurriculumClause {
@@ -468,9 +619,33 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       call<LegacyMappingResult>(`/api/admin/knowledge/legacy-mapping?subject=${encodeURIComponent(subject)}`),
     adminReviewNode: (nodeId, review) =>
       call<unknown>(`/api/admin/knowledge/nodes/${encodeURIComponent(nodeId)}/review`, 'POST', review),
+    adminBatchReviewNodes: items =>
+      call<{ reviewed_count: number }>('/api/admin/knowledge/nodes/batch-review', 'POST', { items }),
     adminPublishRelease: release => call<unknown>('/api/admin/knowledge/releases', 'POST', release),
     adminKnowledgeReleases: (subject = 'math') =>
       call<TaxonomyRelease[]>(`/api/admin/knowledge/releases?subject=${encodeURIComponent(subject)}`),
+    createPracticeSession: ({ subject, targetCount = 5, purpose = 'training', focusKnowledgeCode = null }) =>
+      call<PracticeSession>('/api/practice/sessions', 'POST', {
+        subject,
+        target_count: targetCount,
+        purpose,
+        focus_knowledge_code: focusKnowledgeCode,
+      }),
+    getPracticeSession: sessionId => call<PracticeSession>(`/api/practice/sessions/${encodeURIComponent(sessionId)}`),
+    nextPracticeSessionItem: sessionId =>
+      call<PracticeSession>(`/api/practice/sessions/${encodeURIComponent(sessionId)}/next`, 'POST'),
+    completePracticeSession: sessionId =>
+      call<PracticeSessionComplete>(`/api/practice/sessions/${encodeURIComponent(sessionId)}/complete`, 'POST'),
+    wrongAttempts: (subject, limit = 20) =>
+      call<WrongQuestionSummary[]>(`/api/practice/wrong-attempts?subject=${subject}&limit=${limit}`),
+    getTutorForAttempt: attemptId =>
+      call<TutorSession>(`/api/tutor/attempts/${encodeURIComponent(attemptId)}`),
+    startTutorForAttempt: attemptId =>
+      call<TutorSession>(`/api/tutor/attempts/${encodeURIComponent(attemptId)}/start`, 'POST'),
+    sendTutorMessage: (tutorSessionId, content) =>
+      call<TutorSession>(`/api/tutor/sessions/${encodeURIComponent(tutorSessionId)}/message`, 'POST', { content }),
+    growthStatus: subject => call<GrowthStatus>(`/api/growth/status?subject=${subject}`),
+    knowledgeGraph: subject => call<KnowledgeGraph>(`/api/knowledge/graph?subject=${subject}`),
   }
 }
 
@@ -496,6 +671,7 @@ const API_CODE_TEXT: Record<string, string> = {
   IMPORT_TRANSACTION_FAILED: '导入保存失败，请重试。',
   IMPORTED_QUESTION_CONFIRMATION_REQUIRED: '导入的题目缺少确认记录，请先在附件区完成逐题确认导入。',
   QUESTION_NOT_APPROVED_FOR_PRIVATE_PUBLICATION: '来源尚未通过人工审核（或版权状态未核实）：请先完成来源人工审核，再发布题目。',
+  KNOWLEDGE_NODE_NOT_FOUND: '未找到对应的已发布知识点节点。',
 }
 
 export function describeError(error: unknown): string {

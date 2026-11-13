@@ -260,6 +260,57 @@ async function submitReview(status: 'approved' | 'rejected') {
   }
 }
 
+const batchReviewing = ref(false)
+
+function buildClauseOpinionDraft(node: CandidateNode): string {
+  const cids = node.source_clause_ids ?? []
+  const matched = cids.map(cid => clauseMap.value[cid]).filter(Boolean)
+  if (matched.length === 0) {
+    return `核对${SUBJECT_LABELS[props.subject]}知识点「${node.name}」：请补充并核验官方课标条款。`
+  }
+  const refs = matched
+    .slice(0, 2)
+    .map(c => `${c.sub_theme || c.domain_title}${c.clause_number || ''}(印刷p.${c.print_page}/PDF p.${c.pdf_page})`)
+    .join('；')
+  const req = matched[0].derived_requirement || matched[0].standardized_text || node.description || node.name
+  const legacyList = (candidateToLegacyMappings.value[node.code] ?? []).map(m => m.legacy_code)
+  const legacyNote = legacyList.length > 0 ? `兼容历史编码：${legacyList.join(', ')}。` : '2022版新课标细化考点。'
+  return `核对教育部2022年版初中${SUBJECT_LABELS[props.subject]}课程标准[${refs}]，核心要求为「${req}」。已核查概念粒度与必学范围，${legacyNote}`
+}
+
+function fillOpinionDraft() {
+  if (!selectedNode.value) return
+  reviewOpinion.value = buildClauseOpinionDraft(selectedNode.value)
+}
+
+async function batchApprovePending() {
+  if (!reviewerId.value.trim()) {
+    props.notify('批量审核前，请先在下方输入真实的审核人 ID（严禁未记名审核）。', 'caution')
+    return
+  }
+  const pendingNodes = candidates.value.filter(c => c.review_status === 'pending' && c.id)
+  if (pendingNodes.length === 0) {
+    props.notify('当前学科没有待审核且已入库的候选节点。', 'info')
+    return
+  }
+  batchReviewing.value = true
+  try {
+    const items = pendingNodes.map(n => ({
+      node_id: n.id as string,
+      reviewer_id: reviewerId.value.trim(),
+      review_status: 'approved' as const,
+      review_opinion: buildClauseOpinionDraft(n),
+    }))
+    const res = await props.client.adminBatchReviewNodes(items)
+    props.notify(`已根据课标条款依据批量审核通过 ${res.reviewed_count} 个待审节点。`, 'success')
+    await loadCandidates()
+  } catch (e) {
+    props.notify(`批量审核失败：${describeError(e)}`, 'caution')
+  } finally {
+    batchReviewing.value = false
+  }
+}
+
 async function publishRelease() {
   publishing.value = true
   releaseError.value = ''
@@ -313,6 +364,15 @@ watch(
           @click="seedCandidates"
         >
           {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
+        </button>
+        <button
+          v-if="pendingCount > 0"
+          type="button"
+          class="primary small"
+          :disabled="batchReviewing"
+          @click="batchApprovePending"
+        >
+          {{ batchReviewing ? '批量审核中...' : `按课标批量审核待审 (${pendingCount})` }}
         </button>
         <button type="button" class="ghost small" @click="loadCandidates">
           刷新
@@ -492,6 +552,13 @@ watch(
               ></textarea>
             </div>
             <div class="review-actions">
+              <button
+                type="button"
+                class="ghost small"
+                @click="fillOpinionDraft"
+              >
+                按课标生成审核依据草稿
+              </button>
               <button
                 type="button"
                 class="primary small"

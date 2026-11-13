@@ -22,6 +22,8 @@ services:
     volumes:
       # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
       - ${SHUTONG_ATTACHMENTS_DIR:-./private-data/attachments}:/var/lib/shutong/attachments
+      # 官方课标 PDF 原件只读挂载（知识库版本发布 SHA256 强校验门禁依赖）
+      - ${SHUTONG_STANDARDS_DIR:-../private-data/curriculum_standards}:/app/private-data/curriculum_standards:ro
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped

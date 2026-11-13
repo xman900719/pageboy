@@ -186,7 +186,13 @@ sudo -iu shutong-prod
 cd /media/xc/backup_ext4/prod-env/pageboy/repo
 git pull
 infra/deploy.sh --web
+
+# 步骤 4（首次 V2 上线或新增课标体系后）：在容器内幂等审核并发布四科 v2022.1.0 知识体系
+docker compose --env-file ../env/prod.env -f infra/compose.yaml -f infra/compose.local.yaml exec -T api \
+  python -m shutong.taxonomy_audit
 ```
+
+> **环境变量与课标原件前提**：`prod.env` 须额外配置双凭据（`SHUTONG_ADMIN_TOKEN` 与 `SHUTONG_STUDENT_TOKEN` 且两者不等）及 AI 引导配置（`SHUTONG_AI_BASE_URL`、`SHUTONG_AI_API_KEY`、`SHUTONG_AI_MODEL`）；且宿主机须将四科教育部 2022 版课标官方 PDF 原件放置于 `SHUTONG_STANDARDS_DIR`（默认 `../private-data/curriculum_standards`）供只读挂载通过发布门禁校验。
 
 ---
 

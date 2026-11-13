@@ -89,27 +89,15 @@ async function scanAndReport(page: Page, view: string): Promise<void> {
 
 /* ---------- 每视图一测 ---------- */
 
-test('A1 首页：目标与学习计划、阶段对比摘要的 WCAG A/AA 扫描', async ({ page }) => {
+test('A1 练习：智能练习大厅与题目卡 WCAG A/AA 扫描', async ({ page }) => {
   await enterSpace(page)
 
-  // 首页即默认视图：等待计划（种子目标 v1）与阶段对比摘要真正渲染后再扫描。
-  const planRegion = page.getByRole('region', { name: '目标与学习计划' })
-  await expect(planRegion.getByText('目标版本 v1')).toBeVisible()
-  await expect(planRegion.getByText('每天 15 分钟')).toBeVisible()
-  await expect(page.getByRole('region', { name: '阶段对比摘要' })).toContainText('证据不足，无法比较')
+  // 练习即默认视图：开始一轮 3 题练习后扫描题卡与会话条
+  const lobby = page.getByRole('region', { name: '智能综合练习编排' })
+  await expect(lobby).toBeVisible()
+  await lobby.getByRole('button', { name: '3 题' }).click()
+  await lobby.getByRole('button', { name: /开始本轮智能练习/ }).click()
 
-  await scanAndReport(page, 'home')
-})
-
-test('A2 练习：训练题卡渲染后的 WCAG A/AA 扫描', async ({ page }) => {
-  await enterSpace(page)
-  await navTab(page, /练习/).click()
-
-  const practice = page.getByRole('region', { name: '练习控制' })
-  await expect(practice).toContainText('复练会在全部已发布题中轮换取题')
-
-  // 取一道训练题（只曝光、不作答），确保题目卡进入可扫描 DOM。
-  await practice.getByRole('button', { name: '开始练习' }).click()
   const card = page.getByRole('region', { name: '题目' })
   await expect(card).toBeVisible()
   await expect(card.locator('p.stem')).toContainText('虚构测试数据')
@@ -117,18 +105,25 @@ test('A2 练习：训练题卡渲染后的 WCAG A/AA 扫描', async ({ page }) =
   await scanAndReport(page, 'practice')
 })
 
-test('A3 阶段诊断：独立验证纪律与判决面板的 WCAG A/AA 扫描', async ({ page }) => {
+test('A2 成长状态：优势不足与阶段验证面板 WCAG A/AA 扫描', async ({ page }) => {
   await enterSpace(page)
-  await navTab(page, /阶段诊断/).click()
+  await navTab(page, /成长状态/).click()
 
-  // goal 已由种子建立：诊断视图各面板完整渲染（不出现「还没有目标」提示）。
-  await expect(page.getByText('独立验证纪律')).toBeVisible()
-  const claimRegion = page.getByRole('region', { name: '领取未见题' })
-  await expect(claimRegion).toContainText('「未见题」指你从未曝光过的题')
-  await expect(page.getByRole('region', { name: '阶段对比判决' })).toContainText('证据不足，无法比较')
-  await expect(claimRegion.getByRole('button', { name: '领取未见题诊断' })).toBeEnabled()
+  await expect(page.getByRole('region', { name: '成长状态总览' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '学习目标与阶段验证' })).toContainText('目标版本 v1')
+  await expect(page.getByRole('region', { name: '学习目标与阶段验证' })).toContainText('证据不足，无法比较')
 
-  await scanAndReport(page, 'diagnosis')
+  await scanAndReport(page, 'growth')
+})
+
+test('A3 知识点展示：图谱画布与节点详情 WCAG A/AA 扫描', async ({ page }) => {
+  await enterSpace(page)
+  await navTab(page, /知识点展示/).click()
+
+  await expect(page.getByRole('region', { name: '知识点关系图谱展示' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: '选中知识点详情' })).toBeVisible()
+
+  await scanAndReport(page, 'knowledge')
 })
 
 test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', async ({ page }) => {

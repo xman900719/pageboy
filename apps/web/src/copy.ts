@@ -1,13 +1,20 @@
 /* All user-facing labels & honest-language copy in one place (red-line discipline). */
 import type { AttachmentStatus, GapType, Kind, QuestionVersionStatus, RightsStatus } from './api'
 
-export type ViewId = 'home' | 'practice' | 'diagnosis'
+export type ViewId = 'practice' | 'growth' | 'knowledge'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
-  { id: 'home', label: '首页', hint: '目标与知识点状态' },
-  { id: 'practice', label: '练习', hint: '复练与轮换取题' },
-  { id: 'diagnosis', label: '阶段诊断', hint: '未见题独立验证' },
+  { id: 'practice', label: '练习', hint: '智能组卷与 AI 错题引导' },
+  { id: 'growth', label: '成长状态', hint: '优势不足 · 目标 · 验证' },
+  { id: 'knowledge', label: '知识点展示', hint: '关系图谱与未掌握标注' },
 ]
+
+export const MASTERY_LABELS: Record<string, string> = {
+  mastered: '已掌握',
+  weak: '未掌握 · 待突破',
+  insufficient: '证据不足',
+  untested: '暂未测验',
+}
 
 export type AdminViewId = 'ledger' | 'health' | 'exams' | 'knowledge'
 

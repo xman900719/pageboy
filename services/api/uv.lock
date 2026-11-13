@@ -1101,6 +1101,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -1110,7 +1111,6 @@ dependencies = [
 
 [package.optional-dependencies]
 test = [
-    { name = "httpx" },
     { name = "jsonschema", extra = ["format"] },
     { name = "pytest" },
     { name = "pyyaml" },
@@ -1120,7 +1120,7 @@ test = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13,<2" },
     { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27,<1" },
+    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "jsonschema", extras = ["format"], marker = "extra == 'test'", specifier = ">=4.23,<5" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1,<4" },

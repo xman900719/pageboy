@@ -50,12 +50,22 @@ export default defineConfig({
       env: {
         SHUTONG_ADMIN_TOKEN: 'test-admin-secret',
         SHUTONG_STUDENT_TOKEN: 'test-student-secret',
+        SHUTONG_AI_BASE_URL: 'http://127.0.0.1:18766',
+        SHUTONG_AI_API_KEY: 'e2e-mock-key',
+        SHUTONG_AI_MODEL: 'deepseek-chat-mock',
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
         // shutong 包位于 services/api；相对路径按 webServer cwd（apps/web）解析。
         // CI 经 pip -e 安装时本变量冗余无害。
         PYTHONPATH: '../services/api',
       },
+    },
+    {
+      command: `${pyCmd} ../../scripts/e2e_mock_ai.py`,
+      url: 'http://127.0.0.1:18766/health',
+      reuseExistingServer: false,
+      timeout: 30_000,
+      stdout: 'ignore',
     },
     {
       command: 'npm run preview -- --port 4173 --strictPort',
