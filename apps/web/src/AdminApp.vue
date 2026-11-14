@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { createClient, SUBJECTS, SUBJECT_LABELS, type Subject, type PoolHealth } from './api'
+import { clearDevAuthArtifacts, markDevLoggedIn, markDevLoggedOut, resolveDevAutoToken } from './devAuth'
 import { ADMIN_VIEWS, type AdminViewId } from './copy'
 import Notice, { type NoticeData, type NoticeTone } from './components/Notice.vue'
 import Gate from './components/Gate.vue'
@@ -55,28 +56,48 @@ onMounted(() => {
   try {
     localStorage.removeItem('shutong.token')
     localStorage.removeItem('shutong.admin_token')
-    sessionStorage.removeItem('shutong.dev_token_admin')
-    sessionStorage.removeItem('shutong.dev_logout_admin')
   } catch {
     // 忽略受沙箱环境限制的异常
   }
+  if (!import.meta.env.DEV) {
+    clearDevAuthArtifacts('admin')
+    return
+  }
+  const devToken = resolveDevAutoToken('admin', import.meta.env.VITE_DEV_ADMIN_TOKEN)
+  if (!devToken) return
+  createClient(devToken, 'admin')
+    .verify()
+    .then(() => {
+      if (token.value !== '') return
+      notify('已使用开发环境配置令牌自动进入管理端（仅开发模式）。', 'success')
+      token.value = devToken
+    })
+    .catch(() => {
+      clearDevAuthArtifacts('admin')
+    })
 })
 
 async function enter(nextToken: string, _remember?: boolean) {
   const candidate = createClient(nextToken, 'admin')
   await candidate.verify()
-  // 严格仅保留在当前页面响应式内存中，不写入 localStorage 与 sessionStorage
+  // 严格仅保留在当前页面响应式内存中，不写入 localStorage 与 sessionStorage（仅 Vite DEV 模式支持免重输）
   token.value = nextToken
+  if (import.meta.env.DEV) {
+    markDevLoggedIn('admin', nextToken)
+  }
   notify('已进入综合管理工作台（管理凭据仅内存保存）。', 'success')
 }
 
 function signOut() {
   try {
     localStorage.removeItem('shutong.admin_token')
-    sessionStorage.removeItem('shutong.dev_token_admin')
-    sessionStorage.removeItem('shutong.dev_logout_admin')
   } catch {
     // 忽略异常
+  }
+  if (import.meta.env.DEV) {
+    markDevLoggedOut('admin')
+  } else {
+    clearDevAuthArtifacts('admin')
   }
   token.value = ''
   notice.value = null
