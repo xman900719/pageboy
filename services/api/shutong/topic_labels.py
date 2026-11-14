@@ -3,14 +3,23 @@
 from __future__ import annotations
 
 from shutong.corpus.taxonomy import TAXONOMY
+from shutong.taxonomy_bridge import load_candidate_contracts
 
-# 提取权威四科课标分类树中的自然语言考点名称
+# 提取权威四科课标分类树（经典 81 节点）中的自然语言考点名称
 TAXONOMY_MAP: dict[str, str] = {
     node["code"]: node["name"]
     for nodes in TAXONOMY.values()
     for node in nodes
     if node.get("code") and node.get("name")
 }
+
+# 同步注入四科 2022 版课标 135 个候选知识点中文名称，保证前后端显示一致
+for _subject in ("math", "chinese", "english", "physics"):
+    for _cand in load_candidate_contracts(_subject):
+        _code = _cand.get("code")
+        _name = _cand.get("name")
+        if _code and _name:
+            TAXONOMY_MAP[_code] = _name
 
 # 虚构与测试考点自然语言别名表（确保测试与样例数据亦不暴露内部代号）
 SYNTHETIC_MAP: dict[str, str] = {
@@ -23,7 +32,12 @@ SYNTHETIC_MAP: dict[str, str] = {
     "math.sparse": "拓展提升考点",
     "math.geometry": "几何图形与推理证明",
     "math.addition": "基础加法运算",
+    "math.formula": "代数公式运算与化简",
+    "math.formula.subj": "公式推导与主观探究",
+    "math.scan": "扫描题源录入知识点",
+    "math.alg": "代数核心基础",
     "math.demo.basic": "中考数学基础综合",
+    "english.zero_test": "英语零余量验证考点",
     "physics.sound.demo": "声现象综合探究",
     "physics.optics.demo": "光学与成像实验",
     "english.reading.demo": "阅读理解与词汇运用",

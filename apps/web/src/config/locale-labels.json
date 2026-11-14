@@ -1,0 +1,59 @@
+{
+  "$comment": "系统全局中文本地化与显示策略配置文件（严禁在业务组件中硬编码英文技术枚举与格式串）",
+  "uiPreferences": {
+    "showTechnicalCodesByDefault": false
+  },
+  "subjectLabels": {
+    "math": "数学",
+    "chinese": "语文",
+    "english": "英语",
+    "physics": "物理"
+  },
+  "modelVersionLabels": {
+    "v1.6-uncalibrated-rule": "V1.6 规则诊断基线（未校准）",
+    "v1.6-rule": "V1.6 规则诊断模型",
+    "rule-baseline-v1": "规则诊断基线第一版",
+    "guidance-heuristic-v0.1-unvalidated": "启发式学情诊断基线 v0.1（未校准）"
+  },
+  "mediaTypeLabels": {
+    "application/pdf": "PDF 文档",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word 文档",
+    "image/png": "PNG 图片",
+    "image/jpeg": "JPG 图片",
+    "image/jpg": "JPG 图片",
+    "image/svg+xml": "SVG 矢量图",
+    "audio/mpeg": "MP3 音频",
+    "audio/mp4": "M4A 音频"
+  },
+  "operatorLabels": {
+    "admin_owner": "系统管理员",
+    "owner_e2e_reviewer": "教研审校员",
+    "system": "系统自动初始化"
+  },
+  "domainLabels": {
+    "num_alg": "数与代数",
+    "geom": "图形与几何",
+    "geo_shape": "图形与几何",
+    "stat_prob": "统计与概率",
+    "comp_prac": "综合与实践",
+    "experiment": "实验探究",
+    "matter": "物质与物态",
+    "motion_energy": "运动、相互作用与能量",
+    "lang_usage": "语言积累与梳理",
+    "reading": "阅读与鉴赏",
+    "listening": "听力与看图理解",
+    "writing": "表达与交流"
+  },
+  "clauseModuleLabels": {
+    "content_req": "内容要求",
+    "acad_req": "学业要求",
+    "academic_req": "学业要求",
+    "acad_qual": "学业质量",
+    "goals": "课程目标"
+  },
+  "releaseStatusLabels": {
+    "active": "正式生效",
+    "draft": "草稿",
+    "archived": "历史归档"
+  }
+}

@@ -449,6 +449,10 @@ test('J7 知识图谱交互展示：SVG 关系图谱、领域筛选、选学排�
   const allText = await section.innerText()
   expect(allText).toContain('已自动排除选学*内容')
   expect(allText).not.toContain('三元一次方程组')
+  // 方案三跨章桥梁矩阵与图谱展示全面中文化：不得泄露内部领域英文编码
+  for (const rawDomain of ['num_alg', 'geom', 'stat_prob', 'comp_prac']) {
+    expect(allText).not.toContain(rawDomain)
+  }
 
   // 领域过滤、仅高亮未掌握切换及图谱节点点选
   await section.locator('.domain-filter-strip').getByRole('button', { name: '数与代数', exact: true }).click()
