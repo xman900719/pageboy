@@ -46,12 +46,16 @@ def test_seed_real_corpus_and_idempotency(tmp_path):
 
 def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, monkeypatch):
     """验证开启 attach_pdfs=True 时为全部 32 套试卷挂载原件附件（28 份 PDF + 4 份 DOCX）并建立 ImportedQuestion 溯源。"""
+    import scripts.seed_real_corpus as seed_real_corpus_mod
     from scripts.seed_real_corpus import seed_corpus
     from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
     from shutong.ingestion import require_import_integrity
     from test_ingestion import synthetic_docx, synthetic_pdf
 
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "priv"))
+    # 将 .doc -> .docx 转换缓存严格隔离至临时目录，避免污染真实仓库 .cache/converted_docx
+    isolated_cache_dir = tmp_path / "converted_cache"
+    monkeypatch.setattr(seed_real_corpus_mod, "CONVERTED_CACHE_DIR", isolated_cache_dir)
     corpus_dir = tmp_path / "corpus"
     for paper in ALL_EXAM_PAPERS:
         rel = paper["pdf_relpath"]
@@ -60,9 +64,9 @@ def test_seed_real_corpus_attaches_pdfs_and_passes_import_integrity(tmp_path, mo
         if rel.endswith(".docx"):
             target.write_bytes(synthetic_docx(text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
         elif rel.endswith(".doc"):
-            # 为 .doc 生成对应缓存的标准 .docx
+            # 为 .doc 在隔离临时缓存中生成对应的标准 .docx
             target.write_bytes(b"SYNTHETIC TEST DATA DOC")
-            cache_target = REPO_ROOT / ".cache" / "converted_docx" / Path(rel).with_suffix(".docx")
+            cache_target = isolated_cache_dir / Path(rel).with_suffix(".docx")
             cache_target.parent.mkdir(parents=True, exist_ok=True)
             cache_target.write_bytes(synthetic_docx(text=f"SYNTHETIC TEST DATA {paper['exam_year']} {paper['subject']}"))
         else:
@@ -146,3 +150,50 @@ def test_clean_demo_data_removes_only_demo(tmp_path):
         assert len(real_questions) == 350
 
     engine.dispose()
+
+
+def test_real_corpus_has_no_leaks_or_missing_conditions():
+    """验证全部 350 道真题不存在自泄括号或缺失 ①②③④/图表条件，并校验核心修正题答案。"""
+    from shutong.corpus.exam_2025 import ALL_EXAM_PAPERS
+
+    by_key = {}
+    for paper in ALL_EXAM_PAPERS:
+        for q in paper["questions"]:
+            stem = q["stem"]
+            opts = q.get("options") or []
+            opts_text = " ".join(opts)
+            assert "（即" not in stem, f"题干自泄答案: {paper['exam_year']} {paper['subject']} #{q['index']}"
+            if "①" in opts_text:
+                assert "①" in stem, f"选项含 ① 但题干缺失①②③④: {paper['exam_year']} {paper['subject']} #{q['index']}"
+            by_key[(paper["exam_year"], paper["subject"], q["index"])] = q
+
+    assert by_key[(2018, "math", 7)]["correct_answer"] == "B"
+    assert "(0, 54.0)" in by_key[(2018, "math", 7)]["stem"]
+    assert "59" in by_key[(2018, "math", 10)]["stem"]
+    assert "【甲】" in by_key[(2019, "chinese", 3)]["stem"]
+    assert "不对称" not in " ".join(by_key[(2019, "math", 2)]["options"])
+
+
+def test_clean_demo_data_cli_flag_defaults_safe(monkeypatch):
+    """验证 clean_demo_data 命令行 --clean-test-traces 默认关闭并支持显式开关。"""
+    import scripts.clean_demo_data as clean_mod
+
+    captured = {}
+
+    def fake_clean(**kwargs):
+        captured.update(kwargs)
+        return {"sources": 0}
+
+    monkeypatch.setattr(clean_mod, "clean_demo_data", fake_clean)
+
+    monkeypatch.setattr(sys, "argv", ["clean_demo_data.py", "--dry-run"])
+    clean_mod.main()
+    assert captured["clean_test_traces"] is False
+
+    monkeypatch.setattr(sys, "argv", ["clean_demo_data.py", "--dry-run", "--clean-test-traces"])
+    clean_mod.main()
+    assert captured["clean_test_traces"] is True
+
+    monkeypatch.setattr(sys, "argv", ["clean_demo_data.py", "--dry-run", "--no-clean-test-traces"])
+    clean_mod.main()
+    assert captured["clean_test_traces"] is False

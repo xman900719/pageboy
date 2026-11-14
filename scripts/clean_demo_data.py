@@ -275,9 +275,9 @@ def main():
     )
     parser.add_argument(
         "--clean-test-traces",
-        action="store_true",
-        default=True,
-        help="同时清理误传测试附件、测试曝光与目标残留并补齐历史考点审核人（默认开启）",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="同时清理误传测试附件、测试曝光与目标残留并补齐历史考点审核人（默认关闭，保护既有作答记录）",
     )
 
     args = parser.parse_args()

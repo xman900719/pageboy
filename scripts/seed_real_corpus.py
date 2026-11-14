@@ -36,10 +36,14 @@ def seed_corpus(
     corpus_dir: Path | None = None,
     attach_pdfs: bool = False,
     rebuild: bool = False,
+    converted_cache_dir: Path | None = None,
 ) -> dict[str, int]:
     engine = make_engine(db_url)
     Session = sessionmaker(bind=engine, expire_on_commit=False)
     resolved_corpus_dir = corpus_dir or DEFAULT_CORPUS_DIR
+    # 优先使用显式参数或环境变量指定的 .docx 转换缓存目录
+    env_cache_dir = os.environ.get("SHUTONG_CONVERTED_CACHE_DIR")
+    resolved_cache_dir = converted_cache_dir or (Path(env_cache_dir) if env_cache_dir else CONVERTED_CACHE_DIR)
     
     stats = {
         "nodes_created": 0,
@@ -237,7 +241,7 @@ def seed_corpus(
                     if att is None:
                         # 若为 .doc 文件，读取预转换或动态转换的标准 .docx 字节
                         if pdf_file.suffix.lower() == ".doc":
-                            cached_docx = CONVERTED_CACHE_DIR / Path(pdf_relpath).with_suffix(".docx")
+                            cached_docx = resolved_cache_dir / Path(pdf_relpath).with_suffix(".docx")
                             if cached_docx.is_file():
                                 data = cached_docx.read_bytes()
                             else:
@@ -394,6 +398,12 @@ def main():
         action="store_true",
         help="彻底清理既有真题与附件后重新完整灌入",
     )
+    parser.add_argument(
+        "--converted-cache-dir",
+        type=Path,
+        default=None,
+        help="预转换 .doc -> .docx 缓存目录（默认使用 .cache/converted_docx 或 SHUTONG_CONVERTED_CACHE_DIR）",
+    )
     args = parser.parse_args()
 
     seed_corpus(
@@ -401,6 +411,7 @@ def main():
         corpus_dir=args.corpus_dir,
         attach_pdfs=not args.no_attachments,
         rebuild=args.rebuild,
+        converted_cache_dir=args.converted_cache_dir,
     )
 
 
