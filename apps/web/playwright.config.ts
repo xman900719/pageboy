@@ -53,6 +53,8 @@ export default defineConfig({
         SHUTONG_AI_BASE_URL: 'http://127.0.0.1:18766',
         SHUTONG_AI_API_KEY: 'e2e-mock-key',
         SHUTONG_AI_MODEL: 'deepseek-chat-mock',
+        // CI 环境无私有课标原件目录，允许 E2E 后端识别测试合成课标标记文件（<1024 字节）。
+        SHUTONG_ALLOW_SYNTHETIC_STANDARDS: '1',
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
         // shutong 包位于 services/api；相对路径按 webServer cwd（apps/web）解析。
