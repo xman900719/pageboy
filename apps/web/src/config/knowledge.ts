@@ -126,3 +126,25 @@ export function formatClauseTitle(
   }
   return clauseId
 }
+
+/** 校考标准错因分类有序枚举与选项（统一从本地化配置读取标签） */
+export const SCHOOL_ERROR_CATEGORY_KEYS = [
+  'concept',
+  'calculation',
+  'reading',
+  'method',
+  'norm',
+  'other',
+] as const
+
+export const SCHOOL_ERROR_CATEGORY_OPTIONS = SCHOOL_ERROR_CATEGORY_KEYS.map(key => ({
+  value: key,
+  label: (localeLabels.schoolErrorCategoryLabels as Record<string, string>)[key] ?? key,
+}))
+
+/** 获取校考错因分类的中文标签 */
+export function getSchoolErrorCategoryLabel(category: string | null | undefined): string {
+  if (!category) return (localeLabels.schoolErrorCategoryLabels as Record<string, string>).uncategorized ?? '未归类错因'
+  const map = localeLabels.schoolErrorCategoryLabels as Record<string, string>
+  return map[category] ?? category
+}

@@ -6,6 +6,14 @@ export type SchoolSubject = Subject | 'ethics'
 export type Kind = 'single_choice' | 'short_answer' | 'subjective'
 export type Purpose = 'training' | 'evaluation'
 export type GapType = 'INSUFFICIENT_EVIDENCE' | 'KNOWLEDGE_GAP' | 'NO_CONFIRMED_GAP'
+export type SchoolErrorCategory = 'concept' | 'calculation' | 'reading' | 'method' | 'norm' | 'other'
+export type SchoolDraftConfidence = 'high' | 'medium' | 'low' | 'skeleton_only' | 'external_sync'
+
+export interface DraftKnowledgeCandidate {
+  knowledge_id: string
+  title: string
+  reason: string
+}
 
 export const SUBJECTS: Subject[] = ['math', 'chinese', 'english', 'physics']
 export const SUBJECT_LABELS: Record<Subject, string> = { math: '数学', chinese: '语文', english: '英语', physics: '物理' }
@@ -301,10 +309,18 @@ export interface SchoolExamItem {
   id: string
   question_label: string
   knowledge_id: string
+  knowledge_name?: string
   earned_points: number
   max_points: number
+  lost_points?: number
   scoring_origin: 'manual_entry' | 'ocr_draft'
   confirmed_by_user: boolean
+  error_category?: SchoolErrorCategory | null
+  error_note?: string | null
+  draft_source_attachment_id?: string | null
+  draft_confidence?: SchoolDraftConfidence | null
+  draft_reason?: string | null
+  draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
 }
 
 export interface SchoolExamItemInput {
@@ -313,6 +329,128 @@ export interface SchoolExamItemInput {
   earned_points: number
   max_points: number
   scoring_origin: 'manual_entry' | 'ocr_draft'
+  error_category?: SchoolErrorCategory | null
+  error_note?: string | null
+  draft_source_attachment_id?: string | null
+  draft_confidence?: SchoolDraftConfidence | null
+  draft_reason?: string | null
+  draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
+}
+
+export interface SchoolItemConfirmInput {
+  earnedPoints: number
+  maxPoints?: number
+  knowledgeId?: string
+  errorCategory?: SchoolErrorCategory | null
+  errorNote?: string | null
+}
+
+export interface SchoolItemConfirmBatchEntry extends SchoolItemConfirmInput {
+  itemId: string
+}
+
+export interface ParseDraftsResult {
+  parser_mode_used: string
+  meta: { pages_sent?: number; masked_pages?: number; model?: string }
+  created_items: SchoolExamItem[]
+  skipped_labels: string[]
+  evidence_created: number
+}
+
+export interface SchoolExamErrorOverview {
+  confirmed_item_count: number
+  lost_item_count: number
+  unconfirmed_draft_count: number
+  earned_points: number
+  max_points: number
+  paper_lost_points: number | null
+  itemized_earned_points: number
+  itemized_max_points: number
+  itemized_lost_points: number
+  unaccounted_lost_points: number | null
+  categorized_item_count: number
+  uncategorized_item_count: number
+  primary_error_category: string | null
+  primary_knowledge_id: string | null
+  primary_knowledge_name: string | null
+}
+
+export interface SchoolExamErrorCategoryStat {
+  category: string
+  item_count: number
+  lost_points: number
+  share_of_itemized_loss: number
+  question_labels: string[]
+}
+
+export interface SchoolExamErrorKnowledge {
+  knowledge_id: string
+  knowledge_name: string
+  item_count: number
+  lost_item_count: number
+  earned_points: number
+  max_points: number
+  lost_points: number
+  exam_observed_rate: number
+  share_of_itemized_loss: number
+  categories: string[]
+  question_labels: string[]
+  notes: { question_label: string; note: string }[]
+  practice_status: 'mastered' | 'weak' | 'insufficient' | 'untested' | 'not_applicable'
+  practice_observed_rate: number | null
+  practice_sample_size: number
+  diagnosis_tag: 'double_weak' | 'exam_slip' | 'blind_spot' | 'archive_review'
+}
+
+export interface SchoolExamErrorItem {
+  id: string
+  question_label: string
+  knowledge_id: string
+  knowledge_name: string
+  earned_points: number
+  max_points: number
+  lost_points: number
+  error_category: SchoolErrorCategory | null
+  error_note: string | null
+}
+
+export interface SchoolExamRecurringKnowledge {
+  knowledge_id: string
+  knowledge_name: string
+  exam_count: number
+  total_lost_points: number
+  total_item_count: number
+  repeat_in_current_exam: boolean
+  categories: string[]
+  exams: {
+    exam_id: string
+    title: string
+    exam_date: string
+    lost_points: number
+    item_count: number
+  }[]
+}
+
+export interface SchoolExamErrorAnalysis {
+  exam_id: string
+  subject: SchoolSubject
+  title: string
+  exam_date: string
+  confirmed_by_user: boolean
+  has_taxonomy: boolean
+  status: 'insufficient_items' | 'no_errors_recorded' | 'analyzed'
+  overview: SchoolExamErrorOverview
+  diagnosis_summary: string
+  by_category: SchoolExamErrorCategoryStat[]
+  by_knowledge: SchoolExamErrorKnowledge[]
+  lost_items: SchoolExamErrorItem[]
+  history_summary: {
+    same_subject_exam_count: number
+    same_subject_exams_with_items: number
+    recurring_count: number
+  }
+  recurring_knowledge: SchoolExamRecurringKnowledge[]
+  disclaimer: string
 }
 
 export interface SchoolExamDetail extends SchoolExam {
@@ -455,7 +593,34 @@ export interface Client {
   confirmSchoolExam(examId: string, earnedPoints: number): Promise<SchoolExamResult>
   uploadSchoolPaper(examId: string, file: File): Promise<SchoolPaperAttachment>
   addSchoolExamItems(examId: string, items: SchoolExamItemInput[]): Promise<{ evidence_created: number }>
-  confirmSchoolExamItem(examId: string, itemId: string, earnedPoints: number): Promise<SchoolExamItem>
+  confirmSchoolExamItem(
+    examId: string,
+    itemId: string,
+    input: number | SchoolItemConfirmInput,
+  ): Promise<SchoolExamItem>
+  confirmSchoolExamItemsBatch(
+    examId: string,
+    items: SchoolItemConfirmBatchEntry[],
+  ): Promise<{ items: SchoolExamItem[]; evidence_created: number }>
+  discardSchoolExamItem(
+    examId: string,
+    itemId: string,
+  ): Promise<{ status: string; id: string; question_label: string }>
+  parseSchoolExamDrafts(
+    examId: string,
+    input: {
+      attachmentIds: string[]
+      mode?: 'auto' | 'skeleton_only'
+      maskStudentHeader?: boolean
+      replaceUnconfirmedDrafts?: boolean
+    },
+  ): Promise<ParseDraftsResult>
+  updateSchoolExamItemAnalysis(
+    examId: string,
+    itemId: string,
+    input: { errorCategory: SchoolErrorCategory | null; errorNote: string | null },
+  ): Promise<SchoolExamItem>
+  schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
   fetchAttachment(attachmentId: string): Promise<Blob>
   /* 题库审核台（ST-011）。 */
   adminSources(): Promise<SourceDetail[]>
@@ -650,11 +815,58 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       }) as Promise<SchoolPaperAttachment>,
     addSchoolExamItems: (examId, items) =>
       call<{ evidence_created: number }>(`/api/school-exams/${encodeURIComponent(examId)}/items`, 'POST', { items }),
-    confirmSchoolExamItem: (examId, itemId, earnedPoints) =>
-      call<SchoolExamItem>(`/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/confirm`, 'POST', {
+    confirmSchoolExamItem: (examId, itemId, input) => {
+      const norm = typeof input === 'number' ? { earnedPoints: input } : input
+      const body: Record<string, unknown> = {
         confirmed_by_human: true,
-        earned_points: earnedPoints,
+        earned_points: norm.earnedPoints,
+      }
+      if (norm.maxPoints !== undefined) body.max_points = norm.maxPoints
+      if (norm.knowledgeId !== undefined) body.knowledge_id = norm.knowledgeId
+      if ('errorCategory' in norm) body.error_category = norm.errorCategory ?? null
+      if ('errorNote' in norm) body.error_note = norm.errorNote ?? null
+      return call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/confirm`,
+        'POST',
+        body,
+      )
+    },
+    confirmSchoolExamItemsBatch: (examId, items) =>
+      call<{ items: SchoolExamItem[]; evidence_created: number }>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/confirm-batch`,
+        'POST',
+        {
+          items: items.map(it => ({
+            item_id: it.itemId,
+            confirmed_by_human: true,
+            earned_points: it.earnedPoints,
+            ...(it.maxPoints !== undefined ? { max_points: it.maxPoints } : {}),
+            ...(it.knowledgeId !== undefined ? { knowledge_id: it.knowledgeId } : {}),
+            ...('errorCategory' in it ? { error_category: it.errorCategory ?? null } : {}),
+            ...('errorNote' in it ? { error_note: it.errorNote ?? null } : {}),
+          })),
+        },
+      ),
+    discardSchoolExamItem: (examId, itemId) =>
+      call<{ status: string; id: string; question_label: string }>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/discard`,
+        'POST',
+      ),
+    parseSchoolExamDrafts: (examId, { attachmentIds, mode = 'auto', maskStudentHeader = true, replaceUnconfirmedDrafts = false }) =>
+      call<ParseDraftsResult>(`/api/school-exams/${encodeURIComponent(examId)}/parse-drafts`, 'POST', {
+        attachment_ids: attachmentIds,
+        mode,
+        mask_student_header: maskStudentHeader,
+        replace_unconfirmed_drafts: replaceUnconfirmedDrafts,
       }),
+    updateSchoolExamItemAnalysis: (examId, itemId, { errorCategory, errorNote }) =>
+      call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/analysis`,
+        'POST',
+        { error_category: errorCategory, error_note: errorNote },
+      ),
+    schoolExamErrorAnalysis: examId =>
+      call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
     fetchAttachment: async attachmentId => {
       const res = await fetch(`/api/admin/attachments/${attachmentId}/download`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new ApiError(res.status, 'ATTACHMENT_UNAVAILABLE')
@@ -743,6 +955,20 @@ const API_CODE_TEXT: Record<string, string> = {
   IMPORTED_QUESTION_CONFIRMATION_REQUIRED: '导入的题目缺少确认记录，请先在附件区完成逐题确认导入。',
   QUESTION_NOT_APPROVED_FOR_PRIVATE_PUBLICATION: '来源尚未通过人工审核（或版权状态未核实）：请先完成来源人工审核，再发布题目。',
   KNOWLEDGE_NODE_NOT_FOUND: '未找到对应的已发布知识点节点。',
+  FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY: '满分小题无需标注错因分类。',
+  SCHOOL_ITEM_LABEL_CONFLICT: '该场考试已存在相同题号，请勿重复录入。',
+  SCHOOL_EXAM_ALREADY_CONFIRMED: '该场校考总分已完成人工核对，不能重复确认。',
+  SCHOOL_EXAM_IMMUTABLE: '该场校考总分已核对锁定，不可直接修改原总分。',
+  SCHOOL_ITEM_ALREADY_CONFIRMED: '该小题已完成人工确认，不可重复确认。',
+  SCHOOL_ITEM_IMMUTABLE: '该小题已人工确认并锁定，不可丢弃或修改已锁得分。',
+  SCHOOL_ITEM_DUPLICATE_CONFIRM: '批量确认中包含重复小题编号，请刷新后重试。',
+  VISION_PARSER_NOT_CONFIGURED: '服务端未配置 DeepSeek API Key，请改用「仅本地提取题号与分值骨架」或联系管理员配置 SHUTONG_AI_API_KEY。',
+  VISION_PARSER_TIMEOUT: 'DeepSeek 多模态解析超时，建议缩短页数或先改用本地骨架抽取。',
+  VISION_PARSER_UNAVAILABLE: '暂时无法连接 DeepSeek 多模态服务，请稍后重试。',
+  VISION_PARSER_INVALID_JSON: '多模态模型返回格式无法解析为草稿 JSON，请重试或改用本地骨架模式。',
+  NO_EMBEDDED_TEXT_FOR_SKELETON: '所选附件不含可机读文字层（属纯扫描件），无法本地提取骨架；请改用 DeepSeek 多模态模式。',
+  UNSUPPORTED_ATTACHMENT_FOR_PARSING: '所选附件格式不支持自动提取（支持 PDF / DOCX / PNG / JPG）。',
+  ATTACHMENT_NOT_FOUND: '未找到选中的附件，请刷新列表后重试。',
 }
 
 export function describeError(error: unknown): string {

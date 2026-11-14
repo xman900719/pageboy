@@ -191,6 +191,29 @@ components:
       - untested_count
       title: DomainRadarItemOut
       type: object
+    DraftKnowledgeCandidate:
+      description: 系统或视觉模型给出的候选知识点及简述理由，供家长核对选择。
+      properties:
+        knowledge_id:
+          maxLength: 100
+          minLength: 1
+          title: Knowledge Id
+          type: string
+        reason:
+          default: ''
+          maxLength: 300
+          title: Reason
+          type: string
+        title:
+          maxLength: 160
+          minLength: 1
+          title: Title
+          type: string
+      required:
+      - knowledge_id
+      - title
+      title: DraftKnowledgeCandidate
+      type: object
     ErratumIn:
       properties:
         note:
@@ -200,6 +223,59 @@ components:
       required:
       - note
       title: ErratumIn
+      type: object
+    ExternalSchoolItemIn:
+      description: 外部平台（如 k12100.com）抓取的逐题原始得分与错题摘要。
+      properties:
+        earned_points:
+          minimum: 0.0
+          title: Earned Points
+          type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        knowledge_id:
+          anyOf:
+          - maxLength: 100
+            type: string
+          - type: 'null'
+          title: Knowledge Id
+        max_points:
+          exclusiveMinimum: 0.0
+          maximum: 100.0
+          title: Max Points
+          type: number
+        question_label:
+          maxLength: 160
+          minLength: 1
+          title: Question Label
+          type: string
+        stem_text:
+          anyOf:
+          - maxLength: 2000
+            type: string
+          - type: 'null'
+          title: Stem Text
+        wrong_reason:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Wrong Reason
+      required:
+      - question_label
+      - earned_points
+      - max_points
+      title: ExternalSchoolItemIn
       type: object
     GoalIn:
       properties:
@@ -1031,6 +1107,351 @@ components:
       - earned_points
       title: SchoolExamConfirmIn
       type: object
+    SchoolExamErrorAnalysisOut:
+      properties:
+        by_category:
+          items:
+            $ref: '#/components/schemas/SchoolExamErrorCategoryOut'
+          title: By Category
+          type: array
+        by_knowledge:
+          items:
+            $ref: '#/components/schemas/SchoolExamErrorKnowledgeOut'
+          title: By Knowledge
+          type: array
+        confirmed_by_user:
+          title: Confirmed By User
+          type: boolean
+        diagnosis_summary:
+          title: Diagnosis Summary
+          type: string
+        disclaimer:
+          title: Disclaimer
+          type: string
+        exam_date:
+          title: Exam Date
+          type: string
+        exam_id:
+          title: Exam Id
+          type: string
+        has_taxonomy:
+          title: Has Taxonomy
+          type: boolean
+        history_summary:
+          $ref: '#/components/schemas/SchoolExamHistorySummaryOut'
+        lost_items:
+          items:
+            $ref: '#/components/schemas/SchoolExamErrorItemOut'
+          title: Lost Items
+          type: array
+        overview:
+          $ref: '#/components/schemas/SchoolExamErrorOverviewOut'
+        recurring_knowledge:
+          items:
+            $ref: '#/components/schemas/SchoolExamRecurringKnowledgeOut'
+          title: Recurring Knowledge
+          type: array
+        status:
+          enum:
+          - insufficient_items
+          - no_errors_recorded
+          - analyzed
+          title: Status
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          - ethics
+          title: Subject
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - exam_id
+      - subject
+      - title
+      - exam_date
+      - confirmed_by_user
+      - has_taxonomy
+      - status
+      - overview
+      - diagnosis_summary
+      - by_category
+      - by_knowledge
+      - lost_items
+      - history_summary
+      - recurring_knowledge
+      - disclaimer
+      title: SchoolExamErrorAnalysisOut
+      type: object
+    SchoolExamErrorCategoryOut:
+      properties:
+        category:
+          title: Category
+          type: string
+        item_count:
+          title: Item Count
+          type: integer
+        lost_points:
+          title: Lost Points
+          type: number
+        question_labels:
+          items:
+            type: string
+          title: Question Labels
+          type: array
+        share_of_itemized_loss:
+          title: Share Of Itemized Loss
+          type: number
+      required:
+      - category
+      - item_count
+      - lost_points
+      - share_of_itemized_loss
+      - question_labels
+      title: SchoolExamErrorCategoryOut
+      type: object
+    SchoolExamErrorItemOut:
+      properties:
+        earned_points:
+          title: Earned Points
+          type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        error_note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Note
+        id:
+          title: Id
+          type: string
+        knowledge_id:
+          title: Knowledge Id
+          type: string
+        knowledge_name:
+          title: Knowledge Name
+          type: string
+        lost_points:
+          title: Lost Points
+          type: number
+        max_points:
+          title: Max Points
+          type: number
+        question_label:
+          title: Question Label
+          type: string
+      required:
+      - id
+      - question_label
+      - knowledge_id
+      - knowledge_name
+      - earned_points
+      - max_points
+      - lost_points
+      title: SchoolExamErrorItemOut
+      type: object
+    SchoolExamErrorKnowledgeOut:
+      properties:
+        categories:
+          items:
+            type: string
+          title: Categories
+          type: array
+        diagnosis_tag:
+          enum:
+          - double_weak
+          - exam_slip
+          - blind_spot
+          - archive_review
+          title: Diagnosis Tag
+          type: string
+        earned_points:
+          title: Earned Points
+          type: number
+        exam_observed_rate:
+          title: Exam Observed Rate
+          type: number
+        item_count:
+          title: Item Count
+          type: integer
+        knowledge_id:
+          title: Knowledge Id
+          type: string
+        knowledge_name:
+          title: Knowledge Name
+          type: string
+        lost_item_count:
+          title: Lost Item Count
+          type: integer
+        lost_points:
+          title: Lost Points
+          type: number
+        max_points:
+          title: Max Points
+          type: number
+        notes:
+          items:
+            $ref: '#/components/schemas/SchoolExamErrorNoteOut'
+          title: Notes
+          type: array
+        practice_observed_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Practice Observed Rate
+        practice_sample_size:
+          title: Practice Sample Size
+          type: integer
+        practice_status:
+          enum:
+          - mastered
+          - weak
+          - insufficient
+          - untested
+          - not_applicable
+          title: Practice Status
+          type: string
+        question_labels:
+          items:
+            type: string
+          title: Question Labels
+          type: array
+        share_of_itemized_loss:
+          title: Share Of Itemized Loss
+          type: number
+      required:
+      - knowledge_id
+      - knowledge_name
+      - item_count
+      - lost_item_count
+      - earned_points
+      - max_points
+      - lost_points
+      - exam_observed_rate
+      - share_of_itemized_loss
+      - categories
+      - question_labels
+      - notes
+      - practice_status
+      - practice_sample_size
+      - diagnosis_tag
+      title: SchoolExamErrorKnowledgeOut
+      type: object
+    SchoolExamErrorNoteOut:
+      properties:
+        note:
+          title: Note
+          type: string
+        question_label:
+          title: Question Label
+          type: string
+      required:
+      - question_label
+      - note
+      title: SchoolExamErrorNoteOut
+      type: object
+    SchoolExamErrorOverviewOut:
+      properties:
+        categorized_item_count:
+          title: Categorized Item Count
+          type: integer
+        confirmed_item_count:
+          title: Confirmed Item Count
+          type: integer
+        earned_points:
+          title: Earned Points
+          type: number
+        itemized_earned_points:
+          title: Itemized Earned Points
+          type: number
+        itemized_lost_points:
+          title: Itemized Lost Points
+          type: number
+        itemized_max_points:
+          title: Itemized Max Points
+          type: number
+        lost_item_count:
+          title: Lost Item Count
+          type: integer
+        max_points:
+          title: Max Points
+          type: number
+        paper_lost_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Paper Lost Points
+        primary_error_category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Primary Error Category
+        primary_knowledge_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Primary Knowledge Id
+        primary_knowledge_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Primary Knowledge Name
+        unaccounted_lost_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Unaccounted Lost Points
+        uncategorized_item_count:
+          title: Uncategorized Item Count
+          type: integer
+        unconfirmed_draft_count:
+          title: Unconfirmed Draft Count
+          type: integer
+      required:
+      - confirmed_item_count
+      - lost_item_count
+      - unconfirmed_draft_count
+      - earned_points
+      - max_points
+      - itemized_earned_points
+      - itemized_max_points
+      - itemized_lost_points
+      - categorized_item_count
+      - uncategorized_item_count
+      title: SchoolExamErrorOverviewOut
+      type: object
+    SchoolExamHistorySummaryOut:
+      properties:
+        recurring_count:
+          title: Recurring Count
+          type: integer
+        same_subject_exam_count:
+          title: Same Subject Exam Count
+          type: integer
+        same_subject_exams_with_items:
+          title: Same Subject Exams With Items
+          type: integer
+      required:
+      - same_subject_exam_count
+      - same_subject_exams_with_items
+      - recurring_count
+      title: SchoolExamHistorySummaryOut
+      type: object
     SchoolExamIn:
       properties:
         confirmed_by_user:
@@ -1070,12 +1491,84 @@ components:
       - max_points
       title: SchoolExamIn
       type: object
+    SchoolExamItemAnalysisIn:
+      description: 补充或修订校考失分小题的结构化错因与复盘备注（不改写已锁定得分）。
+      properties:
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        error_note:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Error Note
+      title: SchoolExamItemAnalysisIn
+      type: object
     SchoolExamItemIn:
       properties:
+        draft_confidence:
+          anyOf:
+          - enum:
+            - high
+            - medium
+            - low
+            - skeleton_only
+            - external_sync
+            type: string
+          - type: 'null'
+          title: Draft Confidence
+        draft_knowledge_candidates:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/DraftKnowledgeCandidate'
+            maxItems: 5
+            type: array
+          - type: 'null'
+          title: Draft Knowledge Candidates
+        draft_reason:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Draft Reason
+        draft_source_attachment_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Draft Source Attachment Id
         earned_points:
           minimum: 0.0
           title: Earned Points
           type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        error_note:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Error Note
         knowledge_id:
           maxLength: 100
           minLength: 1
@@ -1118,7 +1611,131 @@ components:
       - items
       title: SchoolExamItemsIn
       type: object
-    SchoolItemConfirmIn:
+    SchoolExamParseDraftsIn:
+      description: 触发从原卷/答题卡附件抽取 M2 逐题待核对草稿的请求。
+      properties:
+        attachment_ids:
+          items:
+            type: string
+          maxItems: 10
+          minItems: 1
+          title: Attachment Ids
+          type: array
+        mask_student_header:
+          default: true
+          title: Mask Student Header
+          type: boolean
+        mode:
+          default: auto
+          enum:
+          - auto
+          - skeleton_only
+          title: Mode
+          type: string
+        replace_unconfirmed_drafts:
+          default: false
+          title: Replace Unconfirmed Drafts
+          type: boolean
+      required:
+      - attachment_ids
+      title: SchoolExamParseDraftsIn
+      type: object
+    SchoolExamRecurringHitOut:
+      properties:
+        exam_date:
+          title: Exam Date
+          type: string
+        exam_id:
+          title: Exam Id
+          type: string
+        item_count:
+          title: Item Count
+          type: integer
+        lost_points:
+          title: Lost Points
+          type: number
+        title:
+          title: Title
+          type: string
+      required:
+      - exam_id
+      - title
+      - exam_date
+      - lost_points
+      - item_count
+      title: SchoolExamRecurringHitOut
+      type: object
+    SchoolExamRecurringKnowledgeOut:
+      properties:
+        categories:
+          items:
+            type: string
+          title: Categories
+          type: array
+        exam_count:
+          title: Exam Count
+          type: integer
+        exams:
+          items:
+            $ref: '#/components/schemas/SchoolExamRecurringHitOut'
+          title: Exams
+          type: array
+        knowledge_id:
+          title: Knowledge Id
+          type: string
+        knowledge_name:
+          title: Knowledge Name
+          type: string
+        repeat_in_current_exam:
+          title: Repeat In Current Exam
+          type: boolean
+        total_item_count:
+          title: Total Item Count
+          type: integer
+        total_lost_points:
+          title: Total Lost Points
+          type: number
+      required:
+      - knowledge_id
+      - knowledge_name
+      - exam_count
+      - total_lost_points
+      - total_item_count
+      - repeat_in_current_exam
+      - categories
+      - exams
+      title: SchoolExamRecurringKnowledgeOut
+      type: object
+    SchoolExamSyncDraftsIn:
+      description: 从校考平台同步待核对逐题草稿的请求载荷。
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExternalSchoolItemIn'
+          maxItems: 100
+          minItems: 1
+          title: Items
+          type: array
+        replace_unconfirmed_drafts:
+          default: false
+          title: Replace Unconfirmed Drafts
+          type: boolean
+        source_name:
+          default: k12100
+          maxLength: 64
+          minLength: 1
+          title: Source Name
+          type: string
+        use_ai:
+          default: true
+          title: Use Ai
+          type: boolean
+      required:
+      - items
+      title: SchoolExamSyncDraftsIn
+      type: object
+    SchoolItemConfirmBatchEntryIn:
+      description: 批量人工确认中的单条核对载荷。
       properties:
         confirmed_by_human:
           description: 必须为 true，表示人工核对 OCR 草稿分数
@@ -1128,6 +1745,106 @@ components:
           minimum: 0.0
           title: Earned Points
           type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        error_note:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Error Note
+        item_id:
+          maxLength: 64
+          minLength: 1
+          title: Item Id
+          type: string
+        knowledge_id:
+          anyOf:
+          - maxLength: 100
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Knowledge Id
+        max_points:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 100.0
+            type: number
+          - type: 'null'
+          title: Max Points
+      required:
+      - confirmed_by_human
+      - earned_points
+      - item_id
+      title: SchoolItemConfirmBatchEntryIn
+      type: object
+    SchoolItemConfirmBatchIn:
+      description: 批量人工确认校考草稿列表。
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SchoolItemConfirmBatchEntryIn'
+          maxItems: 100
+          minItems: 1
+          title: Items
+          type: array
+      required:
+      - items
+      title: SchoolItemConfirmBatchIn
+      type: object
+    SchoolItemConfirmIn:
+      description: 人工核对 OCR/同步草稿：可同步校准得分、满分、考点编码、错因与备注。
+      properties:
+        confirmed_by_human:
+          description: 必须为 true，表示人工核对 OCR 草稿分数
+          title: Confirmed By Human
+          type: boolean
+        earned_points:
+          minimum: 0.0
+          title: Earned Points
+          type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        error_note:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Error Note
+        knowledge_id:
+          anyOf:
+          - maxLength: 100
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Knowledge Id
+        max_points:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 100.0
+            type: number
+          - type: 'null'
+          title: Max Points
       required:
       - confirmed_by_human
       - earned_points
@@ -3661,7 +4378,7 @@ paths:
       summary: Add School Exam
   /api/school-exams/{exam_id}:
     get:
-      description: 考试详情 + 逐题得分（含确认状态）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。
+      description: 考试详情 + 逐题得分（含确认状态与错因备注）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。
       operationId: get_school_exam_detail_api_school_exams__exam_id__get
       parameters:
       - in: path
@@ -3729,6 +4446,39 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Confirm School Exam
+  /api/school-exams/{exam_id}/error-analysis:
+    get:
+      description: 获取单场校考的失分归因、与日常练习掌握度交叉诊断及同科历次顽固失分点对比。
+      operationId: get_school_exam_error_analysis_api_school_exams__exam_id__error_analysis_get
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolExamErrorAnalysisOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get School Exam Error Analysis
   /api/school-exams/{exam_id}/items:
     post:
       description: 逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。
@@ -3767,9 +4517,91 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add School Exam Items
+  /api/school-exams/{exam_id}/items/confirm-batch:
+    post:
+      description: 批量人工确认本场校考草稿：任一条校验失败则整批回滚，绝不部分提交。
+      operationId: confirm_school_exam_items_batch_api_school_exams__exam_id__items_confirm_batch_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolItemConfirmBatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam Items Batch
+  /api/school-exams/{exam_id}/items/{item_id}/analysis:
+    post:
+      description: 补充或修订校考失分小题的错因分类与复盘备注；绝不改写已核对得分与确认状态（INV-04）。
+      operationId: update_school_exam_item_analysis_api_school_exams__exam_id__items__item_id__analysis_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamItemAnalysisIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Update School Exam Item Analysis
   /api/school-exams/{exam_id}/items/{item_id}/confirm:
     post:
-      description: 仅 ocr_draft 草稿可人工确认（可修正识别分）；确认后不可变（INV-04，改判须另建记录）。
+      description: 仅 ocr_draft 草稿可人工确认（可修正得分、满分、考点与错因）；确认后不可变（INV-04）。
       operationId: confirm_school_exam_item_api_school_exams__exam_id__items__item_id__confirm_post
       parameters:
       - in: path
@@ -3811,6 +4643,44 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Confirm School Exam Item
+  /api/school-exams/{exam_id}/items/{item_id}/discard:
+    post:
+      description: 丢弃未人工确认的 ocr_draft 识别草稿；已确认题目不可撤销或删除（INV-04）。
+      operationId: discard_school_exam_item_api_school_exams__exam_id__items__item_id__discard_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Discard School Exam Item
   /api/school-exams/{exam_id}/paper:
     post:
       description: 原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。
@@ -3888,6 +4758,82 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Upload School Paper
+  /api/school-exams/{exam_id}/parse-drafts:
+    post:
+      description: 从校考已上传附件自动抽取 M2 逐题草稿（永不直接确认入画像）。
+      operationId: parse_school_exam_drafts_api_school_exams__exam_id__parse_drafts_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamParseDraftsIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Parse School Exam Drafts
+  /api/school-exams/{exam_id}/sync-drafts:
+    post:
+      description: 接收外部校考平台（如 k12100.com）安全抓取的逐题得分并生成待人工确认草稿。
+      operationId: sync_school_exam_drafts_api_school_exams__exam_id__sync_drafts_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamSyncDraftsIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Sync School Exam Drafts
   /api/student/verify:
     get:
       operationId: verify_student_api_student_verify_get

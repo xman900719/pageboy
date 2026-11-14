@@ -5,22 +5,24 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, func, text
+from sqlalchemy import delete, select, func, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from .auth import require_admin, require_student, require_owner
-from .topic_labels import get_topic_label, get_student_advice
+from .topic_labels import get_topic_label, get_student_advice, TAXONOMY_MAP, SYNTHETIC_MAP
+from .taxonomy_bridge import resolve_question_to_candidate_codes
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .fourcorpus import router as corpus_router
-from .learning_api import router as learning_router, get_evidence
+from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence
 from .research import official_reject_reason
 from .database import get_db
 from . import models as m
 from . import private_files as files
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject, SchoolExamSubject
-from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, MIN_DISTINCT_ITEMS
+from . import school_paper_parser as paper_parser
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, GoalIn, Subject, SchoolExamSubject
+from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
@@ -324,6 +326,167 @@ def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str =
         "knowledge_evidence_created": False,
     }
 
+CORE_SUBJECTS = ("math", "chinese", "english", "physics")
+
+
+def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None = None) -> dict:
+    """统一序列化校考逐题明细（含失分、结构化错因与自动解析草稿元数据）。"""
+    out = {
+        "id": i.id,
+        "question_label": i.question_label,
+        "knowledge_id": i.knowledge_id,
+        "earned_points": i.earned_points,
+        "max_points": i.max_points,
+        "lost_points": round(max(0.0, i.max_points - i.earned_points), 2),
+        "scoring_origin": i.scoring_origin,
+        "confirmed_by_user": i.confirmed_by_user,
+        "error_category": i.error_category,
+        "error_note": i.error_note,
+        "draft_source_attachment_id": i.draft_source_attachment_id,
+        "draft_confidence": i.draft_confidence,
+        "draft_reason": i.draft_reason,
+        "draft_knowledge_candidates": i.draft_knowledge_candidates,
+    }
+    if knowledge_name is not None:
+        out["knowledge_name"] = knowledge_name
+    return out
+
+
+def _serialize_school_exam_items_with_names(
+    db: Session, subject: str, items: list[m.SchoolExamItem]
+) -> list[dict]:
+    """批量附带课标知识点中文名称序列化校考逐题记录。"""
+    if not items:
+        return []
+    _, _, name_map, _ = _resolve_school_knowledge_meta(db, subject, {it.knowledge_id for it in items})
+    return [_serialize_school_exam_item(it, knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id)) for it in items]
+
+
+def _apply_school_item_confirmation(item: m.SchoolExamItem, payload: SchoolItemConfirmIn) -> None:
+    """校验并执行单条校考草稿的人工核对确认（确认后分数与考点均锁定不可变）。"""
+    if item.confirmed_by_user:
+        if payload.earned_points == item.earned_points:
+            raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
+        raise HTTPException(409, detail="SCHOOL_ITEM_IMMUTABLE")
+    if item.scoring_origin != "ocr_draft":
+        # 经 API 不可达（manual_entry 建即确认）：防御绕过应用层、直改库产生的越界行，使其仍需人工裁决。
+        raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
+    effective_max = payload.max_points if payload.max_points is not None else item.max_points
+    if payload.earned_points > effective_max:
+        raise HTTPException(422, detail="earned_points exceeds max_points")
+    if payload.max_points is not None:
+        item.max_points = payload.max_points
+    if payload.knowledge_id is not None:
+        item.knowledge_id = payload.knowledge_id
+    item.earned_points = payload.earned_points
+    if "error_note" in payload.model_fields_set:
+        item.error_note = payload.error_note
+    if "error_category" in payload.model_fields_set:
+        item.error_category = payload.error_category
+    if item.earned_points >= item.max_points:
+        item.error_category = None
+    item.confirmed_by_user = True
+    item.confirmed_at = m.now()
+
+
+def _persist_draft_items(
+    db: Session,
+    exam: m.SchoolExam,
+    draft_dicts: list[dict],
+    *,
+    replace_all_unconfirmed: bool = False,
+    replace_matching_unconfirmed: bool = False,
+) -> tuple[list[m.SchoolExamItem], list[str]]:
+    """落库校考待核对草稿：强制保留 ocr_draft + confirmed_by_user=False，永不覆盖已确认记录。"""
+    incoming_labels = {str(d["question_label"]) for d in draft_dicts if d.get("question_label")}
+    if replace_all_unconfirmed:
+        db.execute(
+            delete(m.SchoolExamItem).where(
+                m.SchoolExamItem.school_exam_id == exam.id,
+                m.SchoolExamItem.confirmed_by_user.is_(False),
+                m.SchoolExamItem.scoring_origin == "ocr_draft",
+            )
+        )
+        db.flush()
+    elif replace_matching_unconfirmed and incoming_labels:
+        db.execute(
+            delete(m.SchoolExamItem).where(
+                m.SchoolExamItem.school_exam_id == exam.id,
+                m.SchoolExamItem.confirmed_by_user.is_(False),
+                m.SchoolExamItem.scoring_origin == "ocr_draft",
+                m.SchoolExamItem.question_label.in_(incoming_labels),
+            )
+        )
+        db.flush()
+
+    occupied_labels = set(
+        db.execute(
+            select(m.SchoolExamItem.question_label).where(m.SchoolExamItem.school_exam_id == exam.id)
+        ).scalars().all()
+    )
+    created: list[m.SchoolExamItem] = []
+    skipped_labels: list[str] = []
+    for entry in draft_dicts:
+        label = str(entry.get("question_label") or "").strip()
+        if not label:
+            continue
+        if label in occupied_labels:
+            skipped_labels.append(label)
+            continue
+        occupied_labels.add(label)
+        earned = float(entry.get("earned_points") or 0.0)
+        max_pts = float(entry.get("max_points") or 2.0)
+        err_cat = entry.get("error_category") if earned < max_pts else None
+        record = m.SchoolExamItem(
+            school_exam_id=exam.id,
+            question_label=label,
+            knowledge_id=str(entry.get("knowledge_id") or "unmapped"),
+            earned_points=earned,
+            max_points=max_pts,
+            scoring_origin="ocr_draft",
+            confirmed_by_user=False,
+            confirmed_at=None,
+            error_category=err_cat,
+            error_note=entry.get("error_note"),
+            draft_source_attachment_id=entry.get("draft_source_attachment_id"),
+            draft_confidence=entry.get("draft_confidence"),
+            draft_reason=entry.get("draft_reason"),
+            draft_knowledge_candidates=entry.get("draft_knowledge_candidates"),
+        )
+        created.append(record)
+        db.add(record)
+    db.commit()
+    for rec in created:
+        db.refresh(rec)
+    return created, skipped_labels
+
+
+def _resolve_school_knowledge_meta(
+    db: Session, subject: str, raw_kids: set[str]
+) -> tuple[bool, list[dict], dict[str, str], dict[str, list[str]]]:
+    """为管理端校考分析解析知识点中文名与旧新编码映射（道法保留自定义主题原名）。"""
+    if subject not in CORE_SUBJECTS:
+        name_map = {
+            kid: ("道法综合主题" if kid == "ethics.general" else (TAXONOMY_MAP.get(kid) or SYNTHETIC_MAP.get(kid) or kid))
+            for kid in raw_kids
+        }
+        return False, [], name_map, {}
+
+    nodes, _ = _load_effective_knowledge_nodes(db, subject)
+    node_names = {n["code"]: n["name"] for n in nodes}
+    alias_map: dict[str, list[str]] = {}
+    name_map: dict[str, str] = {}
+    for kid in raw_kids:
+        mapped = resolve_question_to_candidate_codes(subject, [kid])
+        if mapped:
+            alias_map[kid] = mapped
+        resolved = node_names.get(kid) or TAXONOMY_MAP.get(kid) or SYNTHETIC_MAP.get(kid)
+        if not resolved and mapped:
+            resolved = node_names.get(mapped[0]) or TAXONOMY_MAP.get(mapped[0])
+        name_map[kid] = resolved or kid
+    return True, nodes, name_map, alias_map
+
+
 @app.post("/api/school-exams/{exam_id}/items", status_code=201)
 def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     """逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。"""
@@ -336,10 +499,27 @@ def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str =
     records = []
     for item in payload.items:
         confirmed = item.scoring_origin == "manual_entry"
-        record = m.SchoolExamItem(school_exam_id=exam.id, question_label=item.question_label,
-                                   knowledge_id=item.knowledge_id, earned_points=item.earned_points,
-                                   max_points=item.max_points, scoring_origin=item.scoring_origin,
-                                   confirmed_by_user=confirmed, confirmed_at=m.now() if confirmed else None)
+        candidates = (
+            [c.model_dump() for c in item.draft_knowledge_candidates]
+            if item.draft_knowledge_candidates is not None
+            else None
+        )
+        record = m.SchoolExamItem(
+            school_exam_id=exam.id,
+            question_label=item.question_label,
+            knowledge_id=item.knowledge_id,
+            earned_points=item.earned_points,
+            max_points=item.max_points,
+            scoring_origin=item.scoring_origin,
+            confirmed_by_user=confirmed,
+            confirmed_at=m.now() if confirmed else None,
+            error_category=item.error_category,
+            error_note=item.error_note,
+            draft_source_attachment_id=item.draft_source_attachment_id,
+            draft_confidence=item.draft_confidence,
+            draft_reason=item.draft_reason,
+            draft_knowledge_candidates=candidates,
+        )
         records.append(record)
         db.add(record)
     try:
@@ -350,37 +530,333 @@ def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str =
         raise HTTPException(409, detail="SCHOOL_ITEM_LABEL_CONFLICT")
     for record in records:
         db.refresh(record)
-    return {"items": [{"id": r.id, "question_label": r.question_label, "scoring_origin": r.scoring_origin, "confirmed_by_user": r.confirmed_by_user} for r in records],
-            "evidence_created": sum(1 for r in records if r.confirmed_by_user)}
+    return {
+        "items": _serialize_school_exam_items_with_names(db, exam.subject, records),
+        "evidence_created": sum(1 for r in records if r.confirmed_by_user),
+    }
+
 
 @app.post("/api/school-exams/{exam_id}/items/{item_id}/confirm")
 def confirm_school_exam_item(exam_id: str, item_id: str, payload: SchoolItemConfirmIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
-    """仅 ocr_draft 草稿可人工确认（可修正识别分）；确认后不可变（INV-04，改判须另建记录）。"""
+    """仅 ocr_draft 草稿可人工确认（可修正得分、满分、考点与错因）；确认后不可变（INV-04）。"""
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
     item = db.get(m.SchoolExamItem, item_id)
     if item is None or item.school_exam_id != exam_id:
         raise HTTPException(404, detail="item not found")
-    if item.confirmed_by_user:
-        if payload.earned_points == item.earned_points:
-            raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
-        raise HTTPException(409, detail="SCHOOL_ITEM_IMMUTABLE")
-    if item.scoring_origin != "ocr_draft":
-        # 经 API 不可达（manual_entry 建即确认）：防御绕过应用层、直改库产生的越界行，使其仍需人工裁决。
-        raise HTTPException(409, detail="SCHOOL_ITEM_ALREADY_CONFIRMED")
-    if payload.earned_points > item.max_points:
-        raise HTTPException(422, detail="earned_points exceeds max_points")
-    item.earned_points = payload.earned_points
-    item.confirmed_by_user = True
-    item.confirmed_at = m.now()
+    _apply_school_item_confirmation(item, payload)
     db.commit()
-    return {"id": item.id, "question_label": item.question_label, "earned_points": item.earned_points,
-            "max_points": item.max_points, "scoring_origin": item.scoring_origin, "confirmed_by_user": item.confirmed_by_user}
+    db.refresh(item)
+    return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
+
+
+@app.post("/api/school-exams/{exam_id}/items/confirm-batch")
+def confirm_school_exam_items_batch(
+    exam_id: str,
+    payload: SchoolItemConfirmBatchIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """批量人工确认本场校考草稿：任一条校验失败则整批回滚，绝不部分提交。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item_ids = [entry.item_id for entry in payload.items]
+    if len(set(item_ids)) != len(item_ids):
+        raise HTTPException(409, detail="SCHOOL_ITEM_DUPLICATE_CONFIRM")
+    rows = db.execute(
+        select(m.SchoolExamItem).where(
+            m.SchoolExamItem.school_exam_id == exam.id,
+            m.SchoolExamItem.id.in_(item_ids),
+        )
+    ).scalars().all()
+    by_id = {row.id: row for row in rows}
+    updated: list[m.SchoolExamItem] = []
+    for entry in payload.items:
+        item = by_id.get(entry.item_id)
+        if item is None:
+            db.rollback()
+            raise HTTPException(404, detail="item not found")
+        _apply_school_item_confirmation(item, entry)
+        updated.append(item)
+    db.commit()
+    for row in updated:
+        db.refresh(row)
+    return {
+        "items": _serialize_school_exam_items_with_names(db, exam.subject, updated),
+        "evidence_created": len(updated),
+    }
+
+
+@app.post("/api/school-exams/{exam_id}/items/{item_id}/discard")
+def discard_school_exam_item(
+    exam_id: str,
+    item_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """丢弃未人工确认的 ocr_draft 识别草稿；已确认题目不可撤销或删除（INV-04）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    if item.confirmed_by_user or item.scoring_origin != "ocr_draft":
+        raise HTTPException(409, detail="SCHOOL_ITEM_IMMUTABLE")
+    label = item.question_label
+    db.delete(item)
+    db.commit()
+    return {"status": "discarded", "id": item_id, "question_label": label}
+
+
+@app.post("/api/school-exams/{exam_id}/parse-drafts")
+def parse_school_exam_drafts(
+    exam_id: str,
+    payload: SchoolExamParseDraftsIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """从校考已上传附件自动抽取 M2 逐题草稿（永不直接确认入画像）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    unique_ids = list(dict.fromkeys(payload.attachment_ids))
+    rows = db.execute(
+        select(m.SchoolPaperAttachment).where(
+            m.SchoolPaperAttachment.school_exam_id == exam.id,
+            m.SchoolPaperAttachment.owner_id == owner,
+            m.SchoolPaperAttachment.id.in_(unique_ids),
+        )
+    ).scalars().all()
+    att_map = {att.id: att for att in rows}
+    if len(att_map) != len(unique_ids):
+        raise HTTPException(404, detail="ATTACHMENT_NOT_FOUND")
+    attachments = [att_map[aid] for aid in unique_ids]
+    supported = {"application/pdf", "image/png", "image/jpeg", files.DOCX_MEDIA_TYPE}
+    if any(att.media_type not in supported for att in attachments):
+        raise HTTPException(422, detail="UNSUPPORTED_ATTACHMENT_FOR_PARSING")
+
+    _, knowledge_catalog, _, _ = _resolve_school_knowledge_meta(db, exam.subject, set())
+    loaded = [
+        {
+            "id": att.id,
+            "filename": att.filename,
+            "media_type": att.media_type,
+            "data": files.load_blob(att),
+        }
+        for att in attachments
+    ]
+
+    def _collect_skeleton() -> list[dict]:
+        combined: list[dict] = []
+        seen_lbls: set[str] = set()
+        for item in loaded:
+            text = paper_parser.extract_embedded_text(item["data"], item["media_type"])
+            if not text:
+                continue
+            for row in paper_parser.parse_paper_skeleton_from_text(
+                text, exam.subject, knowledge_catalog, attachment_id=item["id"]
+            ):
+                if row["question_label"] not in seen_lbls:
+                    seen_lbls.add(row["question_label"])
+                    combined.append(row)
+        return combined
+
+    meta: dict = {"pages_sent": 0, "masked_pages": 0}
+    if payload.mode == "skeleton_only":
+        draft_items = _collect_skeleton()
+        if not draft_items:
+            raise HTTPException(422, detail="NO_EMBEDDED_TEXT_FOR_SKELETON")
+        parser_mode_used = "local_text_skeleton"
+    else:
+        cfg = paper_parser.load_vision_config(require_key=False)
+        visual_attachments = [it for it in loaded if it["media_type"] != files.DOCX_MEDIA_TYPE]
+        if cfg is not None and visual_attachments:
+            try:
+                draft_items, meta = paper_parser.parse_items_with_deepseek_vision(
+                    subject=exam.subject,
+                    knowledge_catalog=knowledge_catalog,
+                    attachments=visual_attachments,
+                    mask_student_header=payload.mask_student_header,
+                    cfg=cfg,
+                )
+            except paper_parser.VisionParserConfigError as exc:
+                raise HTTPException(503, detail=str(exc)) from exc
+            except paper_parser.VisionParserUnavailableError as exc:
+                raise HTTPException(503, detail=str(exc)) from exc
+            parser_mode_used = f"deepseek_vision:{cfg.vision_model}"
+        else:
+            # 密钥未配置或全为纯文字卷时：仅当选中附件全部可本地抽骨架且非扫描图片时，优雅回退本地规则。
+            has_unparsed_visual = any(
+                it["media_type"] in ("image/png", "image/jpeg")
+                or not paper_parser.extract_embedded_text(it["data"], it["media_type"])
+                for it in loaded
+            )
+            if has_unparsed_visual:
+                raise HTTPException(503, detail="VISION_PARSER_NOT_CONFIGURED")
+            draft_items = _collect_skeleton()
+            if not draft_items:
+                raise HTTPException(422, detail="NO_EMBEDDED_TEXT_FOR_SKELETON")
+            parser_mode_used = "local_text_skeleton_fallback"
+
+    created, skipped_labels = _persist_draft_items(
+        db,
+        exam,
+        draft_items,
+        replace_all_unconfirmed=payload.replace_unconfirmed_drafts,
+    )
+    return {
+        "parser_mode_used": parser_mode_used,
+        "meta": meta,
+        "created_items": _serialize_school_exam_items_with_names(db, exam.subject, created),
+        "skipped_labels": skipped_labels,
+        "evidence_created": 0,
+    }
+
+
+@app.post("/api/school-exams/{exam_id}/sync-drafts")
+def sync_school_exam_drafts(
+    exam_id: str,
+    payload: SchoolExamSyncDraftsIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """接收外部校考平台（如 k12100.com）安全抓取的逐题得分并生成待人工确认草稿。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    _, knowledge_catalog, _, _ = _resolve_school_knowledge_meta(db, exam.subject, set())
+    enriched_items, enrich_mode = paper_parser.enrich_external_items_with_deepseek(
+        subject=exam.subject,
+        knowledge_catalog=knowledge_catalog,
+        external_items=[it.model_dump() for it in payload.items],
+        use_ai=payload.use_ai,
+    )
+    created, skipped_labels = _persist_draft_items(
+        db,
+        exam,
+        enriched_items,
+        replace_matching_unconfirmed=payload.replace_unconfirmed_drafts,
+    )
+    return {
+        "source_name": payload.source_name,
+        "parser_mode_used": enrich_mode,
+        "created_items": _serialize_school_exam_items_with_names(db, exam.subject, created),
+        "skipped_labels": skipped_labels,
+        "evidence_created": 0,
+    }
+
+@app.post("/api/school-exams/{exam_id}/items/{item_id}/analysis")
+def update_school_exam_item_analysis(
+    exam_id: str,
+    item_id: str,
+    payload: SchoolExamItemAnalysisIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """补充或修订校考失分小题的错因分类与复盘备注；绝不改写已核对得分与确认状态（INV-04）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    if item.earned_points >= item.max_points and payload.error_category is not None:
+        raise HTTPException(422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
+    item.error_category = payload.error_category
+    item.error_note = payload.error_note
+    db.commit()
+    db.refresh(item)
+    return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
+
+@app.get("/api/school-exams/{exam_id}/error-analysis", response_model=SchoolExamErrorAnalysisOut)
+def get_school_exam_error_analysis(
+    exam_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """获取单场校考的失分归因、与日常练习掌握度交叉诊断及同科历次顽固失分点对比。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    same_subject_exams = db.execute(
+        select(m.SchoolExam)
+        .where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == exam.subject)
+        .order_by(m.SchoolExam.exam_date.desc(), m.SchoolExam.created_at.desc(), m.SchoolExam.id.desc())
+    ).scalars().all()
+    exam_ids = [e.id for e in same_subject_exams]
+    all_items = (
+        db.execute(
+            select(m.SchoolExamItem)
+            .where(m.SchoolExamItem.school_exam_id.in_(exam_ids))
+            .order_by(m.SchoolExamItem.question_label)
+        ).scalars().all()
+        if exam_ids
+        else []
+    )
+    all_kids = {it.knowledge_id for it in all_items}
+    has_taxonomy, nodes, name_map, alias_map = _resolve_school_knowledge_meta(db, exam.subject, all_kids)
+
+    items_by_exam: dict[str, list[dict]] = {eid: [] for eid in exam_ids}
+    for it in all_items:
+        items_by_exam.setdefault(it.school_exam_id, []).append(
+            _serialize_school_exam_item(it, knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id))
+        )
+
+    history_payload = [
+        {
+            "exam_id": e.id,
+            "title": e.title,
+            "exam_date": str(e.exam_date),
+            "earned_points": e.earned_points,
+            "max_points": e.max_points,
+            "confirmed_by_user": e.confirmed_by_user,
+            "items": items_by_exam.get(e.id, []),
+        }
+        for e in same_subject_exams
+    ]
+
+    if has_taxonomy and nodes:
+        valid_codes = {n["code"] for n in nodes}
+        raw_daily_evidence = get_evidence(db, owner, exam.subject, include_school_items=False)
+        daily_evidence = _get_mapped_evidence(
+            db, owner, exam.subject, valid_codes, include_school_items=False, raw_evidence=raw_daily_evidence
+        )
+        practice_mastery = compute_knowledge_mastery(nodes, daily_evidence)
+        # 兼容仅出现在基础合成测试/历史旧编码、未映射进 2022 候选集的日常作答考点
+        extra_kids = sorted({ev.knowledge_id for ev in raw_daily_evidence} - valid_codes)
+        if extra_kids:
+            practice_mastery.extend(
+                compute_knowledge_mastery(
+                    [{"code": k, "name": k, "is_elective": False} for k in extra_kids],
+                    raw_daily_evidence,
+                )
+            )
+    else:
+        practice_mastery = []
+
+    return analyze_school_exam_errors(
+        exam_meta={
+            "id": exam.id,
+            "subject": exam.subject,
+            "title": exam.title,
+            "exam_date": str(exam.exam_date),
+            "earned_points": exam.earned_points,
+            "max_points": exam.max_points,
+            "confirmed_by_user": exam.confirmed_by_user,
+        },
+        exam_items=items_by_exam.get(exam.id, []),
+        history_exams=history_payload,
+        practice_mastery=practice_mastery,
+        has_taxonomy=has_taxonomy,
+        knowledge_alias_map=alias_map,
+    )
 
 @app.get("/api/school-exams/{exam_id}")
 def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
-    """考试详情 + 逐题得分（含确认状态）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。"""
+    """考试详情 + 逐题得分（含确认状态与错因备注）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。"""
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
@@ -388,9 +864,7 @@ def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db
     attachments = db.execute(select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam.id, m.SchoolPaperAttachment.owner_id == owner).order_by(m.SchoolPaperAttachment.created_at, m.SchoolPaperAttachment.id)).scalars().all()
     return {"id": exam.id, "subject": exam.subject, "title": exam.title, "exam_date": str(exam.exam_date),
             "earned_points": exam.earned_points, "max_points": exam.max_points, "confirmed_by_user": exam.confirmed_by_user,
-            "items": [{"id": i.id, "question_label": i.question_label, "knowledge_id": i.knowledge_id,
-                       "earned_points": i.earned_points, "max_points": i.max_points,
-                       "scoring_origin": i.scoring_origin, "confirmed_by_user": i.confirmed_by_user} for i in items],
+            "items": _serialize_school_exam_items_with_names(db, exam.subject, items),
             "attachments": [{"id": a.id, "filename": a.filename, "media_type": a.media_type, "sha256": a.sha256,
                              "byte_size": a.byte_size, "created_at": a.created_at} for a in attachments]}
 

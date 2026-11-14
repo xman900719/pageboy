@@ -308,3 +308,449 @@ def test_confirm_pending_school_exam_total_and_immutability(client, auth, studen
         ).status_code
         == 404
     )
+
+
+def test_school_exam_error_analysis_workflow_and_guardrails(client, auth, student_auth, published):
+    # 反例 1：仅有总分的考试，错误分析必须如实返回 insufficient_items，绝不从总分反推错因。
+    cur_id = make_exam(client, auth, title="虚构测试数据：十月数学月考", exam_date="2026-10-15", earned_points=80, max_points=100)
+    empty_res = client.get(f"/api/school-exams/{cur_id}/error-analysis", headers=auth)
+    assert empty_res.status_code == 200
+    assert empty_res.json()["status"] == "insufficient_items"
+    assert empty_res.json()["overview"]["paper_lost_points"] == 20.0
+
+    # 权界：学生令牌禁止读取或修改校考错误分析。
+    assert client.get(f"/api/school-exams/{cur_id}/error-analysis", headers=student_auth).status_code == 403
+
+    # 先造 3 条日常练习错误作答，令 math.gap（来自 published fixture 或已知考点）呈现薄弱或已达标对照
+    for i in range(3):
+        served = client.get("/api/practice/next?subject=math&purpose=evaluation", headers=student_auth)
+        assert served.status_code == 200
+        exp = served.json()["exposure_id"]
+        # 全部选错（answer='C' 非 'B'）制造日常薄弱/待诊断对照样本
+        recorded = client.post(
+            "/api/practice/attempts",
+            json={"client_attempt_id": f"err-ana-{i}", "exposure_id": exp, "answer": "C"},
+            headers=student_auth,
+        )
+        assert recorded.status_code == 201
+
+    # 录入 1 条满分题（即使传了 error_category 也会自动清空）、1 条失分题（暂未填错因）、1 条未确认 OCR 草稿
+    posted = post_items(
+        client,
+        auth,
+        cur_id,
+        [
+            {"question_label": "第1题", "knowledge_id": "math.ok", "earned_points": 3.0, "max_points": 3.0,
+             "scoring_origin": "manual_entry", "error_category": "calculation", "error_note": "满分校验"},
+            {"question_label": "第18题", "knowledge_id": "math.arithmetic", "earned_points": 2.0, "max_points": 6.0,
+             "scoring_origin": "manual_entry"},
+            {"question_label": "第22题", "knowledge_id": "math.geometry", "earned_points": 1.0, "max_points": 8.0,
+             "scoring_origin": "ocr_draft", "error_category": "method"},
+        ],
+    )
+    assert posted.status_code == 201
+    created_items = {it["question_label"]: it for it in posted.json()["items"]}
+    assert created_items["第1题"]["error_category"] is None
+    full_item_id = created_items["第1题"]["id"]
+    lost_item_id = created_items["第18题"]["id"]
+
+    # 反例 2：对满分题事后标注 error_category 必须返回 422
+    assert (
+        client.post(
+            f"/api/school-exams/{cur_id}/items/{full_item_id}/analysis",
+            json={"error_category": "concept"},
+            headers=auth,
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/school-exams/{cur_id}/items/{lost_item_id}/analysis",
+            json={"error_category": "invalid_cat"},
+            headers=auth,
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/school-exams/{cur_id}/items/{lost_item_id}/analysis",
+            json={"error_category": "reading", "error_note": "越权尝试"},
+            headers=student_auth,
+        ).status_code
+        == 403
+    )
+
+    # 正例：补充失分题错因分类与复盘备注，得分保持不可变（INV-04）
+    updated = client.post(
+        f"/api/school-exams/{cur_id}/items/{lost_item_id}/analysis",
+        json={"error_category": "reading", "error_note": "漏看条件 x>0"},
+        headers=auth,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["error_category"] == "reading"
+    assert updated.json()["error_note"] == "漏看条件 x>0"
+    assert updated.json()["earned_points"] == 2.0
+
+    # 创建同科历史场次并录入相同知识点失分，检验跨场次顽固失分点对比
+    past_id = make_exam(client, auth, title="虚构测试数据：九月诊断测", exam_date="2026-09-18", earned_points=86, max_points=100)
+    assert (
+        post_items(
+            client,
+            auth,
+            past_id,
+            [
+                {"question_label": "第10题", "knowledge_id": "math.arithmetic", "earned_points": 1.0, "max_points": 4.0,
+                 "scoring_origin": "manual_entry", "error_category": "calculation", "error_note": "九月同类计算错"}
+            ],
+        ).status_code
+        == 201
+    )
+
+    ana = client.get(f"/api/school-exams/{cur_id}/error-analysis", headers=auth)
+    assert ana.status_code == 200
+    body = ana.json()
+    assert body["status"] == "analyzed"
+    assert body["overview"]["confirmed_item_count"] == 2
+    assert body["overview"]["lost_item_count"] == 1
+    assert body["overview"]["unconfirmed_draft_count"] == 1  # 第22题未确认草稿不得进正式统计
+    assert body["overview"]["itemized_lost_points"] == 4.0
+    assert body["overview"]["unaccounted_lost_points"] == 16.0
+    assert body["overview"]["primary_error_category"] == "reading"
+    assert body["by_category"][0]["category"] == "reading"
+    assert body["by_knowledge"][0]["knowledge_id"] == "math.arithmetic"
+    assert body["by_knowledge"][0]["knowledge_name"] == "基础算术运算"
+    assert body["by_knowledge"][0]["diagnosis_tag"] == "double_weak"
+    assert body["history_summary"]["same_subject_exams_with_items"] == 2
+    assert body["history_summary"]["recurring_count"] == 1
+    assert body["recurring_knowledge"][0]["knowledge_id"] == "math.arithmetic"
+    assert body["recurring_knowledge"][0]["repeat_in_current_exam"] is True
+    assert body["recurring_knowledge"][0]["total_lost_points"] == 7.0
+
+
+def test_ethics_school_exam_error_analysis_without_taxonomy(client, auth):
+    ethics_id = make_exam(client, auth, subject="ethics", title="虚构测试数据：十月道法", exam_date="2026-10-15", earned_points=42, max_points=50)
+    assert (
+        post_items(
+            client,
+            auth,
+            ethics_id,
+            [
+                {"question_label": "第16题", "knowledge_id": "依法治国与宪法权威", "earned_points": 4.0, "max_points": 8.0,
+                 "scoring_origin": "manual_entry", "error_category": "norm", "error_note": "缺少材料结合分析"}
+            ],
+        ).status_code
+        == 201
+    )
+    res = client.get(f"/api/school-exams/{ethics_id}/error-analysis", headers=auth)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["has_taxonomy"] is False
+    assert body["status"] == "analyzed"
+    assert body["by_knowledge"][0]["knowledge_name"] == "依法治国与宪法权威"
+    assert body["by_knowledge"][0]["diagnosis_tag"] == "archive_review"
+    assert body["by_knowledge"][0]["practice_status"] == "not_applicable"
+
+
+def _make_text_layer_pdf(lines: list[str]) -> bytes:
+    """生成带可机读文本层的虚构多行测试 PDF。"""
+    commands = ["BT", "/F1 14 Tf", "40 740 Td"]
+    for idx, line in enumerate(lines):
+        escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        if idx > 0:
+            commands.append("0 -24 Td")
+        commands.append(f"({escaped}) Tj")
+    commands.append("ET")
+    stream = "\n".join(commands).encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Count 1 /Kids [5 0 R] >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>",
+    ]
+    data = b"%PDF-1.4\n"
+    offsets = [0]
+    for idx, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data += f"{idx} 0 obj\n".encode("ascii") + obj + b"\nendobj\n"
+    xref = len(data)
+    data += f"xref\n0 {len(offsets)}\n0000000000 65535 f \n".encode("ascii")
+    data += b"".join(f"{off:010} 00000 n \n".encode("ascii") for off in offsets[1:])
+    return data + f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
+
+
+def _make_png_bytes() -> bytes:
+    """生成最小合法测试 PNG。"""
+    from io import BytesIO
+    from PIL import Image, ImageDraw
+
+    im = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(im)
+    draw.rectangle([(10, 10), (390, 60)], fill="black")
+    draw.text((20, 120), "Q2 (-2)", fill="black")
+    buf = BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_parse_drafts_skeleton_vision_guardrails_and_discard(client, auth, student_auth, published, tmp_path, monkeypatch):
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    exam_id = make_exam(client, auth, title="虚构测试数据：十月自动草稿测试", earned_points=82, max_points=100)
+    pdf_data = _make_text_layer_pdf(
+        [
+            "1. Compute quadratic equation roots (3 points)",
+            "2. Prove triangle congruence in circle (5 points)",
+        ]
+    )
+    png_data = _make_png_bytes()
+    att_pdf = client.post(
+        f"/api/school-exams/{exam_id}/paper?filename=paper.pdf",
+        content=pdf_data,
+        headers={**auth, "content-type": "application/pdf"},
+    )
+    assert att_pdf.status_code == 201
+    att_pdf_id = att_pdf.json()["id"]
+
+    att_png = client.post(
+        f"/api/school-exams/{exam_id}/paper?filename=answer_card.png",
+        content=png_data,
+        headers={**auth, "content-type": "image/png"},
+    )
+    assert att_png.status_code == 201
+    att_png_id = att_png.json()["id"]
+
+    # 权界：学生令牌不得调用解析、批量确认、丢弃或外部同步接口
+    assert client.post(f"/api/school-exams/{exam_id}/parse-drafts", json={"attachment_ids": [att_pdf_id]}, headers=student_auth).status_code == 403
+    assert client.post(f"/api/school-exams/{exam_id}/sync-drafts", json={"items": [{"question_label": "第1题", "earned_points": 2, "max_points": 2}]}, headers=student_auth).status_code == 403
+    assert client.post(f"/api/school-exams/{exam_id}/items/confirm-batch", json={"items": [{"item_id": "x", "confirmed_by_human": True, "earned_points": 1}]}, headers=student_auth).status_code == 403
+
+    # 反例：纯图片走 skeleton_only 返回 422；无密钥走 auto 含图片必须 503 fail-closed
+    assert (
+        client.post(
+            f"/api/school-exams/{exam_id}/parse-drafts",
+            json={"attachment_ids": [att_png_id], "mode": "skeleton_only"},
+            headers=auth,
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/school-exams/{exam_id}/parse-drafts",
+            json={"attachment_ids": [att_png_id], "mode": "auto"},
+            headers=auth,
+        ).status_code
+        == 503
+    )
+
+    # 正例 1：纯文字卷仅本地提取骨架，生成未确认草稿且零证据入画像
+    skel = client.post(
+        f"/api/school-exams/{exam_id}/parse-drafts",
+        json={"attachment_ids": [att_pdf_id], "mode": "skeleton_only"},
+        headers=auth,
+    )
+    assert skel.status_code == 200
+    skel_body = skel.json()
+    assert skel_body["parser_mode_used"] == "local_text_skeleton"
+    assert skel_body["evidence_created"] == 0
+    assert [i["question_label"] for i in skel_body["created_items"]] == ["第1题", "第2题"]
+    assert all(i["scoring_origin"] == "ocr_draft" and i["confirmed_by_user"] is False for i in skel_body["created_items"])
+    assert profile_knowledge(client, student_auth) == []
+
+    q1_id = skel_body["created_items"][0]["id"]
+    q2_id = skel_body["created_items"][1]["id"]
+
+    # 正例 2：丢弃未确认第2题草稿；升级版 confirm 一次性核准第1题分值、满分、考点与错因
+    assert client.post(f"/api/school-exams/{exam_id}/items/{q2_id}/discard", headers=auth).status_code == 200
+    assert (
+        client.post(f"/api/school-exams/{exam_id}/items/{q2_id}/discard", headers=student_auth).status_code
+        == 403
+    )
+
+    confirmed_q1 = client.post(
+        f"/api/school-exams/{exam_id}/items/{q1_id}/confirm",
+        json={
+            "confirmed_by_human": True,
+            "earned_points": 1.5,
+            "max_points": 3.0,
+            "knowledge_id": "math.arithmetic",
+            "error_category": "calculation",
+            "error_note": "移项未变号",
+        },
+        headers=auth,
+    )
+    assert confirmed_q1.status_code == 200
+    assert confirmed_q1.json()["confirmed_by_user"] is True
+    assert confirmed_q1.json()["max_points"] == 3.0
+    assert confirmed_q1.json()["error_category"] == "calculation"
+    assert profile_knowledge(client, student_auth)[0]["sample_size"] == 1
+
+    # 反例：已确认题目禁止再被丢弃
+    assert client.post(f"/api/school-exams/{exam_id}/items/{q1_id}/discard", headers=auth).status_code == 409
+
+    # 正例 3：配置密钥（Mock）走 DeepSeek 视觉联合解析，自动跳过已确认第1题
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "sk-test-vision")
+    import json as _json
+    import httpx as _httpx
+
+    class _FakeResp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": _json.dumps(
+                                {
+                                    "items": [
+                                        {
+                                            "question_label": "第1题",
+                                            "max_points": 3,
+                                            "draft_earned_points": 3,
+                                            "knowledge_id": "math.arithmetic",
+                                            "confidence": "high",
+                                            "reason": "已确认题目应被跳过",
+                                        },
+                                        {
+                                            "question_label": "第2题",
+                                            "max_points": 4,
+                                            "draft_earned_points": 2,
+                                            "knowledge_id": "math.geometry",
+                                            "error_category": "method",
+                                            "error_note": "缺少辅助线",
+                                            "confidence": "medium",
+                                            "reason": "左缘批改 -2",
+                                        },
+                                        {
+                                            "question_label": "第3题",
+                                            "max_points": 4,
+                                            "draft_earned_points": 4,
+                                            "knowledge_id": "math.arithmetic",
+                                            "confidence": "high",
+                                            "reason": "解答完整",
+                                        },
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            }
+
+    real_post = _httpx.Client.post
+
+    def _selective_fake_post(self, url, *args, **kwargs):
+        if "chat/completions" in str(url):
+            return _FakeResp()
+        return real_post(self, url, *args, **kwargs)
+
+    monkeypatch.setattr(_httpx.Client, "post", _selective_fake_post)
+    vis = client.post(
+        f"/api/school-exams/{exam_id}/parse-drafts",
+        json={"attachment_ids": [att_pdf_id, att_png_id], "mode": "auto", "mask_student_header": True},
+        headers=auth,
+    )
+    assert vis.status_code == 200
+    vis_body = vis.json()
+    assert vis_body["parser_mode_used"].startswith("deepseek_vision:")
+    assert vis_body["meta"]["pages_sent"] >= 2
+    assert vis_body["meta"]["masked_pages"] == 1
+    assert vis_body["skipped_labels"] == ["第1题"]
+    assert [i["question_label"] for i in vis_body["created_items"]] == ["第2题", "第3题"]
+
+    vis_q2_id = vis_body["created_items"][0]["id"]
+    vis_q3_id = vis_body["created_items"][1]["id"]
+
+    # 原子性反例：批量确认含已确认项第1题 -> 整批 409 回滚，第2/3题保持未确认
+    bad_batch = client.post(
+        f"/api/school-exams/{exam_id}/items/confirm-batch",
+        json={
+            "items": [
+                {"item_id": vis_q2_id, "confirmed_by_human": True, "earned_points": 2.0},
+                {"item_id": q1_id, "confirmed_by_human": True, "earned_points": 1.5},
+            ]
+        },
+        headers=auth,
+    )
+    assert bad_batch.status_code == 409
+    detail_before = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_lbl = {it["question_label"]: it for it in detail_before["items"]}
+    assert by_lbl["第2题"]["confirmed_by_user"] is False
+
+    # 批量确认正例
+    good_batch = client.post(
+        f"/api/school-exams/{exam_id}/items/confirm-batch",
+        json={
+            "items": [
+                {
+                    "item_id": vis_q2_id,
+                    "confirmed_by_human": True,
+                    "earned_points": 2.0,
+                    "error_category": "method",
+                    "error_note": "人工复核确认辅助线思路断档",
+                },
+                {"item_id": vis_q3_id, "confirmed_by_human": True, "earned_points": 4.0},
+            ]
+        },
+        headers=auth,
+    )
+    assert good_batch.status_code == 200
+    assert good_batch.json()["evidence_created"] == 2
+    ana = client.get(f"/api/school-exams/{exam_id}/error-analysis", headers=auth).json()
+    assert ana["overview"]["confirmed_item_count"] == 3
+    assert ana["overview"]["unconfirmed_draft_count"] == 0
+
+
+def test_sync_drafts_enrichment_and_replace_guardrails(client, auth, student_auth, published, monkeypatch):
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    exam_id = make_exam(client, auth, title="虚构测试数据：校考平台抓取同步", earned_points=85, max_points=100)
+    assert post_items(client, auth, exam_id, [item("第1题", earned_points=3.0, max_points=3.0)]).status_code == 201
+
+    synced = client.post(
+        f"/api/school-exams/{exam_id}/sync-drafts",
+        json={
+            "source_name": "k12100",
+            "use_ai": False,
+            "items": [
+                {"question_label": "第1题", "earned_points": 1.0, "max_points": 3.0},
+                {"question_label": "4", "earned_points": 1.0, "max_points": 4.0, "stem_text": "实数运算求解", "wrong_reason": "符号看错"},
+                {"question_label": "第5题", "earned_points": 4.0, "max_points": 4.0, "stem_text": "基础几何推理"},
+            ],
+        },
+        headers=auth,
+    )
+    assert synced.status_code == 200
+    body = synced.json()
+    assert body["parser_mode_used"] == "external_local_rules"
+    assert body["evidence_created"] == 0
+    assert body["skipped_labels"] == ["第1题"]  # 已确认第1题绝不被外部同步覆盖
+    assert [it["question_label"] for it in body["created_items"]] == ["第4题", "第5题"]
+    assert body["created_items"][0]["draft_confidence"] == "external_sync"
+    assert body["created_items"][0]["confirmed_by_user"] is False
+
+    # 覆盖重同步时仅更新未确认第4题草稿，第1题仍跳过受保护
+    resynced = client.post(
+        f"/api/school-exams/{exam_id}/sync-drafts",
+        json={
+            "source_name": "k12100",
+            "use_ai": False,
+            "replace_unconfirmed_drafts": True,
+            "items": [
+                {"question_label": "第1题", "earned_points": 0.0, "max_points": 3.0},
+                {"question_label": "4", "earned_points": 2.0, "max_points": 4.0, "stem_text": "实数运算求解"},
+            ],
+        },
+        headers=auth,
+    )
+    assert resynced.status_code == 200
+    assert resynced.json()["skipped_labels"] == ["第1题"]
+    assert resynced.json()["created_items"][0]["earned_points"] == 2.0

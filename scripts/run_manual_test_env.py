@@ -19,6 +19,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -66,7 +67,104 @@ def wait_for_http(url: str, timeout: float = 30.0, headers: dict[str, str] | Non
     return False
 
 
-def start_env(use_mock_ai: bool = False) -> int:
+_AI_ENV_KEYS = (
+    "DEEPSEEK_API_KEY",
+    "SHUTONG_AI_API_KEY",
+    "SHUTONG_VISION_API_KEY",
+    "DEEPSEEK_BASE_URL",
+    "SHUTONG_AI_BASE_URL",
+    "SHUTONG_VISION_BASE_URL",
+    "SHUTONG_AI_MODEL",
+    "SHUTONG_TEXT_ENRICH_MODEL",
+    "SHUTONG_VISION_MODEL",
+)
+
+
+def _mask_secret(value: str) -> str:
+    """仅返回密钥首尾脱敏摘要，绝不向日志或终端回显明文。"""
+    text = (value or "").strip()
+    if not text:
+        return "未配置"
+    if len(text) <= 8:
+        return "***"
+    return f"{text[:4]}***{text[-4:]}"
+
+
+def _load_verified_env(path: Path, *, require_secure_dir: bool = False) -> dict[str, str]:
+    """校验文件所有权与 0600（可选目录 0700）权限后，仅读取 AI 相关配置键。"""
+    if not path.is_file():
+        return {}
+    uid = os.getuid()
+    if require_secure_dir:
+        dir_st = path.parent.stat()
+        if dir_st.st_uid != uid or (stat.S_IMODE(dir_st.st_mode) & 0o077) != 0:
+            return {}
+    file_st = path.stat()
+    if file_st.st_uid != uid or (stat.S_IMODE(file_st.st_mode) & 0o077) != 0:
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        key = k.strip()
+        val = v.strip().strip('"').strip("'")
+        if key in _AI_ENV_KEYS and val:
+            values[key] = val
+    return values
+
+
+def _inject_ai_env(api_env: dict[str, str], *, no_ai_key: bool = False) -> str:
+    """按优先级注入 DeepSeek / 书童 AI 密钥，并返回脱敏来源描述。"""
+    if no_ai_key:
+        for k in _AI_ENV_KEYS:
+            api_env.pop(k, None)
+        return "已禁用 (--no-ai-key，将真实触发无 Key 503 降级)"
+
+    source_label = ""
+    if api_env.get("SHUTONG_VISION_API_KEY", "").strip() or api_env.get("SHUTONG_AI_API_KEY", "").strip():
+        source_label = "环境变量 SHUTONG_AI_API_KEY / SHUTONG_VISION_API_KEY"
+    else:
+        k12_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(Path.home() / ".config" / "shutong"))).expanduser().resolve()
+        k12_ai = _load_verified_env(k12_dir / "k12100.env", require_secure_dir=True)
+        if k12_ai.get("DEEPSEEK_API_KEY") or k12_ai.get("SHUTONG_AI_API_KEY") or k12_ai.get("SHUTONG_VISION_API_KEY"):
+            api_env.update(k12_ai)
+            source_label = "~/.config/shutong/k12100.env (0700/0600)"
+        else:
+            dev_ai = _load_verified_env(_PAGEBOY_DEV_HOME / "env" / "dev.env", require_secure_dir=False)
+            if dev_ai.get("DEEPSEEK_API_KEY") or dev_ai.get("SHUTONG_AI_API_KEY") or dev_ai.get("SHUTONG_VISION_API_KEY"):
+                api_env.update(dev_ai)
+                source_label = "dev.env (0600)"
+            elif api_env.get("DEEPSEEK_API_KEY", "").strip():
+                source_label = "Shell 环境变量 DEEPSEEK_API_KEY"
+
+    resolved_key = (
+        api_env.get("SHUTONG_VISION_API_KEY", "").strip()
+        or api_env.get("SHUTONG_AI_API_KEY", "").strip()
+        or api_env.get("DEEPSEEK_API_KEY", "").strip()
+    )
+    if resolved_key:
+        for k in ("SHUTONG_AI_API_KEY", "SHUTONG_VISION_API_KEY", "DEEPSEEK_API_KEY"):
+            if not api_env.get(k, "").strip():
+                api_env[k] = resolved_key
+
+    resolved_url = (
+        api_env.get("SHUTONG_VISION_BASE_URL", "").strip()
+        or api_env.get("SHUTONG_AI_BASE_URL", "").strip()
+        or api_env.get("DEEPSEEK_BASE_URL", "").strip()
+    )
+    if resolved_url:
+        for k in ("SHUTONG_AI_BASE_URL", "SHUTONG_VISION_BASE_URL", "DEEPSEEK_BASE_URL"):
+            if not api_env.get(k, "").strip():
+                api_env[k] = resolved_url
+
+    if not resolved_key:
+        return "未配置 SHUTONG_AI_API_KEY / DEEPSEEK_API_KEY (引导与视觉接口将诚实返回 503)"
+    return f"{source_label or 'AI Key'} ({_mask_secret(resolved_key)})"
+
+
+def start_env(use_mock_ai: bool = False, no_ai_key: bool = False) -> int:
     """一键拉起人工测试环境与数据"""
     print("==================================================================")
     print("🚀 正在启动书童前端人工测试环境 (面向 iPadOS 模拟机)...")
@@ -120,9 +218,12 @@ def start_env(use_mock_ai: bool = False) -> int:
     mock_ai_proc = None
     pids: dict[str, int] = {}
 
-    # 2b. 可选：启动本地 OpenAI 兼容模拟 AI 服务（仅回环 127.0.0.1）
+    # 2b. 可选：启动本地 OpenAI 兼容模拟 AI 服务（仅回环 127.0.0.1），否则安全注入 DeepSeek AI 凭据
     api_env = os.environ.copy()
+    ai_source = ""
     if use_mock_ai:
+        for k in _AI_ENV_KEYS:
+            api_env.pop(k, None)
         print(f"🤖 正在启动本地模拟 AI 引导服务 (监听 127.0.0.1:{MOCK_AI_PORT})...")
         mock_log_file = open(TMP_DIR / "manual_mock_ai.log", "w", encoding="utf-8")
         mock_env = os.environ.copy()
@@ -143,6 +244,9 @@ def start_env(use_mock_ai: bool = False) -> int:
         api_env["SHUTONG_AI_BASE_URL"] = f"http://127.0.0.1:{MOCK_AI_PORT}/v1"
         api_env["SHUTONG_AI_API_KEY"] = "e2e-mock-key"
         api_env["SHUTONG_AI_MODEL"] = "deepseek-chat-mock"
+        ai_source = f"本地模拟 AI (127.0.0.1:{MOCK_AI_PORT})"
+    else:
+        ai_source = _inject_ai_env(api_env, no_ai_key=no_ai_key)
 
     # 3. 启动后端 API 服务
     print(f"🌐 正在启动后端 API 服务 (监听 127.0.0.1:{API_PORT})...")
@@ -213,7 +317,7 @@ import('./apps/web/e2e/global-setup.ts').then(async m => {
     PID_FILE.write_text(json.dumps(pids, indent=2), encoding="utf-8")
 
     # 7. 打印就绪信息与 iPadOS 模拟机操作入口
-    ai_mode = "本地模拟 AI (127.0.0.1:18766)" if use_mock_ai else ("真实 DeepSeek/OpenAI API (已配置密钥)" if api_env.get("SHUTONG_AI_API_KEY") else "未配置 SHUTONG_AI_API_KEY (引导接口将诚实返回 503)")
+    ai_mode = ai_source
     print("==================================================================")
     print("✅ 测试服务已在宿主机就绪！（仅监听回环地址，真实 iPad 不可访问；iPad 只连生产）")
     print(f"📱 iPadOS 模拟机访问入口 (学生端):  http://127.0.0.1:{WEB_PORT}")
@@ -311,10 +415,11 @@ def open_sim(landscape: bool = False) -> int:
 def main() -> None:
     args = sys.argv[1:]
     use_mock_ai = "--mock-ai" in args
+    no_ai_key = "--no-ai-key" in args
     positional = [a for a in args if not a.startswith("--")]
     action = positional[0] if positional else "status"
     if action == "start":
-        sys.exit(start_env(use_mock_ai=use_mock_ai))
+        sys.exit(start_env(use_mock_ai=use_mock_ai, no_ai_key=no_ai_key))
     elif action == "stop":
         sys.exit(stop_env())
     elif action == "status":

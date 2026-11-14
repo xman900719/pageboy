@@ -295,6 +295,52 @@ test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总�
   await expect(examRegion.locator('.exam-list')).toContainText('已核对')
   await expect(examRegion.locator('.exam-detail')).toContainText('总分已核对锁定')
 
+  // 无逐题失分明细时，「错误分析与复盘」Tab 如实提示数据不足，并可跳转补录小题
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  const analysisPanel = examRegion.locator('#exam-panel-analysis')
+  await expect(analysisPanel).toContainText('当前仅登记了试卷总分，尚无已核对的逐题失分明细')
+  await analysisPanel.getByRole('button', { name: '前往补录失分小题' }).click()
+
+  // 在「逐题得分与考点」Tab 录入本场失分小题（带错因分类与复盘备注）
+  const itemsPanel = examRegion.locator('#exam-panel-items')
+  await itemsPanel.getByLabel('题号（如 第1题）').fill('第5题')
+  await itemsPanel.getByLabel('知识点编码').fill('math.arithmetic')
+  await itemsPanel.getByLabel('小题得分').fill('2')
+  await itemsPanel.getByLabel('小题满分').fill('6')
+  await itemsPanel.getByLabel('错因分类（失分题选填）').selectOption('reading')
+  await itemsPanel.getByLabel('错题复盘备注').fill('漏看条件 x>0')
+  await itemsPanel.getByRole('button', { name: '录入已核对小题' }).click()
+
+  await expect(itemsPanel).toContainText('第5题')
+  await expect(itemsPanel).toContainText('漏看条件 x>0')
+
+  // 补充第二场更早数学月考并同样在 math.arithmetic 失分，验证跨考次顽固失分点对比
+  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  await examRegion.getByLabel('考试名称').fill('虚构测试数据：九月诊断月考')
+  await examRegion.getByLabel('考试日期').fill('2026-09-18')
+  await examRegion.getByLabel('获得分数').fill('86')
+  await examRegion.getByLabel('考试满分').fill('100')
+  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
+  await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：九月诊断月考')
+
+  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  await itemsPanel.getByLabel('题号（如 第1题）').fill('第3题')
+  await itemsPanel.getByLabel('知识点编码').fill('math.arithmetic')
+  await itemsPanel.getByLabel('小题得分').fill('1')
+  await itemsPanel.getByLabel('小题满分').fill('4')
+  await itemsPanel.getByLabel('错因分类（失分题选填）').selectOption('calculation')
+  await itemsPanel.getByLabel('错题复盘备注').fill('符号算错')
+  await itemsPanel.getByRole('button', { name: '录入已核对小题' }).click()
+  await expect(itemsPanel).toContainText('第3题')
+
+  // 切回 2026-10-20 场次并打开「错误分析与复盘」Tab 验证三卡联动与诚实用语
+  await examRegion.getByRole('button', { name: '2026-10-20 (85/100)' }).click()
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  await expect(analysisPanel).toContainText('本场失分概览与错因分布')
+  await expect(analysisPanel).toContainText('本场失分考点排行与交叉诊断')
+  await expect(analysisPanel).toContainText('同科历次校考顽固失分点对比')
+  await expect(analysisPanel).toContainText('本场再次失分')
+
   await expectHonestLanguage(page)
 })
 
@@ -359,6 +405,130 @@ test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷�
   await expect(detailRegion).toContainText('总分已核对锁定')
   await expect(examRegion.locator('.exam-list')).toContainText('43 / 50')
 
+  // 切至「逐题得分与考点」Tab：使用默认主题录入道法失分小题，再行内补充错因分类与复盘备注
+  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  const ethicsItemsPanel = examRegion.locator('#exam-panel-items')
+  await ethicsItemsPanel.getByRole('button', { name: '填入默认主题' }).click()
+  await ethicsItemsPanel.getByLabel('题号（如 第1题）').fill('第16题')
+  await ethicsItemsPanel.getByLabel('小题得分').fill('4')
+  await ethicsItemsPanel.getByLabel('小题满分').fill('8')
+  await ethicsItemsPanel.getByRole('button', { name: '录入已核对小题' }).click()
+  await expect(ethicsItemsPanel).toContainText('第16题')
+
+  await ethicsItemsPanel.getByRole('button', { name: '标注/修改错因' }).first().click()
+  await ethicsItemsPanel.getByLabel('第16题 错因分类').selectOption('norm')
+  await ethicsItemsPanel.getByLabel('第16题 错题复盘备注').fill('缺少材料分析')
+  await ethicsItemsPanel.getByRole('button', { name: '保存复盘' }).click()
+  await expect(ethicsItemsPanel).toContainText('缺少材料分析')
+
+  // 切至「错误分析与复盘」Tab：道法无考点体系时进入档案复盘模式，不虚构日常练习交叉诊断
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  const ethicsAnalysisPanel = examRegion.locator('#exam-panel-analysis')
+  await expect(ethicsAnalysisPanel).toContainText('本场失分概览与错因分布')
+  await expect(ethicsAnalysisPanel).toContainText('档案复盘')
+  await expect(ethicsAnalysisPanel).toContainText('道法综合主题')
+
+  await expectHonestLanguage(page)
+})
+
+function buildSyntheticTextPdf(lines: string[]): Buffer {
+  const cmds = ['BT', '/F1 14 Tf', '40 740 Td']
+  lines.forEach((line, idx) => {
+    const escaped = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+    if (idx > 0) cmds.push('0 -24 Td')
+    cmds.push(`(${escaped}) Tj`)
+  })
+  cmds.push('ET')
+  const stream = Buffer.from(cmds.join('\n'), 'ascii')
+  const objs = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [5 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `4 0 obj\n<< /Length ${stream.byteLength} >>\nstream\n${stream.toString('ascii')}\nendstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+  ]
+  const chunks = ['%PDF-1.4\n']
+  const offsets: number[] = []
+  let pos = Buffer.byteLength(chunks[0])
+  for (const obj of objs) {
+    offsets.push(pos)
+    chunks.push(obj)
+    pos += Buffer.byteLength(obj)
+  }
+  chunks.push(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`)
+  for (const off of offsets) chunks.push(`${String(off).padStart(10, '0')} 00000 n \n`)
+  chunks.push(`trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${pos}\n%%EOF\n`)
+  return Buffer.from(chunks.join(''), 'ascii')
+}
+
+test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿台修订丢弃与逐题确认联动错误分析', async ({ page }) => {
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+
+  const examRegion = page.getByRole('region', { name: '学校考试总分' })
+  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月数学自动草稿演示')
+  await examRegion.getByLabel('考试日期').fill('2026-10-16')
+  await examRegion.getByLabel('获得分数').fill('84')
+  await examRegion.getByLabel('考试满分').fill('100')
+  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
+  await expect(page.getByRole('status')).toContainText('学校考试已记录')
+
+  // 上传带可机读文本层的虚构试卷
+  await examRegion.getByRole('tab', { name: /原卷与答题卡/ }).click()
+  await examRegion.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
+    name: 'mock-math-text-paper.pdf',
+    mimeType: 'application/pdf',
+    buffer: buildSyntheticTextPdf([
+      '1. Compute quadratic equation roots',
+      '2. Prove triangle congruence',
+    ]),
+  })
+  await examRegion.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
+  await expect(page.getByRole('status')).toContainText('已加密隔离归档')
+
+  // 点击快捷跳转进入 Tab 3「逐题得分与考点」
+  await examRegion.getByRole('button', { name: '前往解析 M2 草稿' }).click()
+  const itemsPanel = examRegion.locator('#exam-panel-items')
+  await itemsPanel.getByLabel('草稿解析方式').selectOption('skeleton_only')
+  await itemsPanel.getByRole('button', { name: '生成待核对草稿' }).click()
+
+  const draftDesk = itemsPanel.getByRole('region', { name: '草稿校对台' })
+  await expect(draftDesk).toBeVisible()
+  await expect(draftDesk).toContainText('第1题')
+  await expect(draftDesk).toContainText('第2题')
+  await expect(draftDesk).toContainText('未确认 · 不进画像')
+
+  // 未人工确认草稿前，Tab 4 绝不计入正式错误分析
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  const analysisPanel = examRegion.locator('#exam-panel-analysis')
+  await expect(analysisPanel).toContainText('待补充逐题失分明细')
+
+  // 回到 Tab 3：丢弃第2题草稿，并修改第1题实得分/满分/错因/备注后确认入账
+  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  const q2Card = draftDesk.locator('li.draft-card-item', { hasText: '第2题' })
+  await q2Card.getByRole('button', { name: '丢弃草稿' }).click()
+  await expect(page.getByRole('status')).toContainText('已丢弃「第2题」未确认草稿')
+
+  const q1Card = draftDesk.locator('li.draft-card-item', { hasText: '第1题' })
+  await q1Card.getByLabel('第1题 草稿实得分').fill('1.5')
+  await q1Card.getByLabel('第1题 草稿满分').fill('3')
+  await q1Card.getByLabel('第1题 草稿知识点编码').fill('math.num.real')
+  await q1Card.getByLabel('第1题 草稿错因分类').selectOption('calculation')
+  await q1Card.getByLabel('第1题 草稿复盘备注').fill('正负号移项遗漏')
+  await q1Card.getByRole('button', { name: '确认入账' }).click()
+
+  await expect(page.getByRole('status')).toContainText('已完成人工核对并正式入账')
+  await expect(draftDesk).toHaveCount(0)
+  const confirmedList = itemsPanel.getByRole('region', { name: '逐题得分与考点明细' })
+  await expect(confirmedList).toContainText('第1题')
+  await expect(confirmedList).toContainText('已确认')
+  await expect(confirmedList).toContainText('运算/粗心失误')
+
+  // Tab 4 随之上报真实失分错因
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  await expect(analysisPanel).toContainText('本场失分概览与错因分布')
+  await expect(analysisPanel).toContainText('运算/粗心失误')
   await expectHonestLanguage(page)
 })
 

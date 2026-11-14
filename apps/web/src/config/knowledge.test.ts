@@ -10,6 +10,8 @@ import {
   getModelVersionLabel,
   getOperatorLabel,
   getReleaseStatusLabel,
+  getSchoolErrorCategoryLabel,
+  SCHOOL_ERROR_CATEGORY_OPTIONS,
 } from './knowledge'
 
 describe('knowledge 与 locale-labels 配置文件读取与本地化解析', () => {
@@ -60,5 +62,9 @@ describe('knowledge 与 locale-labels 配置文件读取与本地化解析', () 
         clause_number: '1.1',
       })
     ).toBe('数与代数 · 数与式 · 有理数（1.1）')
+    expect(SCHOOL_ERROR_CATEGORY_OPTIONS).toHaveLength(6)
+    expect(getSchoolErrorCategoryLabel('concept')).toBe('概念/公式不清')
+    expect(getSchoolErrorCategoryLabel('calculation')).toBe('运算/粗心失误')
+    expect(getSchoolErrorCategoryLabel(null)).toBe('未归类错因')
   })
 })
