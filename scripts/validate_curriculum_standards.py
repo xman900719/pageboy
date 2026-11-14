@@ -34,10 +34,11 @@ from shutong.curriculum_standards import (
     SubjectEnum
 )
 from shutong.corpus.taxonomy import TAXONOMY
+from shutong.home import curriculum_standards_dir
 
 SCHEMAS_DIR = ROOT / "contracts" / "schemas"
 CONTRACTS_DIR = ROOT / "contracts"
-PRIVATE_STANDARDS_DIR = ROOT / "private-data" / "curriculum_standards"
+PRIVATE_STANDARDS_DIR = curriculum_standards_dir()
 
 
 def get_validator(schema_filename: str) -> Draft202012Validator:

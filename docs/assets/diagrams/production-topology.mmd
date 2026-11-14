@@ -10,7 +10,7 @@ flowchart TB
         CADDY["宿主机 Caddy 反代服务 (端口 8180)\n【阻断: 外部 CF-Ray 访问 /admin*】"]
     end
 
-    subgraph 生产环境隔离根目录 ["/media/xc/backup_ext4/prod-env/pageboy (用户 shutong-prod)"]
+    subgraph 生产环境隔离根目录 ["/media/xc/backup_ext4/pageboy-home/production (用户 shutong-prod)"]
         subgraph 代码与发布 ["代码与发布"]
             RELEASE_GIT["单向裸仓库: release.git (属组 shutong-deploy, 710)"]
             PROD_REPO["生产工作树: repo"]

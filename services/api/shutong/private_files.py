@@ -14,7 +14,9 @@ import zipfile
 from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
-DEFAULT_PRIVATE_DIR = Path(__file__).resolve().parents[1] / "private-data" / "attachments"
+from .home import assert_no_cross_environment_path, default_attachments_dir
+
+DEFAULT_PRIVATE_DIR = default_attachments_dir()
 MAX_BYTES = 35 * 1024 * 1024
 MAX_PAGES = 40
 MAX_PIXELS = 20_000_000
@@ -37,7 +39,9 @@ _OCR_NOISE_RE = re.compile(
 
 
 def private_root():
-    return Path(os.getenv("SHUTONG_PRIVATE_DIR", str(DEFAULT_PRIVATE_DIR))).resolve()
+    raw = os.getenv("SHUTONG_PRIVATE_DIR")
+    target = Path(raw) if raw else default_attachments_dir()
+    return assert_no_cross_environment_path(target)
 
 
 def blob_path(key):

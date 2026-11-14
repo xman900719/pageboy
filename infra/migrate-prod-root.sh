@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # 书童生产环境根目录迁移脚本（需 root 执行）
-# 将生产环境从 /srv/shutong 平滑迁移到 /media/xc/backup_ext4/prod-env/pageboy
-# 用法：sudo bash infra/migrate-prod-root.sh [/media/xc/backup_ext4/prod-env/pageboy]
+# 将生产环境平滑迁移到 /media/xc/backup_ext4/pageboy-home/production
+# 用法：sudo bash infra/migrate-prod-root.sh [/media/xc/backup_ext4/pageboy-home/production] [旧生产目录]
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "需要 root 权限，请执行：sudo bash $0" >&2; exit 1; }
 DEV_USER="${SUDO_USER:?请经 sudo 由开发用户执行（需要 SUDO_USER 以配置安全目录与推送权限）}"
 PROD_USER=shutong-prod
 DEPLOY_GROUP=shutong-deploy
-OLD_ROOT=/srv/shutong
-NEW_ROOT="${1:-/media/xc/backup_ext4/prod-env/pageboy}"
+NEW_ROOT="${1:-/media/xc/backup_ext4/pageboy-home/production}"
+OLD_ROOT="${2:-/media/xc/backup_ext4/prod-env/pageboy}"
 
 echo "=========================================================="
 echo "书童生产环境迁移向导"

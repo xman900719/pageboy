@@ -70,11 +70,12 @@ async function publishQuestion(sourceId: string, question: Record<string, unknow
   return created.id
 }
 
-// 确保无私有课标 PDF 的 CI 环境同样具备合成课标标记文件（与 conftest.py 协议一致，不覆盖真实大文件）。
+// 确保无私有课标 PDF 的 CI 环境同样具备合成课标标记文件（与 conftest.py 协议一致，不污染源码树）。
 function ensureSyntheticCurriculumStandards(): void {
   const currentDir = path.dirname(fileURLToPath(import.meta.url))
   const repoRoot = path.resolve(currentDir, '..', '..', '..')
-  const pdfDir = path.join(repoRoot, 'private-data', 'curriculum_standards')
+  const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
+  const pdfDir = process.env.SHUTONG_STANDARDS_DIR ?? `${tmpRoot}/st008-e2e-standards`
   const sourcesPath = path.join(repoRoot, 'contracts', 'curriculum_sources.json')
   if (!fs.existsSync(sourcesPath)) return
 

@@ -9,13 +9,15 @@ set -euo pipefail
 DEV_USER="${SUDO_USER:?请经 sudo 由开发用户执行（需要 SUDO_USER 以授予发布推送权限）}"
 PROD_USER=shutong-prod
 DEPLOY_GROUP=shutong-deploy
-ROOT="${SHUTONG_PROD_ROOT:-/media/xc/backup_ext4/prod-env/pageboy}"
+HOME_ROOT="${PAGEBOY_HOME:-/media/xc/backup_ext4/pageboy-home}"
+ROOT="${SHUTONG_PROD_ROOT:-$HOME_ROOT/production}"
 DEV_INFRA="$(cd "$(dirname "$0")" && pwd)"
 
-# 0. 权限穿透：若生产根目录位于 /media/xc 下，为生产用户打通 /media/xc 的穿透权限
+# 0. 权限穿透：若生产根目录位于 /media/xc 下，为生产用户打通 /media/xc 与 PAGEBOY_HOME 的穿透权限
 if [[ "$ROOT" == /media/xc/* ]]; then
   setfacl -m "u:$PROD_USER:--x" /media/xc 2>/dev/null || true
 fi
+install -d -m 755 "$HOME_ROOT"
 
 # 1. 用户与组：生产用户可用系统 Docker；开发用户仅加入发布组（只能向裸仓库推送代码，读不到 env/）。
 id "$PROD_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$PROD_USER"
@@ -24,9 +26,20 @@ usermod -aG docker "$PROD_USER"
 getent group "$DEPLOY_GROUP" >/dev/null || groupadd "$DEPLOY_GROUP"
 usermod -aG "$DEPLOY_GROUP" "$DEV_USER"
 
-# 2. 目录：env/data/logs 仅生产用户可读；ROOT 本身 750。
-install -d -o "$PROD_USER" -g "$PROD_USER" -m 750 "$ROOT" "$ROOT/env" "$ROOT/data" "$ROOT/logs" "$ROOT/bin"
-install -d -o "$PROD_USER" -g "$PROD_USER" -m 700 "$ROOT/data/attachments"
+# 2. 目录与身份：env/data/logs 仅生产用户可读；ROOT 本身 710。
+install -d -o "$PROD_USER" -g "$PROD_USER" -m 750 "$ROOT" "$ROOT/repo" "$ROOT/logs" "$ROOT/bin"
+install -d -o "$PROD_USER" -g "$PROD_USER" -m 700 "$ROOT/env" "$ROOT/data" "$ROOT/data/attachments" "$ROOT/data/curriculum_standards"
+if [[ ! -f "$ROOT/home.json" ]]; then
+  cat > "$ROOT/home.json" <<'EOF'
+{
+  "format_version": 1,
+  "workspace_id": "pageboy-production",
+  "environment": "production"
+}
+EOF
+  chown "$PROD_USER:$PROD_USER" "$ROOT/home.json"
+  chmod 600 "$ROOT/home.json"
+fi
 
 # 3. 单向发布裸仓库：开发 push → 生产 pull（生产用户读不到开发目录，开发用户读不到生产机密）。
 if [[ ! -d "$ROOT/release.git" ]]; then
@@ -46,11 +59,14 @@ chgrp "$DEPLOY_GROUP" "$ROOT"; chmod 710 "$ROOT"
 if [[ ! -f "$ROOT/env/prod.env" ]]; then
   [[ -f "$DEV_INFRA/.env" ]] || { echo "缺少 $DEV_INFRA/.env" >&2; exit 1; }
   uid="$(id -u "$PROD_USER")"; gid="$(id -g "$PROD_USER")"
-  grep -v -E '^(RESTIC_PASSWORD_FILE|ATTACHMENTS_DIR|SHUTONG_ATTACHMENTS_DIR|SHUTONG_UID|SHUTONG_GID)=' "$DEV_INFRA/.env" > "$ROOT/env/prod.env"
+  grep -v -E '^(PAGEBOY_HOME|SHUTONG_ENV|RESTIC_PASSWORD_FILE|ATTACHMENTS_DIR|SHUTONG_ATTACHMENTS_DIR|SHUTONG_STANDARDS_DIR|SHUTONG_UID|SHUTONG_GID)=' "$DEV_INFRA/.env" > "$ROOT/env/prod.env"
   {
+    echo "PAGEBOY_HOME=$HOME_ROOT"
+    echo "SHUTONG_ENV=prod"
     echo "RESTIC_PASSWORD_FILE=$ROOT/env/restic-password"
     echo "ATTACHMENTS_DIR=$ROOT/data/attachments"
     echo "SHUTONG_ATTACHMENTS_DIR=$ROOT/data/attachments"
+    echo "SHUTONG_STANDARDS_DIR=$ROOT/data/curriculum_standards"
     echo "SHUTONG_UID=$uid"
     echo "SHUTONG_GID=$gid"
   } >> "$ROOT/env/prod.env"

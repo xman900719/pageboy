@@ -12,6 +12,7 @@ const pyCmd = process.env.PY_CMD ?? '../../.venv/bin/python'
 const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
 const dbFile = `${tmpRoot}/st008-e2e.sqlite3`
 const attachmentsDir = `${tmpRoot}/st008-e2e-attachments`
+const standardsDir = process.env.SHUTONG_STANDARDS_DIR ?? `${tmpRoot}/st008-e2e-standards`
 /**
  * ST-010 iPad 仿真通道：`npm run test:e2e:ipad`（E2E_DEVICE=ipad）时整套测试改在
  * WebKit（Safari 同源引擎）+ iPad (gen 7) 描述符（810×1080、触摸、isMobile）下运行。
@@ -57,6 +58,7 @@ export default defineConfig({
         SHUTONG_ALLOW_SYNTHETIC_STANDARDS: '1',
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
+        SHUTONG_STANDARDS_DIR: standardsDir,
         // shutong 包位于 services/api；相对路径按 webServer cwd（apps/web）解析。
         // CI 经 pip -e 安装时本变量冗余无害。
         PYTHONPATH: '../services/api',

@@ -109,7 +109,7 @@ def seed_corpus(
                 session.commit()
 
                 # 物理清理磁盘存储文件
-                att_dir = Path(os.environ.get("SHUTONG_PRIVATE_DIR") or files.DEFAULT_PRIVATE_DIR)
+                att_dir = files.private_root()
                 deleted_files = 0
                 if att_dir.is_dir():
                     for key in storage_keys:

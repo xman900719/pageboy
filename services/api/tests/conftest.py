@@ -2,21 +2,22 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tempfile
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 from shutong.database import Base, get_db
+from shutong.home import curriculum_standards_dir
 from shutong.main import app
 
 
 @pytest.fixture(autouse=True, scope="session")
 def setup_test_curriculum_standards():
-    """在测试环境中确保课程标准文件准备就绪，支持合成课标原件协议。"""
+    """在测试环境中确保课程标准文件准备就绪；若宿主 Home 无原件，则在临时目录生成合成原件，不污染源码树。"""
     os.environ["SHUTONG_ALLOW_SYNTHETIC_STANDARDS"] = "1"
     root = Path(__file__).resolve().parents[3]
-    pdf_dir = root / "private-data" / "curriculum_standards"
     sources_path = root / "contracts" / "curriculum_sources.json"
 
     local_name_map = {
@@ -26,7 +27,13 @@ def setup_test_curriculum_standards():
         "physics": "义务教育物理课程标准（2022年版）.pdf",
     }
 
-    if sources_path.is_file():
+    host_pdf_dir = curriculum_standards_dir()
+    has_all_host_files = host_pdf_dir.is_dir() and all(
+        (host_pdf_dir / fname).is_file() for fname in local_name_map.values()
+    )
+    if not has_all_host_files and sources_path.is_file():
+        pdf_dir = Path(tempfile.gettempdir()) / "pageboy-test-standards"
+        os.environ["SHUTONG_STANDARDS_DIR"] = str(pdf_dir)
         try:
             with open(sources_path, "r", encoding="utf-8") as f:
                 sources = json.load(f)

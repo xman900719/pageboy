@@ -6,7 +6,7 @@
 
 ## 1. 生产环境定位与架构全景
 
-书童生产环境部署于宿主机独立大容量存储路径 `/media/xc/backup_ext4/prod-env/pageboy` 下，采用宿主机反向代理（Caddy）与容器化服务（Docker Compose）协同架构，保障真实学员日常学习与真题原卷资产的高可靠运行。
+书童生产环境部署于宿主机统一运行根目录下的隔离环境 `/media/xc/backup_ext4/pageboy-home/production`，与开发环境 `/media/xc/backup_ext4/pageboy-home/development` 在同一 `PAGEBOY_HOME` 下按 OS 用户与 `home.json` 身份实现彻底隔离，采用宿主机反向代理（Caddy）与容器化服务（Docker Compose）协同架构，保障真实学员日常学习与真题原卷资产的高可靠运行。
 
 ![生产环境全景拓扑](../assets/diagrams/production-topology.svg)
 
@@ -26,7 +26,7 @@ flowchart TB
         CADDY["宿主机 Caddy 反代服务 (端口 8180)\n【阻断: 外部 CF-Ray 访问 /admin*】"]
     end
 
-    subgraph 生产环境隔离根目录 ["/media/xc/backup_ext4/prod-env/pageboy (用户 shutong-prod)"]
+    subgraph 生产环境隔离根目录 ["/media/xc/backup_ext4/pageboy-home/production (用户 shutong-prod)"]
         subgraph 代码与发布 ["代码与发布"]
             RELEASE_GIT["单向裸仓库: release.git (属组 shutong-deploy, 710)"]
             PROD_REPO["生产工作树: repo"]
@@ -81,7 +81,7 @@ flowchart TB
 
 | 实体 / 账户 | 身份定义 | 权限边界与所属组 |
 |---|---|---|
-| **`shutong-prod`** | 生产专用非特权系统账户 | 拥有 `/media/xc/backup_ext4/prod-env/pageboy` 的完全所有权；加入宿主 `docker` 组以管理容器；**无登录口令，仅限管理员经 `sudo -iu shutong-prod` 提权进入**。 |
+| **`shutong-prod`** | 生产专用非特权系统账户 | 拥有 `/media/xc/backup_ext4/pageboy-home/production` 的完全所有权；加入宿主 `docker` 组以管理容器；**无登录口令，仅限管理员经 `sudo -iu shutong-prod` 提权进入**。 |
 | **`shutong-deploy`** | 部署通信用户组 | 仅对 `release.git` 裸仓库具备读写（推送）权限；绝对无法读取生产目录下的 `env/`（0600）与 `data/`（0700）。 |
 | **`xc` (开发用户)** | 本地开发者账户 | 隶属于 `shutong-deploy` 组，负责日常开发与代码提交，只能通过 Git 向 `release.git` 推送分支，无系统 `docker` 权限。 |
 
@@ -89,28 +89,32 @@ flowchart TB
 
 ## 3. 持久化存储与配置布局
 
-生产根目录 `/media/xc/backup_ext4/prod-env/pageboy` 的标准目录结构：
+生产根目录 `/media/xc/backup_ext4/pageboy-home/production` 的标准目录结构：
 
 ```
-/media/xc/backup_ext4/prod-env/pageboy/
-├── release.git/          # 单向发布裸仓库 (属组: shutong-deploy, 权限: 710)
-├── repo/                 # 生产代码检出工作树 (从 release.git pull)
+/media/xc/backup_ext4/pageboy-home/production/
+├── home.json             # 生产环境身份清单 (0600, pageboy-production)
+├── release.git/          # 单向发布裸仓库 (属组: shutong-deploy, 2770)
+├── repo/                 # 生产代码检出工作树 (权限: 750, 从 release.git pull)
 │   ├── apps/web/dist/    # 生产 Web 静态编译产物 (由 Caddy 直接伺服)
 │   └── infra/            # 生产部署、回滚与容器配置文件
 ├── env/                  # 生产机密专有目录 (权限: 700)
 │   ├── prod.env          # 生产核心环境变量与口令 (权限: 0600)
 │   └── restic-password   # R2 异地备份 restic 独立加密密钥 (权限: 0600)
-├── data/                 # 真实生产数据资产目录 (权限: 750)
-│   └── attachments/      # 真实试卷原件 PDF、图片与听力音频 (权限: 700)
-├── bin/                  # 生产常驻依赖工具 (caddy, restic 等)
+├── data/                 # 真实生产数据资产目录 (权限: 700)
+│   ├── attachments/      # 真实试卷原件 PDF、图片与听力音频 (权限: 700)
+│   └── curriculum_standards/ # 四科教育部 2022 版官方课标 PDF 原件 (权限: 700)
+├── bin/                  # 生产常驻依赖工具 (caddy, restic 等, 权限: 750)
 └── logs/                 # 生产服务运行与轮转日志目录 (权限: 750)
 ```
 
 ### 核心环境变量速览 (`env/prod.env`)
+- `PAGEBOY_HOME=/media/xc/backup_ext4/pageboy-home`：统一运行根目录。
 - `SHUTONG_ENV=prod`：生产环境标识，应用通过 `/health/live` 自报环境，防止演示脚本误写真实库。
 - `DATABASE_URL`：连接生产专用 PostgreSQL 16 实例。
 - `SHUTONG_TOKEN`：学员与管理员访问生产 API 的高强度强密钥。
-- `ATTACHMENTS_DIR`：挂载物理路径指向 `/media/xc/backup_ext4/prod-env/pageboy/data/attachments`。
+- `ATTACHMENTS_DIR`：挂载物理路径指向 `/media/xc/backup_ext4/pageboy-home/production/data/attachments`。
+- `SHUTONG_STANDARDS_DIR`：挂载物理路径指向 `/media/xc/backup_ext4/pageboy-home/production/data/curriculum_standards`。
 
 ---
 
@@ -159,7 +163,7 @@ sequenceDiagram
     participant Stack as 生产容器栈 (Docker)
     participant Caddy as Caddy 反代服务
 
-    Dev->>Git: git push /media/xc/backup_ext4/prod-env/pageboy/release.git HEAD:refs/heads/release
+    Dev->>Git: git push /media/xc/backup_ext4/pageboy-home/production/release.git HEAD:refs/heads/release
     Note over Dev,Prod: 切换至生产用户
     Prod->>Git: git pull (在 repo 目录下拉取更新)
     Prod->>Stack: 执行 infra/deploy.sh --web
@@ -177,13 +181,13 @@ sequenceDiagram
 ```bash
 # 步骤 1：开发机提交并通过本地门禁后，推送到生产发布裸仓库
 cd /media/xc/backup_ext4/code/pageboy
-git push /media/xc/backup_ext4/prod-env/pageboy/release.git HEAD:refs/heads/release
+git push /media/xc/backup_ext4/pageboy-home/production/release.git HEAD:refs/heads/release
 
 # 步骤 2：切换至生产专用用户
 sudo -iu shutong-prod
 
 # 步骤 3：在生产检出代码库拉取并执行部署
-cd /media/xc/backup_ext4/prod-env/pageboy/repo
+cd /media/xc/backup_ext4/pageboy-home/production/repo
 git pull
 infra/deploy.sh --web
 
@@ -203,7 +207,7 @@ docker compose --env-file ../env/prod.env -f infra/compose.yaml -f infra/compose
 ### 6.1 触发回滚命令
 ```bash
 sudo -iu shutong-prod
-cd /media/xc/backup_ext4/prod-env/pageboy/repo
+cd /media/xc/backup_ext4/pageboy-home/production/repo
 
 # 回滚到上一个已部署标签 (读取 infra/.local/previous-tag)
 infra/rollback.sh
@@ -245,7 +249,7 @@ bash infra/restore.sh <backup_tarball_path>
 ```bash
 # 1. 登录生产用户
 sudo -iu shutong-prod
-cd /media/xc/backup_ext4/prod-env/pageboy/repo
+cd /media/xc/backup_ext4/pageboy-home/production/repo
 
 # 2. 检查生产容器运行状态
 docker compose --env-file ../env/prod.env -f infra/compose.yaml -f infra/compose.local.yaml ps
@@ -260,10 +264,10 @@ curl -s http://127.0.0.1:18000/health/ready | jq .
 curl -s -I http://127.0.0.1:8180/ | head -5
 
 # 5. 手动触发一次生产异地联合备份
-cd /media/xc/backup_ext4/prod-env/pageboy/repo/infra
+cd /media/xc/backup_ext4/pageboy-home/production/repo/infra
 bash backup.sh
 
 # 6. 查看 R2 异地备份快照列表
-export RESTIC_PASSWORD_FILE=/media/xc/backup_ext4/prod-env/pageboy/env/restic-password
-/media/xc/backup_ext4/prod-env/pageboy/bin/restic snapshots
+export RESTIC_PASSWORD_FILE=/media/xc/backup_ext4/pageboy-home/production/env/restic-password
+/media/xc/backup_ext4/pageboy-home/production/bin/restic snapshots
 ```

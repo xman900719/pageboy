@@ -22,10 +22,10 @@ from shutong.curriculum_standards import (
     StageEnum,
 )
 from shutong.corpus.taxonomy import TAXONOMY
+from shutong.home import curriculum_standards_dir
 
 ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS_DIR = ROOT / "contracts"
-PRIVATE_STANDARDS_DIR = ROOT / "private-data" / "curriculum_standards"
 
 
 def test_sources_count_and_subjects():
@@ -222,7 +222,7 @@ def test_local_files_sha256_if_downloaded():
     }
     for s in sources:
         fname = local_name_map[s.subject.value]
-        fpath = PRIVATE_STANDARDS_DIR / fname
+        fpath = curriculum_standards_dir() / fname
         if fpath.exists():
             ver = verify_source_integrity(s, fpath)
             assert ver["file_verified"] is True

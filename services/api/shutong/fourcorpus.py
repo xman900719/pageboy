@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from . import models as m
 from .auth import require_admin
 from .database import get_db
+from .home import curriculum_standards_dir
 from .research import RULE_VERSION, coverage_report, statistics, backtest, predict
 from .schemas import Subject
 
@@ -964,7 +965,7 @@ def publish_taxonomy_release(p: TaxonomyReleaseIn, db: Session = Depends(get_db)
 
     # 2. 定位官方课标原件目录并逐一核验物理文件 (Fail-closed: 找不到原件或哈希不匹配坚决拒绝发布)
     import hashlib
-    pdf_dir = _repo_path("private-data/curriculum_standards")
+    pdf_dir = curriculum_standards_dir()
     if not pdf_dir.is_dir():
         raise HTTPException(
             status_code=400,

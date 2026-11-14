@@ -1,6 +1,6 @@
 [Unit]
 Description=书童生产入口 Caddy（静态 Web + API 反代，监听 :8180，由 cloudflared 隧道接入）
-Documentation=file:///media/xc/backup_ext4/prod-env/pageboy/repo/docs/operations/prod-separation-runbook.md
+Documentation=file:///media/xc/backup_ext4/pageboy-home/production/repo/docs/operations/prod-separation-runbook.md
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -8,8 +8,8 @@ Wants=network-online.target
 # 以生产专用用户运行，工作目录必须是生产检出的 infra/（Caddyfile.local 的相对路径 ../apps/web/dist 依赖它）。
 User=shutong-prod
 Group=shutong-prod
-WorkingDirectory=/media/xc/backup_ext4/prod-env/pageboy/repo/infra
-ExecStart=/media/xc/backup_ext4/prod-env/pageboy/bin/caddy run --config Caddyfile.local
+WorkingDirectory=/media/xc/backup_ext4/pageboy-home/production/repo/infra
+ExecStart=/media/xc/backup_ext4/pageboy-home/production/bin/caddy run --config Caddyfile.local
 Restart=on-failure
 RestartSec=5s
 

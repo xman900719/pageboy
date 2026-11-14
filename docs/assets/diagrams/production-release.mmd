@@ -6,7 +6,7 @@ sequenceDiagram
     participant Stack as 生产容器栈 (Docker)
     participant Caddy as Caddy 反代服务
 
-    Dev->>Git: git push /media/xc/backup_ext4/prod-env/pageboy/release.git HEAD:refs/heads/release
+    Dev->>Git: git push /media/xc/backup_ext4/pageboy-home/production/release.git HEAD:refs/heads/release
     Note over Dev,Prod: 切换至生产用户
     Prod->>Git: git pull (在 repo 目录下拉取更新)
     Prod->>Stack: 执行 infra/deploy.sh --web

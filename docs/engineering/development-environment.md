@@ -147,7 +147,7 @@ uv pip install -e "services/api[test]"
 
 ### 4.3 数据库管理与迁移
 
-本地开发默认使用 SQLite 数据库（固定为 `services/api/shutong-dev.sqlite3`，与启动目录无关，零环境依赖）：
+本地开发默认使用 SQLite 数据库（固定为 `/media/xc/backup_ext4/pageboy-home/development/data/shutong-dev.sqlite3`，通过 `PAGEBOY_HOME` 统一解析，与启动目录无关，零源码树污染）：
 
 ```bash
 # 执行数据库迁移到最新版 (Head)
@@ -157,14 +157,28 @@ uv run alembic -c services/api/alembic.ini upgrade head
 uv run alembic -c services/api/alembic.ini current
 ```
 
-### 4.4 启动本地开发后端
+### 4.4 配置开发令牌与一键启动本地开发环境
+
+开发凭据统一存放在宿主机隔离目录 `/media/xc/backup_ext4/pageboy-home/development/env/dev.env`（`0600` 权限，不进入 Git），前端仅在 `vite dev` 开发模式从已忽略的 `apps/web/.env.development.local` 自动读取并免手动登录（`npm run build` 生产产物绝对不包含任何开发凭据）：
 
 ```bash
-# 设置本地开发测试用的随机 Token
-export SHUTONG_TOKEN=""
+# 1. 初始化或同步开发双端令牌（dev.env + apps/web/.env.development.local）
+uv run python scripts/run_dev_env.py init-env
 
-# 启动 FastAPI 本地开发服务 (严格锁定 127.0.0.1 回环地址)
-uv run uvicorn shutong.main:app --host 127.0.0.1 --port 8000 --reload
+# 2. 一键启动日常开发环境（自动升级开发库 + 后端 127.0.0.1:8000 + Vite dev 127.0.0.1:5173）
+uv run python scripts/run_dev_env.py start
+
+# 3. 查看状态 / 拉起 iPad 模拟机 / 停止服务
+uv run python scripts/run_dev_env.py status
+uv run python scripts/run_dev_env.py sim
+uv run python scripts/run_dev_env.py stop
+```
+
+如需手动单起后端，可加载隔离配置后启动 FastAPI（严格锁定 `127.0.0.1` 回环地址）：
+
+```bash
+set -a && source /media/xc/backup_ext4/pageboy-home/development/env/dev.env && set +a
+uv --directory services/api run uvicorn shutong.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ---
@@ -190,7 +204,7 @@ npm run build
 
 ### 5.2 前端启动模式
 
-- **开发模式（热重载，监听 127.0.0.1:5173）**：
+- **开发模式（热重载，监听 127.0.0.1:5173；自动读取 `VITE_DEV_*` 免手动输令牌，点「退出」可复测令牌门）**：
   
   ```bash
   cd apps/web
@@ -250,12 +264,13 @@ flowchart LR
 bash scripts/check_env_isolation.sh
 ```
 
-脚本将强制校验以下四项安全不变量：
+脚本将强制校验以下安全不变量：
 
-1. **生产机密不可读**：开发用户 `xc` 绝对不可读 `prod.env`（权限 0600，且归属 `shutong-prod` 用户）。
-2. **Docker 权限隔离**：开发用户 `xc` 绝不在系统 `docker` 组中（避免借助宿主 docker daemon 越权访问生产持久卷）。
-3. **工作树干净无残留**：开发代码树中严禁残留 `infra/.env`、`restic-password` 或真实试卷附件文件。
-4. **服务端口锁定回环**：端口 `18765`、`4173`、`5173`、`8000` 只能在 `127.0.0.1` 监听；若监听 `0.0.0.0` 则直接报错拦截。
+1. **双环境 Home 目录强隔离**：`/media/xc/backup_ext4/pageboy-home/development` 权限 `0700` 且归属开发用户 `xc`（含 `home.json` 身份声明）；`/media/xc/backup_ext4/pageboy-home/production` 权限 `0710` 且归属 `shutong-prod:shutong-deploy`。
+2. **生产机密与数据不可读**：开发用户 `xc` 绝对不可读 `production/env/prod.env`（`0600`）、`production/env/restic-password`、`production/data` 与 `production/repo`。
+3. **Docker 权限隔离**：开发用户 `xc` 绝不在系统 `docker` 组中（避免借助宿主 docker daemon 越权访问生产持久卷）。
+4. **代码仓库零运行时残留**：源码树 `/media/xc/backup_ext4/code/pageboy` 内严禁残留 `*.sqlite3`、`private-data/`、`services/api/private-data/`、`infra/.env` 或 `infra/.local/`。
+5. **服务端口锁定回环**：端口 `18765`、`4173`、`5173`、`8000` 只能在 `127.0.0.1` 监听；`:8180` 不得由开发用户进程占用。
 
 ---
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { createClient, SUBJECTS, SUBJECT_LABELS, type Subject } from './api'
+import { clearDevAuthArtifacts, markDevLoggedIn, markDevLoggedOut, resolveDevAutoToken } from './devAuth'
 import { VIEWS, type ViewId } from './copy'
 import Notice, { type NoticeData, type NoticeTone } from './components/Notice.vue'
 import Gate from './components/Gate.vue'
@@ -41,18 +42,34 @@ onMounted(() => {
     // 忽略异常
   }
   const saved = localStorage.getItem(TOKEN_STORE_KEY)
-  if (!saved) return
-  createClient(saved, 'student')
-    .verify()
-    .then(() => {
-      if (token.value !== '') return
-      notify('已用本机记住的令牌自动进入。', 'success')
-      token.value = saved
-    })
-    .catch(() => {
-      // 令牌已失效（如服务端轮换）：如实清除，不留在本机。
-      localStorage.removeItem(TOKEN_STORE_KEY)
-    })
+  if (saved) {
+    createClient(saved, 'student')
+      .verify()
+      .then(() => {
+        if (token.value !== '') return
+        notify('已用本机记住的令牌自动进入。', 'success')
+        token.value = saved
+      })
+      .catch(() => {
+        // 令牌已失效（如服务端轮换）：如实清除，不留在本机。
+        localStorage.removeItem(TOKEN_STORE_KEY)
+      })
+    return
+  }
+  if (import.meta.env.DEV) {
+    const devToken = resolveDevAutoToken('student', import.meta.env.VITE_DEV_STUDENT_TOKEN)
+    if (!devToken) return
+    createClient(devToken, 'student')
+      .verify()
+      .then(() => {
+        if (token.value !== '') return
+        notify('已使用开发环境配置令牌自动进入。', 'success')
+        token.value = devToken
+      })
+      .catch(() => {
+        clearDevAuthArtifacts('student')
+      })
+  }
 })
 
 async function enter(nextToken: string, remember: boolean) {
@@ -62,12 +79,7 @@ async function enter(nextToken: string, remember: boolean) {
   else localStorage.removeItem(TOKEN_STORE_KEY)
   token.value = nextToken
   if (import.meta.env.DEV) {
-    try {
-      sessionStorage.setItem('shutong.dev_token_student', nextToken)
-      sessionStorage.removeItem('shutong.dev_logout_student')
-    } catch {
-      // 忽略
-    }
+    markDevLoggedIn('student', nextToken)
   }
   notify('已进入私有学习空间。', 'success')
 }
@@ -80,12 +92,7 @@ function signOut() {
     // 忽略异常
   }
   if (import.meta.env.DEV) {
-    try {
-      sessionStorage.removeItem('shutong.dev_token_student')
-      sessionStorage.setItem('shutong.dev_logout_student', 'true')
-    } catch {
-      // 忽略
-    }
+    markDevLoggedOut('student')
   }
   token.value = ''
   notice.value = null
