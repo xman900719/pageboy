@@ -392,13 +392,130 @@ input[type='file']::file-selector-button:hover {
 
 /* ---------- School exams ---------- */
 
-.exam-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px }
-.exam-list li {
-  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 0.85rem;
-  border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 9px 12px; background: var(--card-warm);
+.exam-workspace { display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.exam-workspace > .card { margin-bottom: 0 }
+
+.exam-topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 18px; background: var(--card-warm); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
+.exam-topbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.exam-topbar-left h2 { margin: 0; font-size: 1.12rem }
+.exam-topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+
+.inline-honest-tag {
+  display: inline-flex; align-items: center; font-size: 0.74rem; color: var(--ink-2);
+  background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+}
+
+/* 校考录入说明：B1 锚点浮层气泡与三角尖角 */
+.help-bubble-anchor { position: relative; display: inline-block }
+button.help-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--teal-line); background: var(--teal-soft); color: var(--teal);
+  border-radius: 999px; padding: 6px 13px; font-size: 0.82rem; font-weight: 700;
+}
+button.help-trigger:hover:not(:disabled),
+button.help-trigger[aria-expanded='true'] {
+  background: var(--teal); border-color: var(--teal); color: #fff;
+}
+.help-dot {
+  display: inline-grid; place-items: center; width: 1.15rem; height: 1.15rem;
+  border-radius: 50%; background: #ffffffd6; color: var(--teal); font-size: 0.74rem; font-weight: 800;
+}
+.help-popover {
+  position: absolute; top: calc(100% + 10px); right: 0; width: min(420px, calc(100vw - 40px));
+  background: #fff; border: 1.5px solid var(--teal-line); border-radius: 14px;
+  box-shadow: 0 14px 36px -10px #1e4c6138; padding: 14px 16px; z-index: 45; text-align: left;
+}
+.help-popover::before {
+  content: ''; position: absolute; top: -8px; right: 52px; width: 14px; height: 14px;
+  background: #fff; border-left: 1.5px solid var(--teal-line); border-top: 1.5px solid var(--teal-line);
+  transform: rotate(45deg);
+}
+.help-popover-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed var(--line);
+}
+.help-popover-head b { font-size: 0.9rem; color: var(--teal) }
+button.help-close {
+  border: none; background: transparent; color: var(--ink-3); font-size: 1.15rem;
+  padding: 2px 6px; line-height: 1; font-weight: 700;
+}
+button.help-close:hover:not(:disabled) {
+  background: var(--card-warm); border-color: transparent; color: var(--ink);
+}
+.help-popover ul {
+  margin: 0; padding-left: 18px; display: grid; gap: 7px; font-size: 0.82rem; line-height: 1.6; color: var(--ink-2);
+}
+.help-popover li strong { color: var(--ink) }
+
+/* 同类内容卡片分类 Tab 导航 */
+.category-tabs {
+  display: flex; gap: 8px; flex-wrap: wrap; padding: 6px;
+  background: var(--card-warm); border: 1px solid var(--line); border-radius: 14px;
+}
+button.cat-tab {
+  flex: 1 1 165px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid transparent; background: transparent; color: var(--ink-2);
+  border-radius: 10px; padding: 9px 13px; text-align: left; font-weight: 500;
+}
+button.cat-tab:hover:not(:disabled) { background: #fff; border-color: var(--line); color: var(--ink) }
+button.cat-tab.active {
+  background: #fff; border-color: var(--primary-line); color: var(--primary-strong);
+  box-shadow: 0 2px 8px #2c262312;
+}
+button.cat-tab.active:hover:not(:disabled) { background: #fff; border-color: var(--primary); color: var(--primary-strong) }
+.cat-tab-text { display: flex; flex-direction: column; gap: 2px; min-width: 0 }
+.cat-tab-text b { font-size: 0.88rem; color: inherit }
+.cat-tab-text small { font-size: 0.71rem; color: var(--ink-3) }
+button.cat-tab.active .cat-tab-text small { color: var(--primary) }
+.cat-tab-badge {
+  flex: none; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--line-soft); color: var(--ink-2); white-space: nowrap;
+}
+button.cat-tab.active .cat-tab-badge { background: var(--primary-soft); color: var(--primary-strong) }
+.cat-tab-badge.wait { background: var(--amber-soft); color: var(--amber) }
+
+/* 原卷/逐题子 Tab 顶部当前场次上下文条 */
+.active-exam-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 12px; border: 1px solid var(--primary-line); background: var(--primary-soft);
+}
+.active-exam-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.active-exam-info b { font-size: 0.9rem; color: var(--primary-strong) }
+.active-exam-switcher { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
+button.mini-switch-btn {
+  border: 1px solid var(--line); background: #fff; color: var(--ink-2);
+  border-radius: 999px; padding: 4px 11px; font-size: 0.76rem; font-weight: 600;
+}
+button.mini-switch-btn:hover:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-strong) }
+button.mini-switch-btn.selected { background: var(--primary); border-color: var(--primary); color: #fff }
+
+/* Tab 内同类别多卡片容器与列表详情 */
+.tab-card-stack { display: flex; flex-direction: column; gap: 14px }
+.tab-card-stack > .card { margin-bottom: 0 }
+.tab-card-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start }
+.tab-card-grid-2 > .card { margin-bottom: 0 }
+
+.exam-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px }
+.exam-list li {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 0.85rem;
+  border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 6px 10px; background: var(--card-warm);
+}
+.exam-item.selected { border-color: var(--primary-line); background: var(--primary-soft) }
 .exam-title { font-weight: 600 }
 .exam-list .chip { margin-left: auto }
+.exam-kpi-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 12px }
+.exam-confirm-panel {
+  margin: 10px 0 0; padding: 12px 14px; border-radius: var(--radius-s);
+  border: 1px solid var(--amber-line, #e2c58e); background: var(--amber-soft);
+}
+.confirm-inline-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap }
+.confirm-inline-row label { margin: 0; flex: 0 1 240px }
+.exam-create-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px }
+.exam-create-grid .wide { grid-column: 1 / -1 }
 
 /* ---------- Admin review desk (ST-011) ---------- */
 
@@ -881,10 +998,22 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 .attempt-trace li { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line-soft); font-size: 0.84rem }
 
 @media (max-width: 900px) {
-  .lobby-controls, .wrong-review-layout, .domain-visual-grid, .strength-weak-grid, .graph-workspace, .legend-grid, .pool-kpi-grid {
+  .lobby-controls, .wrong-review-layout, .domain-visual-grid, .strength-weak-grid, .graph-workspace, .legend-grid, .pool-kpi-grid, .tab-card-grid-2 {
     grid-template-columns: 1fr;
   }
   .lobby-metrics, .growth-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .exam-kpi-row, .exam-create-grid {
+    grid-template-columns: 1fr;
+  }
+  .help-popover {
+    left: 0; right: auto;
+  }
+  .help-popover::before {
+    left: 48px; right: auto;
   }
 }

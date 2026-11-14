@@ -198,3 +198,113 @@ def test_school_and_practice_evidence_merge(client, auth, student_auth, publishe
     assert only["topic"] == "基础算术运算"
     assert only["verdict"] == "cannot_compare" and only["reason"] == "insufficient_retest"
     assert only["baseline_items"] == 3 and only["retest_items"] == 0  # 若校卷 item 泄入，retest_items 会是 1
+
+
+def test_ethics_school_exam_supported_while_core_subjects_isolated(client, auth, student_auth):
+    # 正例：道德与法治（ethics）仅限学校考试归档与列表查询，不进入核心四科练习与画像。
+    created = client.post(
+        "/api/school-exams",
+        json={
+            "subject": "ethics",
+            "title": "虚构测试数据：九年级十月道法练习",
+            "exam_date": "2026-10-15",
+            "earned_points": 0,
+            "max_points": 50,
+            "confirmed_by_user": False,
+        },
+        headers=auth,
+    )
+    assert created.status_code == 201
+    assert created.json()["status"] == "unconfirmed"
+    assert created.json()["knowledge_evidence_created"] is False
+    exam_id = created.json()["id"]
+
+    listed = client.get("/api/school-exams?subject=ethics", headers=auth)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1 and listed.json()[0]["id"] == exam_id
+    assert listed.json()[0]["confirmed_by_user"] is False
+
+    # 反例：ethics 不得进入核心四科的练习取题、画像与题源台账。
+    assert client.get("/api/practice/next?subject=ethics", headers=student_auth).status_code == 422
+    assert client.get("/api/guidance/profile?subject=ethics", headers=student_auth).status_code == 422
+    assert client.post("/api/admin/sources", json={"title": "越界题源", "subject": "ethics"}, headers=auth).status_code == 422
+    assert "ethics" not in client.get("/api/subjects", headers=student_auth).json()
+
+
+def test_confirm_pending_school_exam_total_and_immutability(client, auth, student_auth):
+    # 正例：待核对校考可通过 /confirm 补充实得总分并锁定，且仍不产生考点证据。
+    created = client.post(
+        "/api/school-exams",
+        json={
+            "subject": "math",
+            "title": "虚构测试数据：十月月考待补分",
+            "exam_date": "2026-10-15",
+            "earned_points": 0,
+            "max_points": 100,
+            "confirmed_by_user": False,
+        },
+        headers=auth,
+    )
+    assert created.status_code == 201
+    exam_id = created.json()["id"]
+
+    # 反例：未勾选 confirmed_by_user=True 或超满分均被 422 拦截。
+    assert (
+        client.post(
+            f"/api/school-exams/{exam_id}/confirm",
+            json={"confirmed_by_user": False, "earned_points": 88},
+            headers=auth,
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/school-exams/{exam_id}/confirm",
+            json={"confirmed_by_user": True, "earned_points": 101},
+            headers=auth,
+        ).status_code
+        == 422
+    )
+    # 越权：学生令牌不可确认校考总分。
+    assert (
+        client.post(
+            f"/api/school-exams/{exam_id}/confirm",
+            json={"confirmed_by_user": True, "earned_points": 88},
+            headers=student_auth,
+        ).status_code
+        == 403
+    )
+
+    confirmed = client.post(
+        f"/api/school-exams/{exam_id}/confirm",
+        json={"confirmed_by_user": True, "earned_points": 88.5},
+        headers=auth,
+    )
+    assert confirmed.status_code == 200
+    body = confirmed.json()
+    assert body["confirmed_by_user"] is True
+    assert body["earned_points"] == 88.5
+    assert body["knowledge_evidence_created"] is False
+    assert profile_knowledge(client, student_auth, subject="math") == []
+
+    # 不可变反例：已确认后同分 409 SCHOOL_EXAM_ALREADY_CONFIRMED，异分 409 SCHOOL_EXAM_IMMUTABLE。
+    repeat = client.post(
+        f"/api/school-exams/{exam_id}/confirm",
+        json={"confirmed_by_user": True, "earned_points": 88.5},
+        headers=auth,
+    )
+    assert repeat.status_code == 409 and repeat.json()["detail"] == "SCHOOL_EXAM_ALREADY_CONFIRMED"
+    changed = client.post(
+        f"/api/school-exams/{exam_id}/confirm",
+        json={"confirmed_by_user": True, "earned_points": 90},
+        headers=auth,
+    )
+    assert changed.status_code == 409 and changed.json()["detail"] == "SCHOOL_EXAM_IMMUTABLE"
+    assert (
+        client.post(
+            "/api/school-exams/missing-id/confirm",
+            json={"confirmed_by_user": True, "earned_points": 50},
+            headers=auth,
+        ).status_code
+        == 404
+    )

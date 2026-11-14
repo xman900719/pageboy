@@ -3,7 +3,10 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, model_validator
 
+# 核心四科（课标、题库、练习与诊断）
 Subject = Literal["math", "chinese", "english", "physics"]
+# 学校考试归档支持额外科目（ethics：道德与法治/道法，暂不建课标知识图谱）
+SchoolExamSubject = Literal["math", "chinese", "english", "physics", "ethics"]
 
 class SourceIn(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -140,7 +143,7 @@ class SelfAssessmentIn(BaseModel):
     self_earned_points: float = Field(ge=0)
 
 class SchoolExamIn(BaseModel):
-    subject: Subject
+    subject: SchoolExamSubject
     exam_date: date
     title: str = Field(min_length=1)
     earned_points: float = Field(ge=0)
@@ -150,6 +153,17 @@ class SchoolExamIn(BaseModel):
     def check_points(self):
         if self.earned_points > self.max_points:
             raise ValueError("earned_points exceeds max_points")
+        return self
+
+class SchoolExamConfirmIn(BaseModel):
+    """人工补充并确认待核对学校考试总分（确认后不可改写）。"""
+    confirmed_by_user: bool = Field(strict=True, description="必须为 true，表示人工已核对学校考试总分")
+    earned_points: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed_by_user:
+            raise ValueError("human confirmation required")
         return self
 
 class SchoolExamItemIn(BaseModel):

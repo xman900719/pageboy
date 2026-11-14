@@ -19,7 +19,7 @@ from .research import official_reject_reason
 from .database import get_db
 from . import models as m
 from . import private_files as files
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolItemConfirmIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -293,9 +293,36 @@ def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_admin), 
     return {"id": record.id, "status": "user_confirmed" if record.confirmed_by_user else "unconfirmed", "knowledge_evidence_created": False}
 
 @app.get("/api/school-exams")
-def get_school_exams(subject: Subject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+def get_school_exams(subject: SchoolExamSubject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     exams = db.execute(select(m.SchoolExam).where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject).order_by(m.SchoolExam.exam_date.desc())).scalars().all()
     return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user} for e in exams]
+
+@app.post("/api/school-exams/{exam_id}/confirm")
+def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """待核对校考总分的人工补充与确认；确认后不可变，且永不产生考点证据（INV-05）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    if exam.confirmed_by_user:
+        if payload.earned_points == exam.earned_points:
+            raise HTTPException(409, detail="SCHOOL_EXAM_ALREADY_CONFIRMED")
+        raise HTTPException(409, detail="SCHOOL_EXAM_IMMUTABLE")
+    if payload.earned_points > exam.max_points:
+        raise HTTPException(422, detail="earned_points exceeds max_points")
+    exam.earned_points = payload.earned_points
+    exam.confirmed_by_user = True
+    db.commit()
+    db.refresh(exam)
+    return {
+        "id": exam.id,
+        "subject": exam.subject,
+        "title": exam.title,
+        "exam_date": str(exam.exam_date),
+        "earned_points": exam.earned_points,
+        "max_points": exam.max_points,
+        "confirmed_by_user": exam.confirmed_by_user,
+        "knowledge_evidence_created": False,
+    }
 
 @app.post("/api/school-exams/{exam_id}/items", status_code=201)
 def add_school_exam_items(exam_id: str, payload: SchoolExamItemsIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):

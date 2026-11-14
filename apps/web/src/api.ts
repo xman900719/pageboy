@@ -1,12 +1,19 @@
 /* API surface (contracts/openapi.yaml) + in-memory bearer client. Token never persists. */
 
 export type Subject = 'math' | 'chinese' | 'english' | 'physics'
+// 学校考试额外支持「道法（道德与法治）」归档，核心练习/画像仍严格保持四科不变
+export type SchoolSubject = Subject | 'ethics'
 export type Kind = 'single_choice' | 'short_answer' | 'subjective'
 export type Purpose = 'training' | 'evaluation'
 export type GapType = 'INSUFFICIENT_EVIDENCE' | 'KNOWLEDGE_GAP' | 'NO_CONFIRMED_GAP'
 
 export const SUBJECTS: Subject[] = ['math', 'chinese', 'english', 'physics']
 export const SUBJECT_LABELS: Record<Subject, string> = { math: '数学', chinese: '语文', english: '英语', physics: '物理' }
+export const SCHOOL_SUBJECTS: SchoolSubject[] = ['math', 'chinese', 'english', 'physics', 'ethics']
+export const SCHOOL_SUBJECT_LABELS: Record<SchoolSubject, string> = {
+  ...SUBJECT_LABELS,
+  ethics: '道法',
+}
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
@@ -281,6 +288,39 @@ export interface SchoolExam {
   confirmed_by_user: boolean
 }
 
+export interface SchoolPaperAttachment {
+  id: string
+  filename: string
+  media_type: string
+  sha256: string
+  byte_size: number
+  created_at: string
+}
+
+export interface SchoolExamItem {
+  id: string
+  question_label: string
+  knowledge_id: string
+  earned_points: number
+  max_points: number
+  scoring_origin: 'manual_entry' | 'ocr_draft'
+  confirmed_by_user: boolean
+}
+
+export interface SchoolExamItemInput {
+  question_label: string
+  knowledge_id: string
+  earned_points: number
+  max_points: number
+  scoring_origin: 'manual_entry' | 'ocr_draft'
+}
+
+export interface SchoolExamDetail extends SchoolExam {
+  subject: SchoolSubject
+  items: SchoolExamItem[]
+  attachments: SchoolPaperAttachment[]
+}
+
 export interface GoalResult {
   id: string
   version: number
@@ -289,7 +329,10 @@ export interface GoalResult {
 
 export interface SchoolExamResult {
   id: string
-  status: string
+  status?: string
+  confirmed_by_user?: boolean
+  earned_points?: number
+  max_points?: number
   knowledge_evidence_created: boolean
 }
 
@@ -399,15 +442,20 @@ export interface Client {
   validation(subject: Subject): Promise<Validation>
   poolHealth(subject: Subject): Promise<PoolHealth>
   setGoal(input: { subject: Subject; targetPoints: number; maxPoints: number; minutesPerDay: number }): Promise<GoalResult>
-  schoolExams(subject: Subject): Promise<SchoolExam[]>
+  schoolExams(subject: SchoolSubject): Promise<SchoolExam[]>
+  schoolExamDetail(examId: string): Promise<SchoolExamDetail>
   addSchoolExam(input: {
-    subject: Subject
+    subject: SchoolSubject
     title: string
     examDate: string
     earnedPoints: number
     maxPoints: number
     confirmedByUser: boolean
   }): Promise<SchoolExamResult>
+  confirmSchoolExam(examId: string, earnedPoints: number): Promise<SchoolExamResult>
+  uploadSchoolPaper(examId: string, file: File): Promise<SchoolPaperAttachment>
+  addSchoolExamItems(examId: string, items: SchoolExamItemInput[]): Promise<{ evidence_created: number }>
+  confirmSchoolExamItem(examId: string, itemId: string, earnedPoints: number): Promise<SchoolExamItem>
   fetchAttachment(attachmentId: string): Promise<Blob>
   /* 题库审核台（ST-011）。 */
   adminSources(): Promise<SourceDetail[]>
@@ -578,6 +626,7 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
     setGoal: ({ subject, targetPoints, maxPoints, minutesPerDay }) =>
       call<GoalResult>('/api/goals', 'POST', { subject, target_points: targetPoints, max_points: maxPoints, minutes_per_day: minutesPerDay }),
     schoolExams: subject => call<SchoolExam[]>(`/api/school-exams?subject=${subject}`),
+    schoolExamDetail: examId => call<SchoolExamDetail>(`/api/school-exams/${encodeURIComponent(examId)}`),
     addSchoolExam: ({ subject, title, examDate, earnedPoints, maxPoints, confirmedByUser }) =>
       call<SchoolExamResult>('/api/school-exams', 'POST', {
         subject,
@@ -586,6 +635,25 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         earned_points: earnedPoints,
         max_points: maxPoints,
         confirmed_by_user: confirmedByUser,
+      }),
+    confirmSchoolExam: (examId, earnedPoints) =>
+      call<SchoolExamResult>(`/api/school-exams/${encodeURIComponent(examId)}/confirm`, 'POST', {
+        confirmed_by_user: true,
+        earned_points: earnedPoints,
+      }),
+    // 私人校卷附件上传（与内容附件共享底层校验，≤35 MiB，绝不提供公开下载接口）
+    uploadSchoolPaper: (examId, file) =>
+      request(`/api/school-exams/${encodeURIComponent(examId)}/paper?filename=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      }) as Promise<SchoolPaperAttachment>,
+    addSchoolExamItems: (examId, items) =>
+      call<{ evidence_created: number }>(`/api/school-exams/${encodeURIComponent(examId)}/items`, 'POST', { items }),
+    confirmSchoolExamItem: (examId, itemId, earnedPoints) =>
+      call<SchoolExamItem>(`/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/confirm`, 'POST', {
+        confirmed_by_human: true,
+        earned_points: earnedPoints,
       }),
     fetchAttachment: async attachmentId => {
       const res = await fetch(`/api/admin/attachments/${attachmentId}/download`, { headers: { Authorization: `Bearer ${token}` } })

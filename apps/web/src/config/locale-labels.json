@@ -7,7 +7,8 @@
     "math": "数学",
     "chinese": "语文",
     "english": "英语",
-    "physics": "物理"
+    "physics": "物理",
+    "ethics": "道法"
   },
   "modelVersionLabels": {
     "v1.6-uncalibrated-rule": "V1.6 规则诊断基线（未校准）",

@@ -262,7 +262,7 @@ test('J3 知识图谱定向与阶段诊断：基线错题形成短板、复测�
 
 /* ---------- J4 校卷总分 ---------- */
 
-test('J4 校卷总分：录入成功、明示「总分不产生考点证据」并列出条目', async ({ page }) => {
+test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总分不产生考点证据」', async ({ page }) => {
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
 
@@ -270,6 +270,16 @@ test('J4 校卷总分：录入成功、明示「总分不产生考点证据」�
   await expect(examRegion).toContainText('总分不产生考点证据')
   await expect(examRegion).toContainText('也不折算成知识点表现')
 
+  // B1 校考录入说明气泡开关验证
+  await examRegion.getByRole('button', { name: /校考录入说明/ }).click()
+  const helpDialog = page.getByRole('dialog', { name: '校考录入说明' })
+  await expect(helpDialog).toBeVisible()
+  await expect(helpDialog).toContainText('不提供公开下载入口')
+  await helpDialog.getByRole('button', { name: '关闭说明' }).click()
+  await expect(helpDialog).toBeHidden()
+
+  // 切入「+ 新建校考档案」Tab 录入后自动回到「总分台账与核对」Tab
+  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：学校月考')
   await examRegion.getByLabel('考试日期').fill('2026-10-20')
   await examRegion.getByLabel('获得分数').fill('85')
@@ -283,6 +293,71 @@ test('J4 校卷总分：录入成功、明示「总分不产生考点证据」�
   await expect(examRegion.locator('.exam-list')).toContainText('2026-10-20')
   await expect(examRegion.locator('.exam-list')).toContainText('85 / 100')
   await expect(examRegion.locator('.exam-list')).toContainText('已核对')
+  await expect(examRegion.locator('.exam-detail')).toContainText('总分已核对锁定')
+
+  await expectHonestLanguage(page)
+})
+
+test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷与总分 Tab 后续确认锁定', async ({ page }) => {
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+
+  // 切换到道法科目（仅校考档案，不开放核心刷题库）
+  await page.getByRole('button', { name: '道法' }).click()
+
+  const examRegion = page.getByRole('region', { name: '学校考试总分' })
+  // 进入「+ 新建校考档案」Tab 并取消勾选“我已人工核对总分”，先以待核对状态归档
+  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  await examRegion.getByLabel(/我已人工核对总分/).uncheck()
+  await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月道法统一练习')
+  await examRegion.getByLabel('考试日期').fill('2026-10-15')
+  await examRegion.getByLabel('考试满分').fill('50')
+  await examRegion.getByRole('button', { name: '暂存待核对档案' }).click()
+
+  await expect(page.getByRole('status')).toContainText('待核对学校考试档案已暂存')
+  await expect(examRegion.locator('.exam-list')).toContainText('未核对')
+
+  // 切至「原卷与答题卡」Tab 上传私有原卷 PDF（构造规范单页 PDF，验证私有隔离且无公开下载链接）
+  await examRegion.getByRole('tab', { name: /原卷与答题卡/ }).click()
+  const objs = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n',
+  ]
+  const pdfChunks = ['%PDF-1.4\n']
+  const offsets: number[] = []
+  let bytePos = Buffer.byteLength(pdfChunks[0])
+  for (const obj of objs) {
+    offsets.push(bytePos)
+    pdfChunks.push(obj)
+    bytePos += Buffer.byteLength(obj)
+  }
+  pdfChunks.push(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`)
+  for (const off of offsets) pdfChunks.push(`${String(off).padStart(10, '0')} 00000 n \n`)
+  pdfChunks.push(`trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${bytePos}\n%%EOF\n`)
+
+  await examRegion.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
+    name: 'mock-ethics-paper.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from(pdfChunks.join(''), 'ascii'),
+  })
+  await examRegion.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
+
+  await expect(page.getByRole('status')).toContainText('已加密隔离归档')
+  const archiveRegion = examRegion.locator('.exam-detail')
+  await expect(archiveRegion).toContainText('mock-ethics-paper.pdf')
+  await expect(archiveRegion).toContainText('私有已隔离')
+  await expect(archiveRegion.locator('a[download]')).toHaveCount(0)
+
+  // 切回「总分台账与核对」Tab 补录并锁定总分
+  await examRegion.getByRole('tab', { name: /总分台账与核对/ }).click()
+  const detailRegion = examRegion.locator('.exam-detail')
+  await detailRegion.getByLabel('补充实得总分').fill('43')
+  await detailRegion.getByRole('button', { name: '确认并锁定总分' }).click()
+
+  await expect(page.getByRole('status')).toContainText('校考总分已人工核对并锁定')
+  await expect(detailRegion).toContainText('总分已核对锁定')
+  await expect(examRegion.locator('.exam-list')).toContainText('43 / 50')
 
   await expectHonestLanguage(page)
 })

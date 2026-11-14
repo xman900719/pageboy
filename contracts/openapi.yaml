@@ -1015,6 +1015,22 @@ components:
       - target_year
       title: RunIn
       type: object
+    SchoolExamConfirmIn:
+      description: 人工补充并确认待核对学校考试总分（确认后不可改写）。
+      properties:
+        confirmed_by_user:
+          description: 必须为 true，表示人工已核对学校考试总分
+          title: Confirmed By User
+          type: boolean
+        earned_points:
+          minimum: 0.0
+          title: Earned Points
+          type: number
+      required:
+      - confirmed_by_user
+      - earned_points
+      title: SchoolExamConfirmIn
+      type: object
     SchoolExamIn:
       properties:
         confirmed_by_user:
@@ -1039,6 +1055,7 @@ components:
           - chinese
           - english
           - physics
+          - ethics
           title: Subject
           type: string
         title:
@@ -3588,6 +3605,7 @@ paths:
           - chinese
           - english
           - physics
+          - ethics
           title: Subject
           type: string
       - in: header
@@ -3673,6 +3691,44 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get School Exam Detail
+  /api/school-exams/{exam_id}/confirm:
+    post:
+      description: 待核对校考总分的人工补充与确认；确认后不可变，且永不产生考点证据（INV-05）。
+      operationId: confirm_school_exam_api_school_exams__exam_id__confirm_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamConfirmIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam
   /api/school-exams/{exam_id}/items:
     post:
       description: 逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。
