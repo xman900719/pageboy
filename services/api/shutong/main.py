@@ -14,6 +14,7 @@ from .topic_labels import get_topic_label, get_student_advice
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .fourcorpus import router as corpus_router
+from .learning_api import router as learning_router, get_evidence
 from .research import official_reject_reason
 from .database import get_db
 from . import models as m
@@ -24,6 +25,7 @@ from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_val
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
 app.include_router(corpus_router)
+app.include_router(learning_router)
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if x.strip()], allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["Authorization", "Content-Type"])
 
 @app.get("/health/live")
@@ -414,20 +416,6 @@ def set_goal(payload: GoalIn, student: str = Depends(require_student), db: Sessi
     g = m.Goal(learner_id=owner, version=next_version, **payload.model_dump())
     db.add(g); db.commit(); db.refresh(g)
     return {"id": g.id, "version": g.version, "status": "recorded"}
-
-def get_evidence(db: Session, learner_id: str, subject: str):
-    """Only first, independent, objective results tied to one knowledge point."""
-    rows = db.execute(select(m.AnswerAttempt, m.Exposure, m.QuestionVersion).join(m.Exposure, m.Exposure.id == m.AnswerAttempt.exposure_id).join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id).join(m.Question, m.Question.id == m.QuestionVersion.question_id).where(m.AnswerAttempt.learner_id == learner_id, m.Question.subject == subject)).all()
-    result = []
-    for a, ex, q in rows:
-        if a.earned_points is None or a.scoring_origin != "reviewed_answer_key" or len(q.knowledge_ids) != 1:
-            continue
-        result.append(Evidence(source_event_id=a.id, question_version_id=q.id, knowledge_id=q.knowledge_ids[0], earned_points=a.earned_points, max_points=a.max_points, independent=not a.hints_used, is_first_exposure=ex.is_unseen_at_exposure))
-    # 已人工确认的校卷逐题得分并入证据（合成键按 item 独立计数）；总分行永不折算（INV-05）。
-    school_rows = db.execute(select(m.SchoolExamItem, m.SchoolExam).where(m.SchoolExam.id == m.SchoolExamItem.school_exam_id, m.SchoolExam.learner_id == learner_id, m.SchoolExam.subject == subject, m.SchoolExamItem.confirmed_by_user.is_(True), m.SchoolExamItem.max_points > 0)).all()
-    for item, exam in school_rows:
-        result.append(Evidence(source_event_id=item.id, question_version_id=f"school-item:{item.id}", knowledge_id=item.knowledge_id, earned_points=item.earned_points, max_points=item.max_points, independent=True, is_first_exposure=True))
-    return result
 
 @app.get("/api/guidance/profile")
 def profile(subject: Subject, student: str = Depends(require_student), db: Session = Depends(get_db)):

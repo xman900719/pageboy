@@ -126,8 +126,8 @@ async function openPracticeItem(page: Page) {
   // 切换至物理科目（该科目专属于 ST-013 公式渲染题目，避免依赖学生端内部知识点参数筛选）
   await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '物理' }).click()
   await page.getByRole('navigation', { name: '主要视图' }).getByRole('button', { name: /练习/ }).click()
-  const practice = page.getByRole('region', { name: '练习控制' })
-  await practice.getByRole('button', { name: '开始练习' }).click()
+  const lobby = page.getByRole('region', { name: '智能综合练习编排' })
+  await lobby.getByRole('button', { name: /开始本轮智能练习/ }).click()
   const card = questionCard(page)
   await expect(card).toBeVisible()
   return card

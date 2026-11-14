@@ -35,8 +35,10 @@ ATTACHMENTS_DIR = TMP_DIR / "manual_attachments"
 
 API_PORT = 18765
 WEB_PORT = 4173
+MOCK_AI_PORT = 18766
 ADMIN_TOKEN = "test-admin-secret"
 STUDENT_TOKEN = "test-student-secret"
+API_DIR = REPO_ROOT / "services" / "api"
 
 
 def is_port_in_use(port: int) -> bool:
@@ -61,7 +63,7 @@ def wait_for_http(url: str, timeout: float = 30.0, headers: dict[str, str] | Non
     return False
 
 
-def start_env() -> int:
+def start_env(use_mock_ai: bool = False) -> int:
     """一键拉起人工测试环境与数据"""
     print("==================================================================")
     print("🚀 正在启动书童前端人工测试环境 (面向 iPadOS 模拟机)...")
@@ -74,6 +76,9 @@ def start_env() -> int:
     if is_port_in_use(WEB_PORT):
         print(f"❌ 错误：前端端口 {WEB_PORT} 已被占用，请先执行 `stop` 或检查残留进程。")
         return 1
+    if use_mock_ai and is_port_in_use(MOCK_AI_PORT):
+        print(f"❌ 错误：模拟 AI 端口 {MOCK_AI_PORT} 已被占用，请先执行 `stop` 或检查残留进程。")
+        return 1
 
     # 2. 准备目录与全新测试数据库
     TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,32 +86,72 @@ def start_env() -> int:
     if DB_FILE.exists():
         DB_FILE.unlink()
 
-    print("📦 正在初始化临时 SQLite 数据库并执行元数据建表...")
-    init_db_cmd = [
-        "uv", "run", "python", "-c",
-        "import shutong.models; from shutong.database import Base, engine; Base.metadata.create_all(engine)"
-    ]
+    print("📦 正在初始化临时 SQLite 数据库并执行 Alembic 迁移 + 四学科课标审核发布...")
     env_db = os.environ.copy()
-    env_db["DATABASE_URL"] = f"sqlite:///{DB_FILE}"
-    res = subprocess.run(init_db_cmd, cwd=REPO_ROOT, env=env_db, capture_output=True, text=True)
-    if res.returncode != 0:
-        print(f"❌ 数据库建表失败：\n{res.stderr}")
+    env_db["DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
+    env_db["SHUTONG_DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
+    mig_res = subprocess.run(
+        ["uv", "run", "python", "-m", "alembic", "upgrade", "head"],
+        cwd=API_DIR,
+        env=env_db,
+        capture_output=True,
+        text=True,
+    )
+    if mig_res.returncode != 0:
+        print(f"❌ 数据库迁移失败：\n{mig_res.stderr}")
         return 1
+
+    tax_res = subprocess.run(
+        ["uv", "--directory", str(API_DIR), "run", "python", str(REPO_ROOT / "scripts" / "review_and_publish_taxonomy.py")],
+        cwd=REPO_ROOT,
+        env=env_db,
+        capture_output=True,
+        text=True,
+    )
+    if tax_res.returncode != 0:
+        print(f"❌ 四学科知识点审核与发布初始化失败：\n{tax_res.stderr or tax_res.stdout}")
+        return 1
+
+    mock_ai_proc = None
+    pids: dict[str, int] = {}
+
+    # 2b. 可选：启动本地 OpenAI 兼容模拟 AI 服务（仅回环 127.0.0.1）
+    api_env = os.environ.copy()
+    if use_mock_ai:
+        print(f"🤖 正在启动本地模拟 AI 引导服务 (监听 127.0.0.1:{MOCK_AI_PORT})...")
+        mock_log_file = open(TMP_DIR / "manual_mock_ai.log", "w", encoding="utf-8")
+        mock_env = os.environ.copy()
+        mock_env["E2E_MOCK_AI_PORT"] = str(MOCK_AI_PORT)
+        mock_ai_proc = subprocess.Popen(
+            ["uv", "--directory", str(API_DIR), "run", "python", str(REPO_ROOT / "scripts" / "e2e_mock_ai.py")],
+            cwd=REPO_ROOT,
+            env=mock_env,
+            stdout=mock_log_file,
+            stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid,
+        )
+        if not wait_for_http(f"http://127.0.0.1:{MOCK_AI_PORT}/health", timeout=10.0):
+            print("❌ 本地模拟 AI 服务启动超时")
+            stop_env()
+            return 1
+        pids["mock_ai_pid"] = mock_ai_proc.pid
+        api_env["SHUTONG_AI_BASE_URL"] = f"http://127.0.0.1:{MOCK_AI_PORT}/v1"
+        api_env["SHUTONG_AI_API_KEY"] = "e2e-mock-key"
+        api_env["SHUTONG_AI_MODEL"] = "deepseek-chat-mock"
 
     # 3. 启动后端 API 服务
     print(f"🌐 正在启动后端 API 服务 (监听 127.0.0.1:{API_PORT})...")
     api_log_path = TMP_DIR / "manual_api.log"
     api_log_file = open(api_log_path, "w", encoding="utf-8")
-    api_env = os.environ.copy()
     api_env["SHUTONG_ADMIN_TOKEN"] = ADMIN_TOKEN
     api_env["SHUTONG_STUDENT_TOKEN"] = STUDENT_TOKEN
-    api_env["DATABASE_URL"] = f"sqlite:///{DB_FILE}"
+    api_env["DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
     api_env["SHUTONG_PRIVATE_DIR"] = str(ATTACHMENTS_DIR)
     api_env["SHUTONG_ENV"] = "test"
 
     api_proc = subprocess.Popen(
         ["uv", "run", "python", "-m", "uvicorn", "shutong.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
-        cwd=REPO_ROOT,
+        cwd=API_DIR,
         env=api_env,
         stdout=api_log_file,
         stderr=subprocess.STDOUT,
@@ -119,7 +164,7 @@ def start_env() -> int:
         return 1
 
     # 4. 灌入完整测试种子数据
-    print("🌱 正在灌入完备的测试种子数据 (单选/主观自评/听力/题源/目标)...")
+    print("🌱 正在灌入完备的测试种子数据 (单选/主观自评/听力/题源/目标/实数新课标映射题)...")
     seed_script = """
 import('./apps/web/e2e/global-setup.ts').then(async m => {
   await m.default({});
@@ -157,19 +202,22 @@ import('./apps/web/e2e/global-setup.ts').then(async m => {
         return 1
 
     # 6. 保存进程信息
-    pids = {"api_pid": api_proc.pid, "web_pid": web_proc.pid}
+    pids["api_pid"] = api_proc.pid
+    pids["web_pid"] = web_proc.pid
     PID_FILE.write_text(json.dumps(pids, indent=2), encoding="utf-8")
 
     # 7. 打印就绪信息与 iPadOS 模拟机操作入口
+    ai_mode = "本地模拟 AI (127.0.0.1:18766)" if use_mock_ai else ("真实 DeepSeek/OpenAI API (已配置密钥)" if api_env.get("SHUTONG_AI_API_KEY") else "未配置 SHUTONG_AI_API_KEY (引导接口将诚实返回 503)")
     print("==================================================================")
     print("✅ 测试服务已在宿主机就绪！（仅监听回环地址，真实 iPad 不可访问；iPad 只连生产）")
     print(f"📱 iPadOS 模拟机访问入口 (学生端):  http://127.0.0.1:{WEB_PORT}")
     print(f"🖥️ PC 桌面端访问入口 (管理端):     http://127.0.0.1:{WEB_PORT}/admin.html")
     print(f"🔑 学生端访问令牌 (Student Token): {STUDENT_TOKEN}")
     print(f"🔑 管理端访问令牌 (Admin Token):   {ADMIN_TOKEN}")
+    print(f"🤖 AI 错题引导通道:                {ai_mode}")
     print("==================================================================")
     print("测试人可直接在用于模拟 iPadOS 环境的模拟机中打开上述链接进行操作。")
-    print("测试完成后，运行 `uv run python scripts/run_manual_test_env.py stop` 停止环境。")
+    print("测试完成后，运行 `uv --directory services/api run python scripts/run_manual_test_env.py stop` 停止环境。")
     return 0
 
 
@@ -194,7 +242,7 @@ def stop_env() -> int:
 
     # 确保端口彻底释放
     time.sleep(1.0)
-    for port in [API_PORT, WEB_PORT]:
+    for port in [API_PORT, WEB_PORT, MOCK_AI_PORT]:
         if is_port_in_use(port):
             print(f"⚠️ 端口 {port} 仍被占用，正在执行强制清理...")
             subprocess.run(f"fuser -k {port}/tcp", shell=True, capture_output=True)
@@ -255,9 +303,12 @@ def open_sim(landscape: bool = False) -> int:
 
 
 def main() -> None:
-    action = sys.argv[1] if len(sys.argv) > 1 else "status"
+    args = sys.argv[1:]
+    use_mock_ai = "--mock-ai" in args
+    positional = [a for a in args if not a.startswith("--")]
+    action = positional[0] if positional else "status"
     if action == "start":
-        sys.exit(start_env())
+        sys.exit(start_env(use_mock_ai=use_mock_ai))
     elif action == "stop":
         sys.exit(stop_env())
     elif action == "status":
@@ -267,7 +318,7 @@ def main() -> None:
     elif action in ("sim-landscape", "sim-h", "sim-land"):
         sys.exit(open_sim(landscape=True))
     else:
-        print(f"未知参数: {action}。支持: start | stop | status | sim | sim-landscape")
+        print(f"未知参数: {action}。支持: start [--mock-ai] | stop | status | sim | sim-landscape")
         sys.exit(2)
 
 

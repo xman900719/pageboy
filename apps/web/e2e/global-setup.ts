@@ -11,6 +11,9 @@
  * 门禁注意：来源一旦带附件，该来源的题必须走 confirm-import 才能发布
  * （require_import_integrity），所以听力题放在独立题源 B；上传会令 source.verified
  * 复位，故附件导入后须重走来源审核再发布（镜像 test_media_question.py）。 */
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { FullConfig } from '@playwright/test'
 
 // 端口 18765 与 playwright.config.ts 保持一致（8000 被无关常驻服务占用）。
@@ -67,7 +70,43 @@ async function publishQuestion(sourceId: string, question: Record<string, unknow
   return created.id
 }
 
+// 确保无私有课标 PDF 的 CI 环境同样具备合成课标标记文件（与 conftest.py 协议一致，不覆盖真实大文件）。
+function ensureSyntheticCurriculumStandards(): void {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url))
+  const repoRoot = path.resolve(currentDir, '..', '..', '..')
+  const pdfDir = path.join(repoRoot, 'private-data', 'curriculum_standards')
+  const sourcesPath = path.join(repoRoot, 'contracts', 'curriculum_sources.json')
+  if (!fs.existsSync(sourcesPath)) return
+
+  const localNameMap: Record<string, string> = {
+    chinese: '义务教育语文课程标准（2022年版）.pdf',
+    math: '义务教育数学课程标准（2022年版）（以此为准2022年5月9日）.pdf',
+    english: '义务教育英语课程标准（2022年版）.pdf',
+    physics: '义务教育物理课程标准（2022年版）.pdf',
+  }
+
+  const sources = JSON.parse(fs.readFileSync(sourcesPath, 'utf-8')) as Array<{
+    subject?: string
+    file_sha256?: string
+    byte_size?: number
+  }>
+  fs.mkdirSync(pdfDir, { recursive: true })
+  for (const s of sources) {
+    const fname = s.subject ? localNameMap[s.subject] : undefined
+    if (!fname) continue
+    const fpath = path.join(pdfDir, fname)
+    if (!fs.existsSync(fpath) || fs.statSync(fpath).size < 1024) {
+      fs.writeFileSync(
+        fpath,
+        `%PAGEBOY_SYNTHETIC_STANDARD:${s.file_sha256}:${s.byte_size}\n`,
+        'utf-8',
+      )
+    }
+  }
+}
+
 async function seed(): Promise<void> {
+  ensureSyntheticCurriculumStandards()
   await waitForApi()
 
   // 题源 A：数学主题源（人工审核 + licensed）。
@@ -94,6 +133,10 @@ async function seed(): Promise<void> {
   // 1) math.gap ×10：先建（created_at 最早），保证 evaluation 依次先发差距题。
   for (let i = 1; i <= 10; i++) {
     await publishQuestion(sourceA, choice(`虚构测试数据：差距题 ${i}。`, { knowledge_ids: ['math.gap'] }))
+  }
+  // 1b) 映射至新课标节点 math_cand.num.real / math_cand.num.rational 的 12 道练习题，供知识图谱、阶段诊断与定向练习验证。
+  for (let i = 1; i <= 12; i++) {
+    await publishQuestion(sourceA, choice(`虚构测试数据：实数与有理数综合题 ${i}。`, { knowledge_ids: ['math.num.real'] }))
   }
   // 2) math.ok ×4：前两题共享阅读材料。
   const groupContext = '虚构测试数据：阅读材料文本——两道题共享这一段材料。'

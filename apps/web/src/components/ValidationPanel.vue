@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CANNOT_COMPARE_EXPLAIN, VALIDATION_HEADLINES } from '../copy'
+import { getModelVersionLabel } from '../config/knowledge'
 import type { Validation } from '../api'
 import { VerdictChip } from './Badges'
 
@@ -51,6 +52,6 @@ function fmtRate(value: number | undefined): string {
         </span>
       </li>
     </ul>
-    <p class="muted tiny">对比模型：{{ validation.model_version }} · 小样本可观察对比，不是涨分结论。</p>
+    <p class="muted tiny">对比模型：{{ getModelVersionLabel(validation.model_version) }} · 小样本可观察对比，不是涨分结论。</p>
   </div>
 </template>

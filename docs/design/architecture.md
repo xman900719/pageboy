@@ -40,4 +40,10 @@ flowchart TB
 
 题干/选项/阅读材料/参考答案仍是**纯文本**（契约不变）；作者可按 KaTeX 语法写 `$…$` 行内与 `$$…$$` 独立公式。渲染在前端：纯函数切分 + 文本段作为 React 子节点（自动转义）+ 仅 KaTeX 生成 HTML 注入；不配对或空公式按字面文本回退。后端不解析、不存储 HTML，不会引入富文本存储或外部 CDN。
 
-当前代码仍采用较小的 `models.py` 和 `main.py`，按任务纵切重构到对应领域，避免预先创建空目录。所有结构应满足 DRY、KISS、YAGNI、SOLID、迪米特法则与组合复用。
+当前代码仍采用较小的 `models.py`、`learning_api.py` 和 `main.py`，按任务纵切重构到对应领域，避免预先创建空目录。所有结构应满足 DRY、KISS、YAGNI、SOLID、迪米特法则与组合复用。
+
+## 学生端三视图与 AI 苏格拉底引导边界
+
+- **学生端三视图**：前端采用 Vue 3 + Vite 构建「练习（智能综合编排 + 阶段诊断）」「成长状态（优势/不足/领域雷达/目标验证）」「知识点展示（已发布非选学图谱 + 掌握状态高亮）」。
+- **纯领域计算不变**：`guidance.py` 继续严格保持零 HTTP / DB / SDK 依赖（`compute_knowledge_mastery`、`summarize_growth`、`compose_practice_plan`）。
+- **AI 错题引导适配器**：OpenAI 兼容接口（如 DeepSeek）调用集中隔离在 `ai_tutor.py`，并内置服务端防直接泄题守卫；服务未配置或超时返回 503，绝不替代正式判分。

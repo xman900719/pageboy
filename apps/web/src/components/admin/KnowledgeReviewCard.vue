@@ -10,10 +10,25 @@ import {
   type LegacyMappingResult,
   type TaxonomyRelease,
 } from '../../api'
+import {
+  LOCALE_PREFS,
+  formatClauseTitle,
+  formatReleaseChineseName,
+  getKnowledgeLabel,
+  getOperatorLabel,
+  getReleaseStatusLabel,
+} from '../../config/knowledge'
 import Note from '../Note.vue'
 import type { NoticeTone } from '../Notice.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
+
+// 三级知识节点中文层级标识
+const LEVEL_LABELS: Record<number, string> = {
+  1: '一级领域',
+  2: '二级主题',
+  3: '三级考点',
+}
 
 const props = defineProps<{
   client: ApiClient
@@ -22,6 +37,8 @@ const props = defineProps<{
 }>()
 
 const activeTab = ref<'candidates' | 'clauses' | 'mapping' | 'releases'>('candidates')
+// 默认隐藏底层英文技术编码，按配置决定是否允许一键展开排障
+const showTechnicalCodes = ref<boolean>(LOCALE_PREFS.showTechnicalCodesByDefault)
 
 // 新旧考点动作分类本地化映射字典
 const LEGACY_ACTION_LABELS: Record<string, string> = {
@@ -65,7 +82,7 @@ const loadingMapping = ref(false)
 // 4. 版本发布状态
 const releases = ref<TaxonomyRelease[]>([])
 const releaseVersion = ref(`${props.subject}-v2022.1.0`)
-const publishedBy = ref('admin_owner')
+const publishedBy = ref('系统管理员')
 const releaseSummary = ref(`教育部2022年版初中${SUBJECT_LABELS[props.subject]}课程标准全量拆解知识体系首发版本`)
 const publishing = ref(false)
 const releaseError = ref('')
@@ -220,7 +237,7 @@ async function seedCandidates() {
   seeding.value = true
   try {
     const res = await props.client.adminSeedCandidates(props.subject)
-    props.notify(`已成功初始化 ${res.seeded_count} 个候选节点入库（总数 ${res.total_nodes}），全部置为 pending 待审状态。`, 'info')
+    props.notify(`已成功初始化 ${res.seeded_count} 个候选节点入库（总数 ${res.total_nodes}），全部置为待审核状态。`, 'info')
     await loadCandidates()
   } catch (e) {
     props.notify(`初始化候选知识点失败：${describeError(e)}`, 'caution')
@@ -257,6 +274,57 @@ async function submitReview(status: 'approved' | 'rejected') {
     props.notify(`提交审核失败：${describeError(e)}`, 'caution')
   } finally {
     reviewing.value = false
+  }
+}
+
+const batchReviewing = ref(false)
+
+function buildClauseOpinionDraft(node: CandidateNode): string {
+  const cids = node.source_clause_ids ?? []
+  const matched = cids.map(cid => clauseMap.value[cid]).filter(Boolean)
+  if (matched.length === 0) {
+    return `核对${SUBJECT_LABELS[props.subject]}知识点「${node.name}」：请补充并核验官方课标条款。`
+  }
+  const refs = matched
+    .slice(0, 2)
+    .map(c => `${c.sub_theme || c.domain_title}${c.clause_number || ''}（印刷第 ${c.print_page} 页 / 电子版第 ${c.pdf_page} 页）`)
+    .join('；')
+  const req = matched[0].derived_requirement || matched[0].standardized_text || node.description || node.name
+  const legacyList = (candidateToLegacyMappings.value[node.code] ?? []).map(m => getKnowledgeLabel(m.legacy_code))
+  const legacyNote = legacyList.length > 0 ? `兼容历史考点：${legacyList.join('、')}。` : '2022版新课标细化考点。'
+  return `核对教育部2022年版初中${SUBJECT_LABELS[props.subject]}课程标准[${refs}]，核心要求为「${req}」。已核查概念粒度与必学范围，${legacyNote}`
+}
+
+function fillOpinionDraft() {
+  if (!selectedNode.value) return
+  reviewOpinion.value = buildClauseOpinionDraft(selectedNode.value)
+}
+
+async function batchApprovePending() {
+  if (!reviewerId.value.trim()) {
+    props.notify('批量审核前，请先在下方输入真实的审核人 ID（严禁未记名审核）。', 'caution')
+    return
+  }
+  const pendingNodes = candidates.value.filter(c => c.review_status === 'pending' && c.id)
+  if (pendingNodes.length === 0) {
+    props.notify('当前学科没有待审核且已入库的候选节点。', 'info')
+    return
+  }
+  batchReviewing.value = true
+  try {
+    const items = pendingNodes.map(n => ({
+      node_id: n.id as string,
+      reviewer_id: reviewerId.value.trim(),
+      review_status: 'approved' as const,
+      review_opinion: buildClauseOpinionDraft(n),
+    }))
+    const res = await props.client.adminBatchReviewNodes(items)
+    props.notify(`已根据课标条款依据批量审核通过 ${res.reviewed_count} 个待审节点。`, 'success')
+    await loadCandidates()
+  } catch (e) {
+    props.notify(`批量审核失败：${describeError(e)}`, 'caution')
+  } finally {
+    batchReviewing.value = false
   }
 }
 
@@ -309,10 +377,27 @@ watch(
         <button
           type="button"
           class="ghost small"
+          :aria-pressed="showTechnicalCodes"
+          @click="showTechnicalCodes = !showTechnicalCodes"
+        >
+          {{ showTechnicalCodes ? '隐藏技术编码' : '显示技术编码' }}
+        </button>
+        <button
+          type="button"
+          class="ghost small"
           :disabled="seeding"
           @click="seedCandidates"
         >
           {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
+        </button>
+        <button
+          v-if="pendingCount > 0"
+          type="button"
+          class="primary small"
+          :disabled="batchReviewing"
+          @click="batchApprovePending"
+        >
+          {{ batchReviewing ? '批量审核中...' : `按课标批量审核待审 (${pendingCount})` }}
         </button>
         <button type="button" class="ghost small" @click="loadCandidates">
           刷新
@@ -333,7 +418,7 @@ watch(
 
     <!-- 课标审核红线说明 -->
     <Note title="课标审核红线说明" tone="discipline">
-      知识点必须溯源至教育部2022年版课程标准官方条文。所有AI生成的候选考点均初始化为待审核（pending）状态，必须经学科专家人工逐项审核。若存在未审核或驳回考点，发布强门禁将强制阻断版本发布。
+      知识点必须溯源至教育部2022年版课程标准官方条文。所有自动归集的候选考点均初始化为待审核状态，必须经学科专家人工逐项审核。若存在未审核或已驳回考点，发布强门禁将强制阻断版本发布。
     </Note>
 
     <!-- 导航子标签 -->
@@ -385,18 +470,19 @@ watch(
             @click="selectedNodeCode = cand.code"
           >
             <div class="cand-header">
-              <span class="cand-code">{{ cand.code }}</span>
+              <span class="cand-level-tag">{{ LEVEL_LABELS[cand.level ?? 3] ?? '知识节点' }}</span>
               <span :class="['status-pill', cand.review_status]">
                 {{ cand.review_status === 'approved' ? '已通过' : cand.review_status === 'rejected' ? '已驳回' : '待人工审核' }}
               </span>
             </div>
             <div class="cand-name">{{ cand.name }}</div>
+            <div v-if="showTechnicalCodes" class="cand-code">{{ cand.code }}</div>
             <div class="cand-meta">
               <span v-if="cand.source_clause_ids?.length">
                 关联 {{ cand.source_clause_ids.length }} 条款
               </span>
               <span v-if="cand.reviewer_id" class="reviewer-meta">
-                审核人: {{ cand.reviewer_id }}
+                审核人: {{ getOperatorLabel(cand.reviewer_id) }}
               </span>
             </div>
           </div>
@@ -405,7 +491,7 @@ watch(
         <!-- 右侧详情与审核操作 -->
         <div v-if="selectedNode" class="candidate-detail">
           <h3>{{ selectedNode.name }}</h3>
-          <p class="detail-code">代码: <code>{{ selectedNode.code }}</code></p>
+          <p v-if="showTechnicalCodes" class="detail-code">技术编码: <code>{{ selectedNode.code }}</code></p>
           <p class="detail-desc">{{ selectedNode.description ?? '暂无详细描述' }}</p>
 
           <div class="clauses-trace">
@@ -420,19 +506,17 @@ watch(
                 class="clause-card-item"
               >
                 <div class="clause-card-header">
-                  <code>{{ cid }}</code>
+                  <span class="clause-card-title">{{ formatClauseTitle(cid, clauseMap[cid]) }}</span>
                   <div class="clause-card-badges">
                     <span v-if="clauseMap[cid]" class="clause-page-badge">
-                      PDF p.{{ clauseMap[cid].pdf_page }} / 印刷 p.{{ clauseMap[cid].print_page }}
+                      电子版第 {{ clauseMap[cid].pdf_page }} 页 · 印刷第 {{ clauseMap[cid].print_page }} 页
                     </span>
                     <span v-if="clauseMap[cid]?.is_elective" class="badge elective">选学*</span>
                     <span v-else-if="clauseMap[cid]" class="badge standard">必学</span>
                   </div>
                 </div>
+                <div v-if="showTechnicalCodes" class="clause-tech-id"><code>{{ cid }}</code></div>
                 <div v-if="clauseMap[cid]" class="clause-card-body">
-                  <div class="clause-card-title">
-                    {{ clauseMap[cid].domain_title }} · {{ clauseMap[cid].theme_title ? `${clauseMap[cid].theme_title} · ` : '' }}{{ clauseMap[cid].sub_theme }}
-                  </div>
                   <div class="clause-card-text">
                     {{ clauseMap[cid].raw_text }}
                   </div>
@@ -457,8 +541,8 @@ watch(
                 class="legacy-trace-card"
               >
                 <div class="legacy-card-head">
-                  <span class="legacy-name">{{ m.legacy_name }}</span>
-                  <code>{{ m.legacy_code }}</code>
+                  <span class="legacy-name">{{ m.legacy_name || getKnowledgeLabel(m.legacy_code) }}</span>
+                  <code v-if="showTechnicalCodes">{{ m.legacy_code }}</code>
                   <span :class="['action-tag', m.action]">{{ LEGACY_ACTION_LABELS[m.action] ?? m.action }}</span>
                 </div>
                 <p class="legacy-reason"><b>映射理由：</b>{{ m.mapping_reason }}</p>
@@ -494,11 +578,18 @@ watch(
             <div class="review-actions">
               <button
                 type="button"
+                class="ghost small"
+                @click="fillOpinionDraft"
+              >
+                按课标生成审核依据草稿
+              </button>
+              <button
+                type="button"
                 class="primary small"
                 :disabled="reviewing || !reviewerId.trim() || !reviewOpinion.trim()"
                 @click="submitReview('approved')"
               >
-                {{ reviewing ? '提交中...' : '审核通过 (Approved)' }}
+                {{ reviewing ? '提交中...' : '审核通过' }}
               </button>
               <button
                 type="button"
@@ -506,7 +597,7 @@ watch(
                 :disabled="reviewing || !reviewerId.trim() || !reviewOpinion.trim()"
                 @click="submitReview('rejected')"
               >
-                {{ reviewing ? '提交中...' : '退回驳回 (Rejected)' }}
+                {{ reviewing ? '提交中...' : '退回驳回' }}
               </button>
             </div>
           </div>
@@ -514,7 +605,7 @@ watch(
       </div>
     </div>
 
-    <!-- 选项卡 2：课标条款全集 -->
+    <!-- 选项卡 2：课标条款全集（4 列高可读结构，消灭超宽挤压） -->
     <div v-else-if="activeTab === 'clauses'" class="tab-pane clauses-pane">
       <div class="filter-bar">
         <span>按领域过滤：</span>
@@ -538,47 +629,35 @@ watch(
 
       <div class="clause-table-wrapper">
         <table class="clause-table">
-          <colgroup>
-            <col style="width: 190px;" />
-            <col style="width: 140px;" />
-            <col style="width: 110px;" />
-            <col style="width: 290px;" />
-            <col style="width: 70px;" />
-            <col style="width: 230px;" />
-            <col style="width: 200px;" />
-          </colgroup>
           <thead>
             <tr>
-              <th>条款ID</th>
-              <th>主题/小节</th>
-              <th>页码</th>
-              <th>官方条文与规范转写</th>
-              <th>选学</th>
-              <th>对应新候选考点</th>
-              <th>对应存量旧考点</th>
+              <th style="width: 24%;">课标主题与页码</th>
+              <th style="width: 40%;">官方条文与规范转写</th>
+              <th style="width: 20%;">对应 2022 课标新考点</th>
+              <th style="width: 16%;">对应存量旧考点</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="cl in filteredClauses" :key="cl.clause_id">
-              <td><code>{{ cl.clause_id }}</code></td>
               <td>
                 <div class="domain-title">{{ cl.domain_title }}</div>
                 <div class="sub-theme-text">{{ cl.theme_title ? `${cl.theme_title} · ` : '' }}{{ cl.sub_theme }}</div>
+                <div class="clause-page-meta">
+                  <span class="clause-page-badge">电子版第 {{ cl.pdf_page }} 页 · 印刷第 {{ cl.print_page }} 页</span>
+                  <span v-if="cl.is_elective" class="badge elective">选学*</span>
+                  <span v-else class="badge standard">必学</span>
+                </div>
+                <div v-if="showTechnicalCodes" class="clause-tech-id"><code>{{ cl.clause_id }}</code></div>
               </td>
-              <td>PDF p.{{ cl.pdf_page }} / 印刷 p.{{ cl.print_page }}</td>
               <td class="text-cell">
                 <div class="raw-text-block">{{ cl.raw_text }}</div>
                 <div v-if="cl.standardized_text && cl.standardized_text !== cl.raw_text" class="standardized-text-block">
                   <small>规范化转写：</small>{{ cl.standardized_text }}
                 </div>
               </td>
-              <td>
-                <span v-if="cl.is_elective" class="badge elective">选学*</span>
-                <span v-else class="badge standard">必学</span>
-              </td>
               <td class="mapping-cell">
                 <div v-if="(clauseToCandidatesMap[cl.clause_id] ?? []).length === 0" class="empty-mapping-text">
-                  -
+                  暂无关联新考点
                 </div>
                 <div
                   v-for="cand in clauseToCandidatesMap[cl.clause_id] ?? []"
@@ -586,20 +665,20 @@ watch(
                   class="mapping-pill candidate-pill"
                 >
                   <span class="pill-name">{{ cand.name }}</span>
-                  <code class="pill-code">{{ cand.code }}</code>
+                  <code v-if="showTechnicalCodes" class="pill-code">{{ cand.code }}</code>
                 </div>
               </td>
               <td class="mapping-cell">
                 <div v-if="(cl.legacy_mappings ?? []).length === 0" class="empty-mapping-text">
-                  <span class="badge info">新课标增设/无旧考点</span>
+                  <span class="badge info">新课标增设</span>
                 </div>
                 <div
                   v-for="legCode in cl.legacy_mappings ?? []"
                   :key="legCode"
                   class="mapping-pill legacy-pill"
                 >
-                  <span class="pill-name">{{ legacyMappingByCode[legCode]?.legacy_name ?? legCode }}</span>
-                  <code class="pill-code">{{ legCode }}</code>
+                  <span class="pill-name">{{ legacyMappingByCode[legCode]?.legacy_name ?? getKnowledgeLabel(legCode) }}</span>
+                  <code v-if="showTechnicalCodes" class="pill-code">{{ legCode }}</code>
                 </div>
               </td>
             </tr>
@@ -608,7 +687,7 @@ watch(
       </div>
     </div>
 
-    <!-- 选项卡 3：新旧映射与兼容 -->
+    <!-- 选项卡 3：新旧映射与兼容（4 列高可读结构） -->
     <div v-else-if="activeTab === 'mapping'" class="tab-pane mapping-pane">
       <div v-if="legacyMapping" class="mapping-summary">
         <div class="mapping-stats">
@@ -620,63 +699,40 @@ watch(
           <span>新课标增设: {{ mappingSummary.new }}</span>
         </div>
         <Note tone="discipline">
-          历史兼容保护原则：存量 {{ mappingSummary.total }} 个旧考点作为历史资产永久保留只读；历史题目关联 QuestionKnowledgeLink、作答与曝光记录绝不被覆盖或静默重写。
+          历史兼容保护原则：存量 {{ mappingSummary.total }} 个旧考点作为历史资产永久保留只读；历史题目关联记录、作答与曝光记录绝不被覆盖或静默重写。
         </Note>
 
         <div class="mapping-table-wrapper">
           <table class="mapping-table">
-            <colgroup>
-              <col style="width: 170px;" />
-              <col style="width: 130px;" />
-              <col style="width: 90px;" />
-              <col style="width: 210px;" />
-              <col style="width: 180px;" />
-              <col style="width: 240px;" />
-              <col style="width: 240px;" />
-            </colgroup>
             <thead>
               <tr>
-                <th>旧考点代码</th>
-                <th>旧考点名称</th>
-                <th>动作分类</th>
-                <th>对应新候选体系考点</th>
-                <th>课标溯源依据</th>
-                <th>映射与教学演进理由</th>
-                <th>历史兼容说明</th>
+                <th style="width: 19%;">存量旧考点与动作</th>
+                <th style="width: 25%;">对应 2022 课标新考点与依据</th>
+                <th style="width: 28%;">映射与教学演进理由</th>
+                <th style="width: 28%;">历史兼容保障说明</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="m in legacyMapping.legacy_mappings" :key="m.legacy_code">
-                <td><code>{{ m.legacy_code }}</code></td>
-                <td>{{ m.legacy_name }}</td>
-                <td><span :class="['action-tag', m.action]">{{ LEGACY_ACTION_LABELS[m.action] ?? m.action }}</span></td>
+                <td>
+                  <div class="pill-name">{{ m.legacy_name || getKnowledgeLabel(m.legacy_code) }}</div>
+                  <div style="margin-top:4px;">
+                    <span :class="['action-tag', m.action]">{{ LEGACY_ACTION_LABELS[m.action] ?? m.action }}</span>
+                  </div>
+                  <div v-if="showTechnicalCodes" style="margin-top:4px;"><code>{{ m.legacy_code }}</code></div>
+                </td>
                 <td>
                   <div
                     v-for="t in m.target_candidate_codes"
                     :key="t"
                     class="target-cand-item"
                   >
-                    <span class="cand-name-tag">{{ candidateMap[t]?.name ?? t }}</span>
-                    <code>{{ t }}</code>
-                  </div>
-                </td>
-                <td class="clause-backing-cell">
-                  <div
-                    v-for="t in m.target_candidate_codes"
-                    :key="`clause-${t}`"
-                    class="target-clause-backing"
-                  >
-                    <div v-if="candidateMap[t]?.source_clause_ids?.length" class="clause-count-info">
-                      <b>{{ candidateMap[t]?.name }}:</b> {{ candidateMap[t]?.source_clause_ids?.length }} 条课标依据
-                      <div class="clause-id-tags">
-                        <code v-for="cid in candidateMap[t]?.source_clause_ids ?? []" :key="cid" class="mini-clause-tag">
-                          {{ cid }}
-                        </code>
-                      </div>
-                    </div>
-                    <div v-else class="empty-clause-info">
-                      <span class="badge caution">无溯源条款</span>
-                    </div>
+                    <span class="cand-name-tag">{{ candidateMap[t]?.name ?? getKnowledgeLabel(t) }}</span>
+                    <span v-if="candidateMap[t]?.source_clause_ids?.length" class="clause-count-pill">
+                      {{ candidateMap[t]?.source_clause_ids?.length }} 条课标依据
+                    </span>
+                    <span v-else class="badge caution">无溯源条款</span>
+                    <code v-if="showTechnicalCodes" class="pill-code">{{ t }}</code>
                   </div>
                 </td>
                 <td class="reason-cell">{{ m.mapping_reason }}</td>
@@ -692,9 +748,9 @@ watch(
     <!-- 选项卡 4：版本发布与快照 -->
     <div v-else-if="activeTab === 'releases'" class="tab-pane releases-pane">
       <div class="release-form card-box">
-        <h3>发布知识库正式版本（强门禁测试）</h3>
+        <h3>发布知识库正式版本（强门禁校验）</h3>
         <p class="form-hint">
-          注意：当且仅当所有候选知识点均经过学科专家人工审核通过（0 个 pending、0 个 rejected）时，方可发布版本快照。
+          注意：当且仅当所有候选知识点均经过学科专家人工审核通过（待审核 0 个、已驳回 0 个）时，方可发布版本快照。
         </p>
 
         <div class="form-grid">
@@ -740,13 +796,14 @@ watch(
           class="release-card"
         >
           <div class="rel-head">
-            <span class="rel-ver">{{ rel.release_version }}</span>
-            <span class="rel-status">{{ rel.status === 'active' ? '正式生效' : (rel.status === 'draft' ? '草稿' : rel.status) }}</span>
+            <span class="rel-ver-zh">{{ formatReleaseChineseName(rel.release_version) }}</span>
+            <span class="rel-ver chip">{{ rel.release_version }}</span>
+            <span class="rel-status">{{ getReleaseStatusLabel(rel.status) }}</span>
             <span class="rel-time">{{ rel.published_at }}</span>
           </div>
           <p class="rel-summary">{{ rel.summary }}</p>
           <div class="rel-meta">
-            <span>发布人: {{ rel.published_by }}</span>
+            <span>发布人: {{ getOperatorLabel(rel.published_by) }}</span>
             <span>包含节点: {{ rel.total_nodes }} 个</span>
           </div>
         </div>
@@ -780,56 +837,58 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  background: var(--color-bg-subtle, #f5f7fa);
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
+  background: var(--surface-warm, #FDF9F3);
+  border: 1px solid var(--line, #E6DEC8);
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
   font-size: 0.85rem;
 }
 .badge {
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
 }
-.badge.pending { background: #fff3cd; color: #856404; }
-.badge.approved { background: #d4edda; color: #155724; }
-.badge.total { background: #e2e3e5; color: #383d41; }
-.badge.clauses { background: #cce5ff; color: #004085; }
-.badge.elective { background: #e0f2fe; color: #0369a1; }
-.badge.standard { background: #f3f4f6; color: #4b5563; }
+.badge.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border-color: var(--amber-line, #E8B878); }
+.badge.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border-color: var(--green-line, #8FC1A3); }
+.badge.total { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border-color: var(--line, #E6DEC8); }
+.badge.clauses { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border-color: var(--teal-line, #9BB5D6); }
+.badge.elective { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border-color: var(--teal-line, #9BB5D6); }
+.badge.standard { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border-color: var(--line, #E6DEC8); }
 .audit-note {
-  color: #c53030;
-  font-weight: 500;
+  color: var(--red, #B23324);
+  font-weight: 600;
   margin-left: auto;
 }
 .sub-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid var(--line, #E6DEC8);
   padding-bottom: 0.6rem;
   margin-bottom: 1rem;
 }
 .tab-btn {
-  background: #f1f5f9;
-  color: #1e293b; /* 明确设为高对比度深色字，解决继承全局按钮导致的白色看不清问题 */
-  border: 1px solid #cbd5e1;
+  background: var(--surface-subtle, #F3ECE1);
+  color: var(--ink, #2C2623);
+  border: 1px solid var(--line, #E6DEC8);
   padding: 0.5rem 1rem;
   cursor: pointer;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-weight: 500;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 600;
   transition: all 0.15s ease;
 }
-.tab-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-  border-color: #94a3b8;
+.tab-btn:hover:not(:disabled) {
+  background: var(--primary, #2A6F4E);
+  border-color: var(--primary, #2A6F4E);
+  color: #ffffff;
 }
 .tab-btn.active {
-  background: var(--primary, #174276);
+  background: var(--primary, #2A6F4E);
   color: #ffffff;
-  border-color: var(--primary, #174276);
+  border-color: var(--primary, #2A6F4E);
   font-weight: 700;
-  box-shadow: 0 1px 3px rgba(23, 66, 118, 0.25);
+  box-shadow: 0 2px 6px rgba(42, 111, 78, 0.22);
 }
 .filter-bar {
   display: flex;
@@ -838,28 +897,29 @@ watch(
   flex-wrap: wrap;
   margin-bottom: 0.8rem;
   font-size: 0.88rem;
-  color: var(--ink-2, #334155);
-  font-weight: 500;
+  color: var(--ink-2, #5C5346);
+  font-weight: 600;
 }
 .filter-chip {
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
-  border-radius: 20px;
-  padding: 0.3rem 0.8rem;
+  background: var(--surface-subtle, #F3ECE1);
+  color: var(--ink-2, #5C5346);
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.filter-chip:hover {
-  background: #e2e8f0;
-  color: #0f172a;
+.filter-chip:hover:not(:disabled) {
+  background: var(--primary, #2A6F4E);
+  border-color: var(--primary, #2A6F4E);
+  color: #ffffff;
 }
 .filter-chip.selected {
-  background: var(--primary, #174276);
+  background: var(--primary, #2A6F4E);
   color: #ffffff;
-  border-color: var(--primary, #174276);
+  border-color: var(--primary, #2A6F4E);
   font-weight: 600;
 }
 .pane-split {
@@ -874,23 +934,24 @@ watch(
   }
 }
 .candidate-list {
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 6px;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 10px;
   overflow-y: auto;
   max-height: 600px;
+  background: #fff;
 }
 .candidate-item {
-  padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid var(--color-border, #eee);
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line-soft, #EFE8D8);
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .candidate-item:hover {
-  background: #f9fafb;
+  background: var(--surface-warm, #FDF9F3);
 }
 .candidate-item.selected {
-  background: #f0f7ff;
-  border-left: 3px solid #0958d9;
+  background: var(--primary-soft, #EBF5EE);
+  border-left: 3px solid var(--primary, #2A6F4E);
 }
 .cand-header {
   display: flex;
@@ -898,48 +959,65 @@ watch(
   align-items: center;
   margin-bottom: 0.25rem;
 }
+.cand-level-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-3, #6E6458);
+  background: var(--surface-subtle, #F3ECE1);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
 .cand-code {
-  font-family: monospace;
-  font-size: 0.75rem;
-  color: #6b7280;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-3, #6E6458);
+  margin-top: 2px;
 }
 .status-pill {
-  font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
 }
-.status-pill.pending { background: #fef3c7; color: #92400e; }
-.status-pill.approved { background: #dcfce7; color: #166534; }
-.status-pill.rejected { background: #fee2e2; color: #991b1b; }
+.status-pill.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); }
+.status-pill.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); }
+.status-pill.rejected { background: var(--red-soft, #FDEDEC); color: var(--red, #B23324); }
 .cand-name {
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink, #2C2623);
 }
 .cand-meta {
-  font-size: 0.75rem;
-  color: #9ca3af;
+  font-size: 0.76rem;
+  color: var(--ink-3, #6E6458);
   margin-top: 0.25rem;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .candidate-detail {
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 6px;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 12px;
   padding: 1.2rem;
   background: #fff;
 }
 .detail-code {
-  color: #6b7280;
+  color: var(--ink-3, #6E6458);
   margin: 0.3rem 0;
+  font-size: 0.82rem;
 }
 .detail-desc {
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 0.94rem;
+  line-height: 1.55;
   margin-bottom: 1rem;
+  color: var(--ink-2, #5C5346);
 }
 .clauses-trace {
   margin-bottom: 1.5rem;
-  background: #f9fafb;
-  padding: 0.8rem;
-  border-radius: 6px;
+  background: var(--surface-warm, #FDF9F3);
+  border: 1px solid var(--line, #E6DEC8);
+  padding: 0.9rem;
+  border-radius: 10px;
 }
 .clause-card-list {
   list-style: none;
@@ -951,9 +1029,9 @@ watch(
 }
 .clause-card-item {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
 }
 .clause-card-header {
   display: flex;
@@ -963,52 +1041,63 @@ watch(
   gap: 0.4rem;
   margin-bottom: 0.4rem;
 }
-.clause-card-header code {
-  font-size: 0.76rem;
-  font-family: monospace;
-  background: #f1f5f9;
-  padding: 2px 4px;
-  border-radius: 3px;
+.clause-tech-id {
+  margin-bottom: 0.3rem;
+}
+.clause-tech-id code {
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  background: var(--surface-subtle, #F3ECE1);
+  color: var(--ink-2, #5C5346);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 .clause-card-badges {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.clause-page-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
 }
 .clause-page-badge {
-  font-size: 0.72rem;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 3px;
-  padding: 1px 4px;
+  font-size: 0.74rem;
+  color: var(--ink-2, #5C5346);
+  background: var(--surface-subtle, #F3ECE1);
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 6px;
+  padding: 2px 6px;
 }
 .clause-card-title {
-  font-weight: 600;
-  font-size: 0.82rem;
-  color: #1e293b;
-  margin-bottom: 0.25rem;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--ink, #2C2623);
 }
 .clause-card-text {
-  font-size: 0.8rem;
-  color: #334155;
-  line-height: 1.4;
+  font-size: 0.84rem;
+  color: var(--ink-2, #5C5346);
+  line-height: 1.5;
 }
 .clause-card-std {
-  font-size: 0.78rem;
-  color: #0369a1;
-  background: #f0f9ff;
-  border-left: 2px solid #0284c7;
-  padding: 0.25rem 0.5rem;
-  margin-top: 0.3rem;
-  border-radius: 0 4px 4px 0;
+  font-size: 0.8rem;
+  color: var(--teal, #3B6E8C);
+  background: var(--teal-soft, #EDF4F8);
+  border-left: 3px solid var(--teal, #3B6E8C);
+  padding: 0.3rem 0.6rem;
+  margin-top: 0.35rem;
+  border-radius: 0 6px 6px 0;
 }
 .legacy-trace {
   margin-bottom: 1.5rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 0.8rem;
-  border-radius: 6px;
+  background: var(--surface-warm, #FDF9F3);
+  border: 1px solid var(--line, #E6DEC8);
+  padding: 0.9rem;
+  border-radius: 10px;
 }
 .legacy-trace-list {
   display: flex;
@@ -1018,9 +1107,9 @@ watch(
 }
 .legacy-trace-card {
   background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
 }
 .legacy-card-head {
   display: flex;
@@ -1030,44 +1119,44 @@ watch(
   margin-bottom: 0.35rem;
 }
 .legacy-name {
-  font-weight: 600;
-  font-size: 0.86rem;
-  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--ink, #2C2623);
 }
 .legacy-card-head code {
-  font-size: 0.76rem;
-  background: #f1f5f9;
-  padding: 2px 4px;
-  border-radius: 3px;
+  font-size: 0.74rem;
+  background: var(--surface-subtle, #F3ECE1);
+  padding: 2px 5px;
+  border-radius: 4px;
 }
 .legacy-reason, .legacy-compat {
-  font-size: 0.78rem;
-  color: #475569;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  color: var(--ink-2, #5C5346);
+  line-height: 1.45;
   margin: 0.2rem 0;
 }
 .domain-title {
-  font-weight: 600;
-  font-size: 0.84rem;
-  color: #1e293b;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--ink, #2C2623);
 }
 .sub-theme-text {
-  font-size: 0.78rem;
-  color: #64748b;
+  font-size: 0.8rem;
+  color: var(--ink-2, #5C5346);
   margin-top: 0.2rem;
 }
 .raw-text-block {
-  line-height: 1.45;
-  color: #1e293b;
+  line-height: 1.55;
+  color: var(--ink, #2C2623);
 }
 .standardized-text-block {
-  font-size: 0.78rem;
-  color: #0284c7;
-  background: #f0f9ff;
-  border-left: 2px solid #38bdf8;
-  padding: 0.2rem 0.4rem;
-  margin-top: 0.3rem;
-  border-radius: 0 4px 4px 0;
+  font-size: 0.8rem;
+  color: var(--teal, #3B6E8C);
+  background: var(--teal-soft, #EDF4F8);
+  border-left: 3px solid var(--teal, #3B6E8C);
+  padding: 0.25rem 0.5rem;
+  margin-top: 0.35rem;
+  border-radius: 0 6px 6px 0;
 }
 .mapping-cell {
   display: flex;
@@ -1077,91 +1166,77 @@ watch(
 .mapping-pill {
   display: flex;
   flex-direction: column;
-  padding: 0.25rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.76rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
 }
 .mapping-pill.candidate-pill {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--primary-soft, #EBF5EE);
+  border: 1px solid var(--primary-line, #8FC1A3);
 }
 .mapping-pill.legacy-pill {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: var(--surface-subtle, #F3ECE1);
+  border: 1px solid var(--line, #E6DEC8);
 }
 .pill-name {
-  font-weight: 600;
-  color: #1e293b;
+  font-weight: 700;
+  color: var(--ink, #2C2623);
 }
 .pill-code {
   font-size: 0.72rem;
-  color: #64748b;
-  font-family: monospace;
+  color: var(--ink-3, #6E6458);
+  font-family: var(--font-mono);
 }
 .empty-mapping-text {
-  color: #94a3b8;
-  font-size: 0.78rem;
+  color: var(--ink-3, #6E6458);
+  font-size: 0.8rem;
 }
 .target-cand-item {
   display: flex;
   flex-direction: column;
-  margin-bottom: 0.35rem;
+  gap: 3px;
+  margin-bottom: 0.45rem;
 }
 .cand-name-tag {
-  font-weight: 600;
-  font-size: 0.82rem;
-  color: #0369a1;
+  font-weight: 700;
+  font-size: 0.84rem;
+  color: var(--primary, #2A6F4E);
 }
-.clause-backing-cell {
-  font-size: 0.78rem;
-}
-.target-clause-backing {
-  margin-bottom: 0.4rem;
-}
-.clause-count-info {
-  line-height: 1.35;
-  color: #334155;
-}
-.clause-id-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-  margin-top: 0.2rem;
-}
-.mini-clause-tag {
-  font-size: 0.7rem;
-  background: #e0f2fe;
-  color: #0369a1;
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid #bae6fd;
+.clause-count-pill {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.74rem;
+  background: var(--teal-soft, #EDF4F8);
+  color: var(--teal, #3B6E8C);
+  padding: 1px 7px;
+  border-radius: 999px;
 }
 .badge.info {
-  background: #e0f2fe;
-  color: #0369a1;
-  font-size: 0.72rem;
-  padding: 2px 6px;
+  background: var(--teal-soft, #EDF4F8);
+  color: var(--teal, #3B6E8C);
+  font-size: 0.74rem;
+  padding: 2px 8px;
 }
 .badge.caution {
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.72rem;
-  padding: 2px 6px;
+  background: var(--amber-soft, #FEF5EB);
+  color: var(--amber, #8F4F0D);
+  font-size: 0.74rem;
+  padding: 2px 8px;
 }
 .review-box {
-  background: #fafafa;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-warm, #FDF9F3);
+  border: 1px solid var(--line, #E6DEC8);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: 10px;
 }
 .reviewer-identity-notice {
-  font-size: 0.78rem;
-  color: #854d0e;
-  background: #fef9c3;
-  border: 1px solid #fde047;
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  color: var(--amber, #8F4F0D);
+  background: var(--amber-soft, #FEF5EB);
+  border: 1px solid var(--amber-line, #E8B878);
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  line-height: 1.45;
   margin: 0.4rem 0 0.8rem 0;
 }
 .field-row {
@@ -1171,103 +1246,111 @@ watch(
   margin-bottom: 0.8rem;
 }
 .field-row input, .field-row textarea {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 8px;
 }
 .review-actions {
   display: flex;
   gap: 0.8rem;
   margin-top: 1rem;
+  flex-wrap: wrap;
 }
 .danger {
-  background: #dc2626;
+  background: var(--red, #B23324);
   color: #fff;
   border: none;
-  border-radius: 4px;
-  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.9rem;
   cursor: pointer;
+}
+.danger:hover:not(:disabled) {
+  background: #8c2418;
+  color: #fff;
+}
+.mapping-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2, #5C5346);
 }
 .clause-table-wrapper, .mapping-table-wrapper {
   width: 100%;
   overflow-x: auto;
   margin-top: 0.8rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 6px;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 12px;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(44, 38, 35, 0.04);
   -webkit-overflow-scrolling: touch;
 }
-.clause-table {
+.clause-table, .mapping-table {
   width: 100%;
-  min-width: 1320px;
+  min-width: 680px;
   border-collapse: collapse;
-  font-size: 0.84rem;
-  table-layout: fixed;
-}
-.mapping-table {
-  width: 100%;
-  min-width: 1280px;
-  border-collapse: collapse;
-  font-size: 0.84rem;
-  table-layout: fixed;
+  font-size: 0.85rem;
 }
 .clause-table th, .clause-table td,
 .mapping-table th, .mapping-table td {
-  border: 1px solid #e5e7eb;
-  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--line-soft, #EFE8D8);
+  border-right: 1px solid var(--line-soft, #EFE8D8);
+  padding: 0.75rem 0.9rem;
   text-align: left;
   vertical-align: top;
-  word-break: break-word;
-  overflow-wrap: anywhere;
 }
 .clause-table th, .mapping-table th {
-  background: #f8fafc;
-  color: #334155;
-  font-weight: 600;
+  background: var(--surface-subtle, #F3ECE1);
+  color: var(--ink, #2C2623);
+  font-weight: 700;
   position: sticky;
   top: 0;
   z-index: 1;
 }
+.clause-table tbody tr:hover, .mapping-table tbody tr:hover {
+  background: var(--surface-warm, #FDF9F3);
+}
 .clause-table code, .mapping-table code {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   word-break: break-all;
-  background: #f1f5f9;
-  padding: 2px 4px;
-  border-radius: 3px;
+  background: var(--surface-subtle, #F3ECE1);
+  padding: 2px 5px;
+  border-radius: 4px;
 }
 .text-cell {
-  line-height: 1.5;
+  line-height: 1.55;
 }
 .reason-cell, .compat-cell {
-  line-height: 1.5;
-  color: #374151;
+  line-height: 1.55;
+  color: var(--ink-2, #5C5346);
 }
 .action-tag {
   display: inline-block;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-  font-size: 0.78rem;
-  font-weight: 600;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
   white-space: nowrap;
 }
-.action-tag.retained { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
-.action-tag.renamed { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
-.action-tag.split { background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }
-.action-tag.merged { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
-.action-tag.new, .action-tag.added { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.action-tag.deprecated { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
-.action-tag.pending_human_review { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.action-tag.retained { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border: 1px solid var(--teal-line, #9BB5D6); }
+.action-tag.renamed { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border: 1px solid var(--amber-line, #E8B878); }
+.action-tag.split { background: #F3EFFA; color: #5B3D8A; border: 1px solid #D5C5EE; }
+.action-tag.merged { background: #FEF0E6; color: #9E4713; border: 1px solid #F2C7A5; }
+.action-tag.new, .action-tag.added { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border: 1px solid var(--green-line, #8FC1A3); }
+.action-tag.deprecated { background: var(--surface-subtle, #F3ECE1); color: var(--ink-3, #6E6458); border: 1px solid var(--line, #E6DEC8); }
+.action-tag.pending_human_review { background: var(--red-soft, #FDEDEC); color: var(--red, #B23324); border: 1px solid #E69A8D; }
 .card-box {
   background: #fff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--line, #E6DEC8);
   padding: 1.2rem;
-  border-radius: 6px;
+  border-radius: 12px;
   margin-bottom: 1.5rem;
 }
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
 }
 .form-field {
@@ -1277,43 +1360,59 @@ watch(
   margin-bottom: 0.8rem;
 }
 .form-field input, .form-field textarea {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--line, #E6DEC8);
+  border-radius: 8px;
 }
 .release-error-box {
-  background: #fee2e2;
-  border: 1px solid #f87171;
-  color: #991b1b;
+  background: var(--red-soft, #FDEDEC);
+  border: 1px solid #E69A8D;
+  color: var(--red, #B23324);
   padding: 0.8rem;
-  border-radius: 4px;
+  border-radius: 8px;
   margin: 0.8rem 0;
   font-size: 0.85rem;
 }
 .release-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 0.8rem;
+  border: 1px solid var(--line, #E6DEC8);
+  background: var(--surface-warm, #FDF9F3);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
   margin-top: 0.8rem;
 }
 .rel-head {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.rel-ver-zh {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink, #2C2623);
 }
 .rel-ver {
   font-weight: 600;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 .rel-status {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--green-soft, #EBF5EE);
+  color: var(--green, #2A6F4E);
   font-size: 0.75rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
 }
 .rel-time {
-  color: #6b7280;
+  color: var(--ink-3, #6E6458);
   font-size: 0.8rem;
+}
+.rel-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--ink-2, #5C5346);
+  margin-top: 0.4rem;
 }
 </style>

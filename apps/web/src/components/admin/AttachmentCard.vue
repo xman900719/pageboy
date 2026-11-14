@@ -8,6 +8,7 @@ import {
   type SourceDetail,
 } from '../../api'
 import { ATTACHMENT_STATUS_LABELS, REUPLOAD_RESET_NOTE, fmtBytes, shortTime } from '../../copy'
+import { getMediaTypeLabel } from '../../config/knowledge'
 import Note from '../../components/Note.vue'
 import type { NoticeTone } from '../../components/Notice.vue'
 import ConfirmImportForm from './ConfirmImportForm.vue'
@@ -201,11 +202,11 @@ async function parse(attachment: AttachmentOut) {
             {{ ATTACHMENT_STATUS_LABELS[a.status] }}
           </span>
           <span class="muted tiny">
-            {{ fmtBytes(a.byte_size) }} · {{ a.media_type }}
+            {{ fmtBytes(a.byte_size) }} · {{ getMediaTypeLabel(a.media_type) }}
           </span>
         </div>
         <div class="attachment-meta">
-          sha256 {{ a.sha256.slice(0, 16) }}… · 上传于 {{ shortTime(a.created_at) }}
+          文件校验摘要 {{ a.sha256.slice(0, 16) }}… · 上传于 {{ shortTime(a.created_at) }}
         </div>
         <div class="attachment-actions">
           <button

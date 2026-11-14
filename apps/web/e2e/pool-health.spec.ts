@@ -51,14 +51,55 @@ test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责�
 })
 
 test('J7b 题库体检：零余量知识点如实显示「暂无未见题余量」，不伪造 0 分语义', async ({ page }) => {
+  // 在暂未种题的 english 学科创建 1 道已发布题并作为学生曝光 1 次，使该知识点确定达到未见题余量 0。
+  const apiBase = 'http://127.0.0.1:18765'
+  const adminHeaders = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' }
+  const srcRes = await page.request.post(`${apiBase}/api/admin/sources`, {
+    headers: adminHeaders,
+    data: { title: '虚构测试数据：零余量校验题源', subject: 'english', rights_status: 'licensed', verified: true },
+  })
+  const srcId = (await srcRes.json()).id as string
+  await page.request.post(`${apiBase}/api/admin/sources/${srcId}/review`, {
+    headers: adminHeaders,
+    data: {
+      exam_year: 2026,
+      source_url: 'https://example.org/zero-pool.pdf',
+      acquired_at: '2026-10-20',
+      rights_status: 'licensed',
+      rights_basis: '虚构测试数据：合成校验用题',
+      applicable: true,
+      applicability_note: '虚构测试数据：零余量校验',
+      reviewed_by_human: true,
+    },
+  })
+  const qRes = await page.request.post(`${apiBase}/api/admin/questions`, {
+    headers: adminHeaders,
+    data: {
+      source_document_id: srcId,
+      stem: '虚构测试数据：英语零余量校验唯一题。',
+      kind: 'single_choice',
+      options: ['A. Yes', 'B. No'],
+      correct_answer: 'A',
+      knowledge_ids: ['english.zero_test'],
+      max_points: 2,
+    },
+  })
+  const qid = (await qRes.json()).id as string
+  await page.request.post(`${apiBase}/api/admin/questions/${qid}/review`, { headers: adminHeaders })
+  await page.request.post(`${apiBase}/api/admin/questions/${qid}/publish`, { headers: adminHeaders })
+  const expRes = await page.request.get(`${apiBase}/api/practice/next?subject=english&purpose=evaluation`, {
+    headers: { Authorization: 'Bearer test-student-secret' },
+  })
+  expect(expRes.ok()).toBe(true)
+
   await enterAdminSpace(page)
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: /题库体检/ }).click()
+  await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '英语' }).click()
 
   const card = page.getByRole('region', { name: '题库体检' })
   await expect(card).toBeVisible()
 
-  // J1–J6 已把部分知识点的未见题余量消耗为 0（math.gap 诊断消耗）；零余量行必须出现
-  // 「暂无未见题余量」提示，且页面不得出现「0 分」表述（缺证据不渲染为 0 分）。
+  // 零余量行必须出现「暂无未见题余量」提示，且页面不得出现「0 分」表述（缺证据不渲染为 0 分）。
   await expect(card.getByText('暂无未见题余量').first()).toBeVisible()
   const text = await page.evaluate(() => document.body.innerText)
   for (const match of text.matchAll(/0\s*分/g)) {

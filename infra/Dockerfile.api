@@ -5,6 +5,7 @@ COPY services/api/pyproject.toml /app/pyproject.toml
 COPY services/api/shutong /app/shutong
 COPY services/api/alembic /app/alembic
 COPY services/api/alembic.ini /app/alembic.ini
+COPY contracts /app/contracts
 RUN pip install --no-cache-dir .
 RUN useradd -r -u 10001 shutong && mkdir -p /var/lib/shutong/attachments && chown -R shutong:shutong /var/lib/shutong
 ENV SHUTONG_PRIVATE_DIR=/var/lib/shutong/attachments

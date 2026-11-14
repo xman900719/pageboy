@@ -58,19 +58,20 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   expect(await page.evaluate(() => 'ontouchstart' in window)).toBe(true)
   expect(await page.evaluate(() => innerWidth)).toBe(810)
 
-  // 首页（默认视图）：810px 下 .home-grid 仍为双列 grid——720 断点不得触发。
-  const homeGridDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('.home-grid')!).display)
-  expect(homeGridDisplay, '810px 应保持桌面双列布局（720 断点未触发）').toBe('grid')
+  // 练习（默认视图）：810px 下 .lobby-controls 保持桌面双列布局（720 断点未触发），且不产生曝光。
+  await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
+  const lobbyGridDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('.lobby-controls')!).display)
+  expect(lobbyGridDisplay, '810px 应保持双列控制网格（720 断点未触发）').toBe('grid')
   await expectNoHorizontalOverflow(page)
 
-  // 练习视图：控制区渲染即度量，不开始练习（不产生曝光）。
-  await navTab(page, /练习/).click()
-  await expect(page.getByRole('region', { name: '练习控制' })).toBeVisible()
+  // 成长状态视图：只读加载（不修改目标、不消耗未见题），度量双列与雷达无溢出。
+  await navTab(page, /成长状态/).click()
+  await expect(page.getByRole('region', { name: '成长状态总览' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  // 阶段诊断视图：仅静态加载（绝不领取未见题，避免写入基线记录）。
-  await navTab(page, /阶段诊断/).click()
-  await expect(page.getByText('独立验证纪律')).toBeVisible()
+  // 知识点展示视图：交互图谱画布内部滚动，页面整体无横向溢出。
+  await navTab(page, /知识点展示/).click()
+  await expect(page.getByRole('region', { name: '知识点关系图谱展示' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   // 管理端工作台（/admin.html）：台账与工作区卡片只读加载后度量，无横向溢出。

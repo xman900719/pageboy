@@ -4,9 +4,9 @@ import { createClient, SUBJECTS, SUBJECT_LABELS, type Subject } from './api'
 import { VIEWS, type ViewId } from './copy'
 import Notice, { type NoticeData, type NoticeTone } from './components/Notice.vue'
 import Gate from './components/Gate.vue'
-import HomeView from './views/HomeView.vue'
 import PracticeView from './views/PracticeView.vue'
-import DiagnosisView from './views/DiagnosisView.vue'
+import GrowthView from './views/GrowthView.vue'
+import KnowledgeGraphView from './views/KnowledgeGraphView.vue'
 
 /** 本机记住的学生端令牌（P0-1 双凭据隔离）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
  *  与管理端凭据（shutong.admin_token）彻底脱钩，防止凭据交叉复用。默认行为不变：仅页面内存。 */
@@ -14,7 +14,8 @@ const TOKEN_STORE_KEY = 'shutong.student_token'
 
 const token = ref('')
 const subject = ref<Subject>('math')
-const view = ref<ViewId>('home')
+const view = ref<ViewId>('practice')
+const focusKnowledgeCode = ref<string | null>(null)
 const notice = ref<NoticeData | null>(null)
 
 const client = computed(() => (token.value === '' ? null : createClient(token.value, 'student')))
@@ -25,6 +26,11 @@ function notify(text: string, tone: NoticeTone = 'info') {
 
 function clearNotice() {
   notice.value = null
+}
+
+function goPracticeWithFocus(code: string) {
+  focusKnowledgeCode.value = code
+  view.value = 'practice'
 }
 
 onMounted(() => {
@@ -123,7 +129,7 @@ function signOut() {
             :key="id"
             type="button"
             :class="subject === id ? 'subject-chip selected' : 'subject-chip'"
-            @click="subject = id; notify(`已切换到${SUBJECT_LABELS[id]}。`)"
+            @click="subject = id; focusKnowledgeCode = null; notify(`已切换到${SUBJECT_LABELS[id]}。`)"
           >
             {{ SUBJECT_LABELS[id] }}
           </button>
@@ -132,25 +138,29 @@ function signOut() {
     </header>
 
     <main v-if="client" class="view" :key="`${view}:${subject}`">
-      <HomeView
-        v-if="view === 'home'"
+      <PracticeView
+        v-if="view === 'practice'"
         :client="client"
         :subject="subject"
         :notify="notify"
+        :focus-knowledge-code="focusKnowledgeCode"
+        @clearFocus="focusKnowledgeCode = null"
         @goView="view = $event"
       />
-      <PracticeView
-        v-else-if="view === 'practice'"
+      <GrowthView
+        v-else-if="view === 'growth'"
         :client="client"
         :subject="subject"
         :notify="notify"
+        @goPracticeFocus="goPracticeWithFocus"
+        @goView="view = $event"
       />
-      <DiagnosisView
-        v-else-if="view === 'diagnosis'"
+      <KnowledgeGraphView
+        v-else-if="view === 'knowledge'"
         :client="client"
         :subject="subject"
         :notify="notify"
-        @goHome="view = 'home'"
+        @goPracticeFocus="goPracticeWithFocus"
       />
     </main>
 

@@ -212,6 +212,8 @@ class KnowledgeNode(Base):
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_nodes.id"))
     status: Mapped[str] = mapped_column(String(20), default="active")  # active/deprecated/merged/split
     merged_into_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_nodes.id"))
+    # 课标选学标记（*号内容不作中考考试要求，运行期练习与图谱需过滤隔离）
+    is_elective: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class KnowledgeNodeVersion(Base):
@@ -272,4 +274,57 @@ class ResearchRun(Base):
     data_scope: Mapped[dict] = mapped_column(JSON)
     output: Mapped[dict] = mapped_column(JSON)
     review_status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class PracticeSession(Base):
+    """综合编制练习回合：按能力缺失、知识图谱与题库编排的有限题数会话。"""
+    __tablename__ = "practice_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    subject: Mapped[str] = mapped_column(String(20))
+    purpose: Mapped[str] = mapped_column(String(20), default="training")  # training / evaluation
+    target_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active / completed
+    composition_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PracticeSessionItem(Base):
+    """练习回合内的题目槽位与入选依据。"""
+    __tablename__ = "practice_session_items"
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="uq_practice_session_seq"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("practice_sessions.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    question_id: Mapped[str] = mapped_column(ForeignKey("questions.id"))
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"))
+    exposure_id: Mapped[str | None] = mapped_column(ForeignKey("exposures.id"), nullable=True)
+    target_knowledge_codes: Mapped[list] = mapped_column(JSON, default=list)
+    selection_reason: Mapped[str] = mapped_column(String(200))
+
+
+class AiTutorSession(Base):
+    """错题 AI 引导式讲解会话（按单次作答 attempt 绑定）。"""
+    __tablename__ = "ai_tutor_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("answer_attempts.id"), unique=True)
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"))
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AiTutorTurn(Base):
+    """AI 引导式讲解多轮对话记录。"""
+    __tablename__ = "ai_tutor_turns"
+    __table_args__ = (UniqueConstraint("tutor_session_id", "turn_index", name="uq_tutor_session_turn"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    tutor_session_id: Mapped[str] = mapped_column(ForeignKey("ai_tutor_sessions.id"), index=True)
+    turn_index: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(20))  # user / assistant
+    content: Mapped[str] = mapped_column(Text)
+    model_used: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
