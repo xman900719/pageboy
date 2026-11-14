@@ -197,3 +197,15 @@ def test_clean_demo_data_cli_flag_defaults_safe(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["clean_demo_data.py", "--dry-run", "--no-clean-test-traces"])
     clean_mod.main()
     assert captured["clean_test_traces"] is False
+
+
+def test_attachment_media_type_width_fits_docx_mime():
+    """验证附件表 media_type 字段长度足以容纳 DOCX 等全部受支持 MIME 类型（避免 PostgreSQL 截断）。"""
+    from shutong import models as m
+    from shutong import private_files as files
+
+    max_mime_len = max(len(mt) for mt in files.MEDIA_TYPES)
+    assert max_mime_len == 71
+    assert m.SourceAttachment.media_type.type.length >= max_mime_len
+    assert m.SchoolPaperAttachment.media_type.type.length >= max_mime_len
+

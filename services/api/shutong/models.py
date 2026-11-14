@@ -141,7 +141,7 @@ class SourceAttachment(Base):
     source_document_id: Mapped[str] = mapped_column(ForeignKey("source_documents.id"), index=True)
     owner_id: Mapped[str] = mapped_column(String(40))
     filename: Mapped[str] = mapped_column(String(255))
-    media_type: Mapped[str] = mapped_column(String(32))
+    media_type: Mapped[str] = mapped_column(String(128))
     sha256: Mapped[str] = mapped_column(String(64))
     byte_size: Mapped[int] = mapped_column(Integer)
     storage_key: Mapped[str] = mapped_column(String(32), unique=True)
@@ -179,7 +179,7 @@ class SchoolPaperAttachment(Base):
     school_exam_id: Mapped[str] = mapped_column(ForeignKey("school_exams.id"), index=True)
     owner_id: Mapped[str] = mapped_column(String(40))
     filename: Mapped[str] = mapped_column(String(255))
-    media_type: Mapped[str] = mapped_column(String(32))
+    media_type: Mapped[str] = mapped_column(String(128))
     sha256: Mapped[str] = mapped_column(String(64))
     byte_size: Mapped[int] = mapped_column(Integer)
     # 仅私有存储定位；绝不进入 HTTP 响应（AC-SEC-01）。
