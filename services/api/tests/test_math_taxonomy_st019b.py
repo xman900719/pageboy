@@ -1213,10 +1213,10 @@ def test_curriculum_clauses_semantic_mapping_precision():
     assert "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c02" in frac_eq_cids
     assert "cs:math:2022-errata:s4:num_alg:content_req:quad_eq:c08" in frac_eq_cids
 
-    # 6. 验证旧考点映射中几何综合与新定义为 pending_human_review
-    assert mappings["math.geo.comprehensive"]["action"] == "pending_human_review"
-    assert mappings["math.adv.new_definition"]["action"] == "pending_human_review"
-    assert mapping_data["summary"]["pending_human_review_count"] == 2
+    # 6. 验证旧考点映射中几何综合与新定义已完成北京市中考专家终审定稿
+    assert mappings["math.geo.comprehensive"]["action"] == "split"
+    assert mappings["math.adv.new_definition"]["action"] == "retained"
+    assert mapping_data["summary"]["pending_human_review_count"] == 0
 
 
 def test_circle_tangent_elective_isolation():

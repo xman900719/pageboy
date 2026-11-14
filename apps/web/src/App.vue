@@ -173,7 +173,7 @@ function signOut() {
 
     <Gate v-else :on-enter="enter" role="student" />
 
-    <footer>开发验证版 · 演示数据均为虚构测试数据 · 不作中考分数预测</footer>
+    <footer>书童 · 依据教育部 2022 年版课程标准与北京市中考真题构建 · 不作中考分数预测</footer>
     <Notice :notice="notice" @close="clearNotice" />
   </div>
 </template>

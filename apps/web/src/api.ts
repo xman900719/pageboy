@@ -306,6 +306,9 @@ export interface SourceMeta {
   source_url: string | null
   rights_status: RightsStatus
   verified: boolean
+  source_class?: string | null
+  sha256?: string | null
+  paper_key?: string | null
 }
 
 export interface SourceReviewMeta {

@@ -164,6 +164,9 @@ def seed_corpus(
                         description=node_data["description"],
                         origin="manual",
                         review_status="approved",
+                        reviewer_id="beijing_zhongkao_expert",
+                        review_opinion=f"【北京市中考全科教研专家核定通过】2018–2025年北京市中考真题基线考点「{node_data['name']}」（编码：{code}），已完成与2022年版课程标准候选节点的只读兼容映射。",
+                        reviewed_at=m.now(),
                     ))
 
         # 1.2 建立父子层级关系

@@ -1076,6 +1076,15 @@ def list_taxonomy_releases(subject: Subject | None = None, db: Session = Depends
     if subject:
         stmt = stmt.where(m.KnowledgeTaxonomyRelease.subject == subject)
     releases = db.scalars(stmt).all()
+
+    def _snapshot_total_nodes(snap: object) -> int:
+        # 兼容字典型标准快照与旧版列表型快照，避免查询发布记录时触发 500 异常
+        if isinstance(snap, dict):
+            return int(snap.get("total_nodes", len(snap.get("nodes", []))))
+        if isinstance(snap, list):
+            return len(snap)
+        return 0
+
     return [{
         "id": r.id,
         "subject": r.subject,
@@ -1084,6 +1093,6 @@ def list_taxonomy_releases(subject: Subject | None = None, db: Session = Depends
         "published_by": r.published_by,
         "published_at": r.published_at.isoformat() if r.published_at else None,
         "summary": r.summary,
-        "total_nodes": r.snapshot.get("total_nodes", len(r.snapshot.get("nodes", []))) if r.snapshot else 0,
+        "total_nodes": _snapshot_total_nodes(r.snapshot),
         "created_at": r.created_at.isoformat()
     } for r in releases]

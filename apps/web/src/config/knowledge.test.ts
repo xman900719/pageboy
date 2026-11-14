@@ -44,8 +44,10 @@ describe('knowledge 与 locale-labels 配置文件读取与本地化解析', () 
     expect(getDomainLabel('geom')).toBe('图形与几何')
     expect(getDomainLabel('motion_energy')).toBe('运动、相互作用与能量')
     expect(getOperatorLabel('admin_owner')).toBe('系统管理员')
+    expect(getOperatorLabel('beijing_zhongkao_expert')).toBe('北京市中考全科教研专家')
     expect(getOperatorLabel('张老师')).toBe('张老师')
     expect(getReleaseStatusLabel('active')).toBe('正式生效')
+    expect(getReleaseStatusLabel('published')).toBe('已正式发布')
     expect(formatReleaseChineseName('math-v2022.1.0')).toBe('数学 2022 课标正式版 第 1.0 版')
     expect(formatClauseTitle('cs:math:2022-errata:s4:num_alg:content_req:rat_num:c01')).toBe(
       '数学课标 · 数与代数 · 内容要求（条目 C01）'

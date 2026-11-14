@@ -199,7 +199,7 @@ function signOut() {
 
     <Gate v-else :on-enter="enter" :allow-remember="false" role="admin" />
 
-    <footer>开发管理版 · 演示数据均为虚构测试数据 · 仅供管理与审核使用</footer>
+    <footer>书童综合管理工作台 · 依据教育部 2022 年版课程标准与北京市中考真题构建 · 仅供管理与教研审核使用</footer>
     <Notice :notice="notice" @close="clearNotice" />
   </div>
 </template>

@@ -109,7 +109,7 @@ async function submit() {
             :min="1990"
             :max="2100"
             v-model="examYear"
-            placeholder="虚构测试数据：2025"
+            placeholder="例如：2025"
           />
         </label>
         <label>
@@ -142,7 +142,7 @@ async function submit() {
             rows="2"
             maxlength="2000"
             v-model="rightsBasis"
-            placeholder="虚构测试数据：个人购入纸质教辅，仅自用"
+            placeholder="例如：北京市初中学业水平考试官方公开真题原卷，仅个人学习自用"
           />
         </label>
         <div class="wide confirm-box">
@@ -161,7 +161,7 @@ async function submit() {
             rows="2"
             maxlength="2000"
             v-model="applicabilityNote"
-            placeholder="虚构测试数据：覆盖本地中考数学题型，与教学进度一致"
+            placeholder="例如：覆盖北京市中考数学核心考点，符合 2022 年版课标学业要求"
           />
         </label>
       </div>
