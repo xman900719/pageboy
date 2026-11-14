@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from . import models as m
 from .fourcorpus import _latest, seed_candidate_nodes
+from .home import resolve_repo_root
 
 SUBJECTS: tuple[str, ...] = ("math", "chinese", "english", "physics")
 
@@ -189,8 +190,8 @@ BEIJING_ZHONGKAO_EXPERT_NOTES: dict[str, str] = {
 
 
 def repo_root() -> Path:
-    """获取代码仓库根目录。"""
-    return Path(__file__).resolve().parents[3]
+    """获取代码仓库根目录，兼容容器内 /app 布局。"""
+    return resolve_repo_root(__file__)
 
 
 def _load_clauses_map(subject: str) -> dict[str, dict]:

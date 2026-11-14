@@ -95,10 +95,9 @@ PREREQUISITE_EDGES: dict[str, list[tuple[str, str, str]]] = {
 
 def repo_path(relative_path: str) -> Path:
     """解析仓库内相对路径，兼容测试工作目录与容器部署路径。"""
-    p = Path(relative_path)
-    if p.exists():
-        return p
-    return Path(__file__).resolve().parents[3] / relative_path
+    from .home import resolve_repo_path
+
+    return resolve_repo_path(relative_path, anchor=__file__)
 
 
 @lru_cache(maxsize=8)

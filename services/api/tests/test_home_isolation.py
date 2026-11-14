@@ -111,3 +111,31 @@ def test_unknown_environment_and_nested_home_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("SHUTONG_ENV", "development")
     with pytest.raises(HomeIdentityError, match="不得直接指向具体环境目录"):
         get_env_home()
+
+
+def test_resolve_repo_root_supports_shallow_container_layout(tmp_path, monkeypatch):
+    """回归：验证容器 /app/shutong/... 浅层目录不会因 parents[3] 触发 IndexError。"""
+    from shutong.home import resolve_repo_root, resolve_repo_path
+    from shutong import taxonomy_audit, taxonomy_bridge, fourcorpus
+
+    app_root = tmp_path / "app"
+    (app_root / "contracts").mkdir(parents=True)
+    contract_file = app_root / "contracts" / "curriculum_clauses_math.json"
+    contract_file.write_text("[]", encoding="utf-8")
+    mod_file = app_root / "shutong" / "taxonomy_audit.py"
+    mod_file.parent.mkdir(parents=True)
+    mod_file.write_text("# stub", encoding="utf-8")
+
+    # 即使工作目录不在项目下且路径层级极浅，也应定位到 app/contracts
+    monkeypatch.chdir(tmp_path)
+    assert resolve_repo_root(mod_file) == app_root.resolve()
+    assert resolve_repo_path("contracts/curriculum_clauses_math.json", anchor=mod_file) == contract_file.resolve()
+
+    # 验证各调用方在当前仓库或浅层模拟模块路径下均不会抛出 IndexError
+    monkeypatch.setattr(taxonomy_audit, "__file__", str(mod_file))
+    monkeypatch.setattr(taxonomy_bridge, "__file__", str(mod_file))
+    monkeypatch.setattr(fourcorpus, "__file__", str(mod_file))
+    assert taxonomy_audit.repo_root() == app_root.resolve()
+    assert taxonomy_bridge.repo_path("contracts/curriculum_clauses_math.json") == contract_file.resolve()
+    assert fourcorpus._repo_path("contracts/curriculum_clauses_math.json") == contract_file.resolve()
+
