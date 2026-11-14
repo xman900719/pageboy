@@ -80,12 +80,10 @@ def _latest(db: Session, node_id: str) -> m.KnowledgeNodeVersion:
 
 
 def _repo_path(relative_path: str) -> Path:
-    """获取契约或静态文件的路径，优先检查当前工作目录，其次基于文件物理位置解析仓库根目录。"""
-    p = Path(relative_path)
-    if p.is_file() or p.is_dir():
-        return p
-    repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / relative_path
+    """获取契约或静态文件的路径，兼容源码树与容器内 /app 浅层布局。"""
+    from .home import resolve_repo_path
+
+    return resolve_repo_path(relative_path, anchor=__file__)
 
 
 @router.post("/knowledge/nodes", status_code=201)

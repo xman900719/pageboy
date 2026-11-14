@@ -184,3 +184,27 @@ def curriculum_standards_dir(
     if env == "production" and container_mount.is_dir():
         return container_mount
     return candidate
+
+
+def resolve_repo_root(anchor: str | Path | None = None) -> Path:
+    """解析包含 contracts/ 目录的项目根路径，同时兼容源码仓库树与容器 /app 浅层布局。"""
+    base = Path(anchor).resolve() if anchor is not None else Path(__file__).resolve()
+    for parent in base.parents:
+        if (parent / "contracts").is_dir():
+            return parent
+    cwd = Path.cwd()
+    if (cwd / "contracts").is_dir():
+        return cwd
+    container_root = Path("/app")
+    if (container_root / "contracts").is_dir():
+        return container_root
+    return base.parent
+
+
+def resolve_repo_path(relative_path: str, anchor: str | Path | None = None) -> Path:
+    """将仓库相对路径（如 contracts/...）解析为兼容本地与容器的实际路径。"""
+    p = Path(relative_path)
+    if p.exists():
+        return p
+    return resolve_repo_root(anchor=anchor) / relative_path
+

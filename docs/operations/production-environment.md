@@ -44,7 +44,7 @@ flowchart TB
         end
 
         subgraph 定时任务与灾备 ["定时任务与灾备"]
-            BACKUP_TIMER["Systemd 定时器: shutong-backup.timer (每4小时)"]
+            BACKUP_TIMER["Cron 定时任务: shutong-prod crontab (每4小时)"]
             BACKUP_SCRIPT["联合备份脚本: backup.sh"]
         end
     end
@@ -125,8 +125,8 @@ flowchart TB
 
 1. **`shutong-caddy.service`**：
    - 宿主机反向代理网关，监听 `127.0.0.1:8180`，统一承接 Web 静态页面与 `/api` 转发。
-2. **`shutong-backup.service` 与 `shutong-backup.timer`**：
-   - 每 4 小时触发一次联合异地容灾备份，执行 `infra/backup.sh` 并静默上报心跳。
+2. **`shutong-prod crontab`（每 4 小时备份任务）**：
+   - 通过 `shutong-prod` 用户 `crontab` 每 4 小时触发一次联合异地容灾备份，执行 `infra/backup.sh` 并静默上报心跳。
 3. **`cloudflared` (Cloudflare Tunnel)**：
    - 建立公网安全加密隧道，将分配的域名流量引入宿主机 Caddy（8180 端口）。
 

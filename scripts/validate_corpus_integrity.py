@@ -104,7 +104,11 @@ def validate_exam_papers(known_codes: set[str]) -> None:
             if pdf_relpath.endswith(".doc"):
                 cached = CONVERTED_CACHE_DIR / Path(pdf_relpath).with_suffix(".docx")
                 assert cached.is_file(), f"未找到已转换的标准 DOCX 附件：{cached}"
-                files.validate_file(cached.read_bytes(), files.DOCX_MEDIA_TYPE)
+                cached_bytes = cached.read_bytes()
+                assert b"SYNTHETIC TEST DATA" not in cached_bytes and len(cached_bytes) > 4096, (
+                    f"检测到测试桩或过小的 DOCX 转换缓存，请先清理并从原卷重转：{cached}"
+                )
+                files.validate_file(cached_bytes, files.DOCX_MEDIA_TYPE)
             else:
                 expected_mime = files.DOCX_MEDIA_TYPE if pdf_relpath.endswith(".docx") else "application/pdf"
                 files.validate_file(pdf_file.read_bytes(), expected_mime)
