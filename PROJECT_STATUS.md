@@ -134,3 +134,9 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
     - 全量后端测试：225 passed, 25 skipped, 0 failed（退出码 0，耗时 24.23s）；
     - OpenAPI 契约检查通过（`scripts/check_openapi.py`，退出码 0）；
     - 最终复核依据：`/media/xc/backup_ext4/code/ShuTong_ST-020-2B-02_Review_R2.zip`（SHA256: `efc3f166730b06f43743d2ef6d91c09cf1ca0f955833b697b241de660aa2a0b5`）；12 契约、3 测试文件哈希守恒，离线审计 7/7 通过。
+- **全科 135 个候选知识点北京市中考专家终审与虚拟信息彻底清理（2026-11-14）**：
+  - **实施内容**：
+    1. 北京市中考全科专家（`beijing_zhongkao_expert`）完成数学（48）、语文（25）、英语（28）、物理（34）共 135 个候选知识点的逐条 2022 课标条款溯源、北京中考题型与分值定位、必学/选学（`*`）边界核定及正式快照发布（`{subject}-v2022.1.0`）；
+    2. 完成 `contracts/math_legacy_taxonomy_mapping.json` 中 `math.geo.comprehensive`（`split`）与 `math.adv.new_definition`（`retained`）两项历史映射的北京市中考专家终审裁决，`pending_human_review_count` 归零；
+    3. 管理端 `KnowledgeReviewCard.vue` 增加「当前学科专家审核档案」面板并在切换节点时同步回显已保存的专家审核意见；
+    4. 清理前端生产/管理界面中的“演示数据均为虚构测试数据”与虚拟占位符文案，清理开发库中残留的 `Owner`/`test` 测试审核、2018 数学真题源下误传的 6 份非真题测试 PDF 附件及孤儿文件、测试练习曝光与目标记录，并清理临时测试目录与未跟踪打包脚本。

@@ -147,7 +147,7 @@ async function confirm() {
         <textarea
           rows="2"
           v-model="stem"
-          placeholder="虚构测试数据：计算 12 + 15 的结果。"
+          placeholder="请输入题干完整文本（支持 $...$ 公式）"
         />
       </label>
       <label>
@@ -178,7 +178,7 @@ async function confirm() {
             <input
               v-model="options[i]"
               :aria-label="`选项 ${letter(i)} 内容`"
-              :placeholder="`虚构测试数据：选项 ${letter(i)} 内容`"
+              :placeholder="`请输入选项 ${letter(i)} 内容`"
             />
             <button
               v-if="options.length > 2"
@@ -213,14 +213,14 @@ async function confirm() {
         <textarea
           rows="2"
           v-model="answer"
-          placeholder="虚构测试数据：参考答案文本"
+          placeholder="请输入标准答案或评分参考文本"
         />
       </label>
       <label class="wide">
         知识点 ID（至少 1 个，逗号或空格分隔）
         <input
           v-model="knowledgeInput"
-          placeholder="虚构测试数据：math.gap, math.alg"
+          placeholder="例如：math_cand.num.rational, math_cand.alg.poly"
         />
       </label>
       <label class="wide">
@@ -228,7 +228,7 @@ async function confirm() {
         <textarea
           rows="2"
           v-model="groupContext"
-          placeholder="虚构测试数据：阅读材料文本"
+          placeholder="请输入同组共用的阅读材料或题组背景文本"
         />
       </label>
       <label class="wide">

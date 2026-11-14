@@ -28,6 +28,8 @@
   "operatorLabels": {
     "admin_owner": "系统管理员",
     "owner_e2e_reviewer": "教研审校员",
+    "beijing_zhongkao_expert": "北京市中考全科教研专家",
+    "owner_delegated_ai": "北京市中考全科教研专家",
     "system": "系统自动初始化"
   },
   "domainLabels": {
@@ -53,6 +55,7 @@
   },
   "releaseStatusLabels": {
     "active": "正式生效",
+    "published": "已正式发布",
     "draft": "草稿",
     "archived": "历史归档"
   }

@@ -36,7 +36,9 @@ const props = defineProps<{
   notify: Notify
 }>()
 
-const activeTab = ref<'candidates' | 'clauses' | 'mapping' | 'releases'>('candidates')
+const activeTab = ref<'approved' | 'candidates' | 'clauses' | 'mapping' | 'releases'>('candidates')
+// 标记当前学科初次加载时是否已根据审核状态自动定位默认标签页
+const hasAutoSelectedTab = ref(false)
 // 默认隐藏底层英文技术编码，按配置决定是否允许一键展开排障
 const showTechnicalCodes = ref<boolean>(LOCALE_PREFS.showTechnicalCodesByDefault)
 
@@ -87,17 +89,36 @@ const releaseSummary = ref(`教育部2022年版初中${SUBJECT_LABELS[props.subj
 const publishing = ref(false)
 const releaseError = ref('')
 
+// 仅未通过审核（待审或已驳回）的知识点保留在「候选知识点」列表；已审核通过的节点自动移入「已审定知识点库」
+const pendingTabNodes = computed(() => {
+  return candidates.value.filter(c => c.review_status !== 'approved')
+})
+
+const approvedNodes = computed(() => {
+  return candidates.value.filter(c => c.review_status === 'approved')
+})
+
+const activeListNodes = computed(() => {
+  return activeTab.value === 'approved' ? approvedNodes.value : pendingTabNodes.value
+})
+
 const selectedNode = computed(() => {
-  if (!selectedNodeCode.value) return candidates.value[0] ?? null
-  return candidates.value.find(c => c.code === selectedNodeCode.value) ?? null
+  const list = activeListNodes.value
+  if (list.length === 0) return null
+  if (!selectedNodeCode.value) return list[0]
+  return list.find(c => c.code === selectedNodeCode.value) ?? list[0]
 })
 
 const pendingCount = computed(() => {
   return candidates.value.filter(c => c.review_status === 'pending').length
 })
 
+const rejectedCount = computed(() => {
+  return candidates.value.filter(c => c.review_status === 'rejected').length
+})
+
 const approvedCount = computed(() => {
-  return candidates.value.filter(c => c.review_status === 'approved').length
+  return approvedNodes.value.length
 })
 
 // 建立条款 ID -> 候选考点列表反查索引
@@ -184,18 +205,31 @@ const filteredClauses = computed(() => {
   return clauses.value.filter(c => c.domain === clauseDomainFilter.value)
 })
 
+function syncSelectedNodeForActiveTab() {
+  const list = activeListNodes.value
+  if (list.length === 0) {
+    selectedNodeCode.value = null
+    return
+  }
+  if (!list.some(c => c.code === selectedNodeCode.value)) {
+    selectedNodeCode.value = list[0].code
+  }
+}
+
 async function loadCandidates() {
   loadingCandidates.value = true
   try {
     candidates.value = await props.client.adminKnowledgeCandidates(props.subject)
-    if (candidates.value.length > 0) {
-      const exists = candidates.value.some(c => c.code === selectedNodeCode.value)
-      if (!exists) {
-        selectedNodeCode.value = candidates.value[0].code
+    // 初次进入或切换学科时：若全部候选均已审核通过，自动定位于「已审定知识点库」，避免落在空候选列表
+    if (!hasAutoSelectedTab.value) {
+      hasAutoSelectedTab.value = true
+      if (pendingTabNodes.value.length === 0 && approvedNodes.value.length > 0) {
+        activeTab.value = 'approved'
+      } else {
+        activeTab.value = 'candidates'
       }
-    } else {
-      selectedNodeCode.value = null
     }
+    syncSelectedNodeForActiveTab()
   } catch (e) {
     props.notify(`加载候选知识点失败：${describeError(e)}`, 'caution')
   } finally {
@@ -229,7 +263,7 @@ async function loadReleases() {
   try {
     releases.value = await props.client.adminKnowledgeReleases(props.subject)
   } catch (e) {
-    // 忽略未发布时的读取错误
+    props.notify(`加载已发布版本快照失败：${describeError(e)}`, 'caution')
   }
 }
 
@@ -237,6 +271,7 @@ async function seedCandidates() {
   seeding.value = true
   try {
     const res = await props.client.adminSeedCandidates(props.subject)
+    activeTab.value = 'candidates'
     props.notify(`已成功初始化 ${res.seeded_count} 个候选节点入库（总数 ${res.total_nodes}），全部置为待审核状态。`, 'info')
     await loadCandidates()
   } catch (e) {
@@ -355,6 +390,7 @@ watch(
     releaseSummary.value = `教育部2022年版初中${SUBJECT_LABELS[props.subject]}课程标准全量拆解知识体系首发版本`
     clauseDomainFilter.value = 'all'
     selectedNodeCode.value = null
+    hasAutoSelectedTab.value = false
     void loadCandidates()
     void loadClauses()
     void loadLegacyMapping()
@@ -362,6 +398,12 @@ watch(
   },
   { immediate: true }
 )
+
+watch(activeTab, tab => {
+  if (tab === 'candidates' || tab === 'approved') {
+    syncSelectedNodeForActiveTab()
+  }
+})
 </script>
 
 <template>
@@ -405,30 +447,48 @@ watch(
       </div>
     </div>
 
-    <!-- 顶部状态警示条 -->
-    <div class="status-banner">
-      <span class="badge pending">待审核: {{ pendingCount }}</span>
-      <span class="badge approved">已通过: {{ approvedCount }}</span>
-      <span class="badge total">总候选数: {{ candidates.length }}</span>
-      <span class="badge clauses">课标条款: {{ clauses.length }} 条</span>
-      <span class="audit-note">
-        红线门禁：候选内容全量通过真实学科审核前，严禁发布正式知识库版本。
-      </span>
-    </div>
+    <!-- 顶部状态统计面板 -->
+    <section class="status-banner" aria-label="知识点审核状态统计">
+      <div class="stats-panel-head">
+        <h3>{{ SUBJECT_LABELS[props.subject] }}知识体系审核状态统计</h3>
+        <span
+          v-if="candidates.length > 0 && pendingCount === 0 && rejectedCount === 0"
+          class="audit-note audit-ok"
+        >
+          ✅ 全量知识点已通过专家终审，已具备正式发布条件（共 {{ approvedCount }} 项）。
+        </span>
+        <span v-else class="audit-note">
+          红线门禁：候选内容全量通过真实学科审核前，严禁发布正式知识库版本。
+        </span>
+      </div>
+      <div class="status-badges-row">
+        <span class="badge pending">待审核: {{ pendingCount }}</span>
+        <span class="badge approved">已通过: {{ approvedCount }}</span>
+        <span class="badge total">总知识节点: {{ candidates.length }}</span>
+        <span class="badge clauses">课标条款: {{ clauses.length }} 条</span>
+      </div>
+    </section>
 
     <!-- 课标审核红线说明 -->
     <Note title="课标审核红线说明" tone="discipline">
-      知识点必须溯源至教育部2022年版课程标准官方条文。所有自动归集的候选考点均初始化为待审核状态，必须经学科专家人工逐项审核。若存在未审核或已驳回考点，发布强门禁将强制阻断版本发布。
+      知识点必须溯源至教育部2022年版课程标准官方条文。所有自动归集的候选考点均初始化为待审核状态，必须经学科专家人工逐项审核；审核通过后自动归入「已审定知识点库」，不继续滞留于待审候选列表。若存在未审核或已驳回考点，发布强门禁将强制阻断版本发布。
     </Note>
 
     <!-- 导航子标签 -->
     <nav class="sub-nav" aria-label="审核台子模块">
       <button
         type="button"
+        :class="activeTab === 'approved' ? 'tab-btn active' : 'tab-btn'"
+        @click="activeTab = 'approved'"
+      >
+        已审定知识点库 ({{ approvedNodes.length }})
+      </button>
+      <button
+        type="button"
         :class="activeTab === 'candidates' ? 'tab-btn active' : 'tab-btn'"
         @click="activeTab = 'candidates'"
       >
-        候选知识点体系 ({{ candidates.length }})
+        待审候选知识点 ({{ pendingTabNodes.length }})
       </button>
       <button
         type="button"
@@ -453,17 +513,54 @@ watch(
       </button>
     </nav>
 
-    <!-- 选项卡 1：候选知识点体系与审核 -->
-    <div v-if="activeTab === 'candidates'" class="tab-pane candidates-pane">
-      <div class="pane-split">
-        <!-- 左侧树/列表 -->
+    <!-- 选项卡 1 & 2：已审定知识点库 / 待审候选知识点 -->
+    <div v-if="activeTab === 'approved' || activeTab === 'candidates'" class="tab-pane candidates-pane">
+      <div v-if="activeListNodes.length === 0" class="empty-panel-card">
+        <template v-if="activeTab === 'candidates'">
+          <h4>🎉 当前暂无待审核候选知识点</h4>
+          <p v-if="approvedNodes.length > 0">
+            本学科全部 {{ approvedNodes.length }} 个知识点均已通过专家终审，并已自动归入「已审定知识点库」，不再留存在候选栏中。
+          </p>
+          <p v-else>
+            当前学科尚未同步候选知识点入库，请点击右上角「同步候选入库 (待审)」载入。
+          </p>
+          <button
+            v-if="approvedNodes.length > 0"
+            type="button"
+            class="primary small"
+            @click="activeTab = 'approved'"
+          >
+            前往查看已审定知识点库 ({{ approvedNodes.length }})
+          </button>
+        </template>
+        <template v-else>
+          <h4>暂无已审定通过的知识点</h4>
+          <p>
+            当前 {{ pendingTabNodes.length }} 个待审知识点正在等待专家审核，请先在「待审候选知识点」中完成逐项或按课标批量审核。
+          </p>
+          <button
+            v-if="pendingTabNodes.length > 0"
+            type="button"
+            class="primary small"
+            @click="activeTab = 'candidates'"
+          >
+            前往待审候选知识点 ({{ pendingTabNodes.length }})
+          </button>
+        </template>
+      </div>
+      <div v-else class="pane-split">
+        <!-- 左侧树/列表（高度自适应内容） -->
         <div class="candidate-list">
+          <div class="candidate-list-head">
+            <span>{{ activeTab === 'approved' ? '已通过专家终审的正式节点' : '待审核 / 待复核候选节点' }}</span>
+            <span class="badge total">{{ activeListNodes.length }} 项</span>
+          </div>
           <div
-            v-for="cand in candidates"
+            v-for="cand in activeListNodes"
             :key="cand.code"
             :class="[
               'candidate-item',
-              selectedNodeCode === cand.code ? 'selected' : '',
+              selectedNode?.code === cand.code ? 'selected' : '',
               cand.review_status,
               `level-${cand.level ?? 3}`,
             ]"
@@ -549,6 +646,24 @@ watch(
                 <p class="legacy-compat"><b>兼容保障：</b>{{ m.compatibility_assurance }}</p>
               </div>
             </div>
+          </div>
+
+          <!-- 当前已存盘的学科专家审核档案 -->
+          <div v-if="selectedNode.review_opinion || selectedNode.reviewer_id" class="expert-review-record">
+            <div class="expert-review-head">
+              <h4>当前学科专家审核档案</h4>
+              <span :class="['status-pill', selectedNode.review_status]">
+                {{ selectedNode.review_status === 'approved' ? '已通过' : selectedNode.review_status === 'rejected' ? '已驳回' : '待人工审核' }}
+              </span>
+            </div>
+            <div class="expert-review-meta">
+              <span><b>审核专家：</b>{{ getOperatorLabel(selectedNode.reviewer_id ?? '') || '—' }}</span>
+              <code v-if="showTechnicalCodes && selectedNode.reviewer_id">{{ selectedNode.reviewer_id }}</code>
+              <span v-if="selectedNode.reviewed_at">
+                <b>审核时间：</b>{{ new Date(selectedNode.reviewed_at).toLocaleString() }}
+              </span>
+            </div>
+            <p class="expert-review-opinion">{{ selectedNode.review_opinion }}</p>
           </div>
 
           <!-- 真实人工审核面板 (F03/B04 强化) -->
@@ -690,14 +805,28 @@ watch(
     <!-- 选项卡 3：新旧映射与兼容（4 列高可读结构） -->
     <div v-else-if="activeTab === 'mapping'" class="tab-pane mapping-pane">
       <div v-if="legacyMapping" class="mapping-summary">
-        <div class="mapping-stats">
-          <span>存量考点: {{ mappingSummary.total }} 个</span>
-          <span>保留: {{ mappingSummary.retained }}</span>
-          <span>重命名: {{ mappingSummary.renamed }}</span>
-          <span>合理拆分: {{ mappingSummary.split }}</span>
-          <span>合并: {{ mappingSummary.merged }}</span>
-          <span>新课标增设: {{ mappingSummary.new }}</span>
-        </div>
+        <section class="mapping-stats-panel" aria-label="新旧考点映射统计数据">
+          <div class="stats-panel-head">
+            <h3>{{ SUBJECT_LABELS[props.subject] }}新旧考点迁移映射统计概览</h3>
+            <span
+              v-if="mappingSummary.pending === 0"
+              class="badge approved"
+            >
+              全部存量考点已完成核定（待人工核定: 0）
+            </span>
+            <span v-else class="badge pending">
+              待人工核定: {{ mappingSummary.pending }}
+            </span>
+          </div>
+          <div class="mapping-stats">
+            <span class="stat-pill stat-total">存量考点: <b>{{ mappingSummary.total }}</b> 个</span>
+            <span class="stat-pill stat-retained">保留: <b>{{ mappingSummary.retained }}</b></span>
+            <span class="stat-pill stat-renamed">重命名: <b>{{ mappingSummary.renamed }}</b></span>
+            <span class="stat-pill stat-split">合理拆分: <b>{{ mappingSummary.split }}</b></span>
+            <span class="stat-pill stat-merged">合并: <b>{{ mappingSummary.merged }}</b></span>
+            <span class="stat-pill stat-new">新课标增设: <b>{{ mappingSummary.new }}</b></span>
+          </div>
+        </section>
         <Note tone="discipline">
           历史兼容保护原则：存量 {{ mappingSummary.total }} 个旧考点作为历史资产永久保留只读；历史题目关联记录、作答与曝光记录绝不被覆盖或静默重写。
         </Note>
@@ -799,7 +928,7 @@ watch(
             <span class="rel-ver-zh">{{ formatReleaseChineseName(rel.release_version) }}</span>
             <span class="rel-ver chip">{{ rel.release_version }}</span>
             <span class="rel-status">{{ getReleaseStatusLabel(rel.status) }}</span>
-            <span class="rel-time">{{ rel.published_at }}</span>
+            <span class="rel-time">{{ rel.published_at ? new Date(rel.published_at).toLocaleString('zh-CN') : '—' }}</span>
           </div>
           <p class="rel-summary">{{ rel.summary }}</p>
           <div class="rel-meta">
@@ -834,30 +963,51 @@ watch(
 }
 .status-banner {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--surface-warm, #FDF9F3);
-  border: 1px solid var(--line, #E6DEC8);
-  padding: 0.7rem 1rem;
-  border-radius: 10px;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: #F4EDE0;
+  border: 1px solid #DDD1BA;
+  padding: 0.9rem 1.05rem;
+  border-radius: 12px;
   font-size: 0.85rem;
 }
+.stats-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.stats-panel-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink, #2C2623);
+}
+.status-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
 .badge {
-  padding: 0.2rem 0.55rem;
+  padding: 0.24rem 0.65rem;
   border-radius: 999px;
   font-weight: 600;
 }
-.badge.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border-color: var(--amber-line, #E8B878); }
-.badge.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border-color: var(--green-line, #8FC1A3); }
-.badge.total { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border-color: var(--line, #E6DEC8); }
-.badge.clauses { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border-color: var(--teal-line, #9BB5D6); }
-.badge.elective { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border-color: var(--teal-line, #9BB5D6); }
-.badge.standard { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border-color: var(--line, #E6DEC8); }
+.badge.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border: 1px solid var(--amber-line, #E8B878); }
+.badge.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border: 1px solid var(--green-line, #8FC1A3); }
+.badge.total { background: #FFFFFF; color: var(--ink-2, #5C5346); border: 1px solid var(--line, #E6DEC8); }
+.badge.clauses { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border: 1px solid var(--teal-line, #9BB5D6); }
+.badge.elective { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border: 1px solid var(--teal-line, #9BB5D6); }
+.badge.standard { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border: 1px solid var(--line, #E6DEC8); }
 .audit-note {
   color: var(--red, #B23324);
   font-weight: 600;
-  margin-left: auto;
+  font-size: 0.82rem;
+}
+.audit-note.audit-ok {
+  color: var(--green, #2A6F4E);
 }
 .sub-nav {
   display: flex;
@@ -926,19 +1076,49 @@ watch(
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 1.2rem;
-  min-height: 480px;
+  align-items: start;
 }
 @media (max-width: 860px) {
   .pane-split {
     grid-template-columns: 1fr;
   }
 }
+.empty-panel-card {
+  background: var(--surface-warm, #FDF9F3);
+  border: 1px dashed var(--line, #E6DEC8);
+  border-radius: 12px;
+  padding: 1.6rem 1.4rem;
+  text-align: center;
+}
+.empty-panel-card h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--ink, #2C2623);
+  font-size: 1rem;
+}
+.empty-panel-card p {
+  margin: 0 0 1rem 0;
+  color: var(--ink-2, #5C5346);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
 .candidate-list {
   border: 1px solid var(--line, #E6DEC8);
   border-radius: 10px;
-  overflow-y: auto;
-  max-height: 600px;
+  height: auto;
+  overflow: visible;
   background: #fff;
+}
+.candidate-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+  background: #F4EDE0;
+  border-bottom: 1px solid var(--line, #E6DEC8);
+  border-radius: 10px 10px 0 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink, #2C2623);
 }
 .candidate-item {
   padding: 0.65rem 0.85rem;
@@ -1000,6 +1180,12 @@ watch(
   border-radius: 12px;
   padding: 1.2rem;
   background: #fff;
+}
+@media (min-width: 861px) {
+  .candidate-detail {
+    position: sticky;
+    top: 1rem;
+  }
 }
 .detail-code {
   color: var(--ink-3, #6E6458);
@@ -1135,6 +1321,42 @@ watch(
   line-height: 1.45;
   margin: 0.2rem 0;
 }
+.expert-review-record {
+  margin-bottom: 1.25rem;
+  background: var(--primary-soft, #EBF5EE);
+  border: 1px solid var(--primary-line, #8FC1A3);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+.expert-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+.expert-review-head h4 {
+  margin: 0;
+  color: var(--good, #2D6B4F);
+}
+.expert-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: 0.82rem;
+  color: var(--ink-2, #5C5346);
+  margin-bottom: 0.45rem;
+}
+.expert-review-opinion {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.58;
+  color: var(--ink, #2C2623);
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+}
 .domain-title {
   font-weight: 700;
   font-size: 0.86rem;
@@ -1268,15 +1490,37 @@ watch(
   background: #8c2418;
   color: #fff;
 }
+.mapping-stats-panel {
+  background: #F4EDE0;
+  border: 1px solid #DDD1BA;
+  border-radius: 12px;
+  padding: 0.9rem 1.05rem;
+  margin-bottom: 0.9rem;
+}
 .mapping-stats {
   display: flex;
-  gap: 10px;
+  gap: 0.65rem;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-top: 0.65rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--ink-2, #5C5346);
 }
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  background: #FFFFFF;
+  border: 1px solid var(--line, #E6DEC8);
+  font-size: 0.82rem;
+}
+.stat-pill.stat-retained { background: var(--teal-soft, #EDF4F8); color: var(--teal, #3B6E8C); border-color: var(--teal-line, #9BB5D6); }
+.stat-pill.stat-renamed { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border-color: var(--amber-line, #E8B878); }
+.stat-pill.stat-split { background: #F3EFFA; color: #5B3D8A; border-color: #D5C5EE; }
+.stat-pill.stat-merged { background: #FEF0E6; color: #9E4713; border-color: #F2C7A5; }
+.stat-pill.stat-new { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border-color: var(--green-line, #8FC1A3); }
 .clause-table-wrapper, .mapping-table-wrapper {
   width: 100%;
   overflow-x: auto;

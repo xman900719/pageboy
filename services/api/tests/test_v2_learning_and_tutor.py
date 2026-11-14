@@ -364,5 +364,50 @@ def test_batch_review_and_full_taxonomy_audit_publish(client, admin_auth):
         res_idempotent = audit_and_publish_subject(db, subject="math", reviewer_id="test_reviewer")
         assert res_idempotent["release_status"] == "already_published"
         assert res_idempotent["approved_now"] == 0
+
+        # 验证北京市中考全科专家 135 个节点专项定位全覆盖与 force_update_existing 快照刷新
+        from shutong.taxonomy_audit import BEIJING_ZHONGKAO_EXPERT_NOTES, _load_candidates
+        from shutong import models as m
+        from sqlalchemy import select
+
+        all_contract_codes = {
+            c["code"]
+            for subj in ("math", "chinese", "english", "physics")
+            for c in _load_candidates(subj)
+        }
+        assert len(all_contract_codes) == 135
+        assert set(BEIJING_ZHONGKAO_EXPERT_NOTES.keys()) == all_contract_codes
+
+        res_force = audit_and_publish_subject(
+            db,
+            subject="math",
+            reviewer_id="beijing_zhongkao_expert",
+            force_update_existing=True,
+        )
+        assert res_force["release_status"] == "published"
+        assert res_force["approved_now"] == 48
+        rel = db.scalar(
+            select(m.KnowledgeTaxonomyRelease).where(
+                m.KnowledgeTaxonomyRelease.subject == "math",
+                m.KnowledgeTaxonomyRelease.release_version == "math-v2022.1.0",
+            )
+        )
+        assert rel is not None
+        assert rel.published_by == "beijing_zhongkao_expert"
+        assert isinstance(rel.snapshot, dict)
+        assert rel.snapshot["total_nodes"] == 48
+        assert all(
+            item["reviewer_id"] == "beijing_zhongkao_expert"
+            and "【北京市中考全科教研专家终审通过】" in item["review_opinion"]
+            for item in rel.snapshot["nodes"]
+        )
+
+        # 验证管理端发布快照查询接口返回 200 且计数正确
+        rel_api = client.get("/api/admin/knowledge/releases?subject=math", headers=admin_auth)
+        assert rel_api.status_code == 200
+        rel_list = rel_api.json()
+        assert len(rel_list) == 1
+        assert rel_list[0]["release_version"] == "math-v2022.1.0"
+        assert rel_list[0]["total_nodes"] == 48
     finally:
         db.close()

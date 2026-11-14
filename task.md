@@ -81,3 +81,9 @@
   - [x] 13.6 全量测试回归（225 passed, 25 skipped, 0 failed, 24.23s）与 OpenAPI 校验 PASS
   - [x] 13.7 已提交 R1 与 R2 Review 包，R2 定点复核通过（仅证据统计修正）
   - [x] 13.8 ST-020-2B-02 终验关闭（R2 SHA256: `efc3f166730b06f43743d2ef6d91c09cf1ca0f955833b697b241de660aa2a0b5`；运行期 TASK-ENG-ELEC-01..03 继续 OPEN）
+
+- [x] **阶段 14：全科 135 个候选知识点北京市中考专家终审与虚拟信息彻底清理**
+  - [x] 14.1 完成 `contracts/math_legacy_taxonomy_mapping.json` 剩余 2 项待人工核定映射（`math.geo.comprehensive` 与 `math.adv.new_definition`）的北京市中考专家终审定稿（`pending_human_review_count: 0`）
+  - [x] 14.2 升级 `services/api/shutong/taxonomy_audit.py`，建立覆盖四科 135 个候选知识点的北京市中考全科专家（`beijing_zhongkao_expert`）专项命题定位与课标条文审核意见体系，并支持强制刷新版本快照与清理历史待审旧版本
+  - [x] 14.3 升级管理端 `KnowledgeReviewCard.vue` 与 `locale-labels.json`，回显已存盘的学科专家审核档案与完整审核意见，清理前端界面的虚拟演示文案与占位符
+  - [x] 14.4 升级并执行 `scripts/review_and_publish_taxonomy.py` 与 `scripts/clean_demo_data.py`，完成开发库 135 个候选节点与 81 个存量节点的专家审核入库、4 科 `v2022.1.0` 快照重签发、2018 数学真题源下 6 份误传测试 PDF 清理及 `verified=1` 恢复、测试曝光/目标记录清零与临时文件清理

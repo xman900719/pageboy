@@ -223,11 +223,14 @@
       "legacy_code": "math.geo.comprehensive",
       "legacy_name": "几何综合探究与动点最值",
       "legacy_parent_code": "math.geo",
-      "action": "pending_human_review",
+      "action": "split",
       "target_candidate_codes": [
+        "math_cand.geo.congruent_triangles",
+        "math_cand.geo.similarity",
+        "math_cand.geo.transform_symmetry",
         "math_cand.prac.exploration_new_definition"
       ],
-      "mapping_reason": "几何综合探究在中考中主要表现为动点轨迹、极值与全等/相似综合证明，属于高阶综合题型与思维能力维度，与2022课标'综合与实践'现实项目建模缺乏充分教学语义等价性，故暂标为待人工核定，待真实数学学科专家确定是映射为独立题型标签还是并入探究活动。",
+      "mapping_reason": "经北京市中考全科专家核定：北京中考第27题几何综合压轴题（手拉手旋转、截长补短、中点倍长及动点轨迹最值）在知识本质上由全等三角形、图形相似、几何变换（轴对称/中心对称/旋转）与数学探究活动复合构成，故按核心能力与课标模块拆分映射至上述四个候选节点。",
       "compatibility_assurance": "旧考点 math.geo.comprehensive 保持只读保留，历史题目与答题记录绝对不自动迁移重写。"
     },
     {
@@ -268,12 +271,12 @@
       "legacy_code": "math.adv.new_definition",
       "legacy_name": "新定义与综合实践探究",
       "legacy_parent_code": null,
-      "action": "pending_human_review",
+      "action": "retained",
       "target_candidate_codes": [
-        "math_cand.prac.project_modeling",
-        "math_cand.prac.exploration_new_definition"
+        "math_cand.prac.exploration_new_definition",
+        "math_cand.geo.coordinates"
       ],
-      "mapping_reason": "中考新定义题型重点考查学生现场阅读理解新规则、迁移运用数学符号进行逻辑推理的能力，属于特殊题型与高阶素养考查，与课标真实情境项目式学习存在明显语义差异，暂标记为待人工核定，待学科专家核定迁移方向或保留为题型标签。",
+      "mapping_reason": "经北京市中考全科专家核定：北京中考第28题平面直角坐标系下“新定义”压轴题，核心考查学生现场阅读理解新数学概念、结合圆与距离轨迹进行几何直观与逻辑推理论证的数学探究素养，直接对应课标第四学段“数学探究活动与跨模块综合（几何综合/新定义）”及“平面直角坐标系与图形坐标变化”，予以保留并建立权威映射。",
       "compatibility_assurance": "旧考点 math.adv.new_definition 保持只读保留，历史作答与曝光记录不受任何影响。"
     }
   ],
@@ -358,12 +361,12 @@
   ],
   "summary": {
     "total_legacy_math_nodes": 24,
-    "retained_count": 12,
+    "retained_count": 13,
     "renamed_count": 1,
-    "split_count": 9,
+    "split_count": 10,
     "merged_count": 0,
     "new_count": 11,
     "deprecated_count": 0,
-    "pending_human_review_count": 2
+    "pending_human_review_count": 0
   }
 }
