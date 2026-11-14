@@ -19,11 +19,12 @@ services:
     environment:
       # ST-017：镜像标签透传进应用，/health/live 的 app_revision 因此可证明"哪个构建在服务"。
       SHUTONG_APP_REVISION: ${SHUTONG_API_TAG:-dev}
+      SHUTONG_STANDARDS_DIR: /app/private-data/curriculum_standards
     volumes:
       # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
-      - ${SHUTONG_ATTACHMENTS_DIR:-./private-data/attachments}:/var/lib/shutong/attachments
+      - ${SHUTONG_ATTACHMENTS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/attachments}:/var/lib/shutong/attachments
       # 官方课标 PDF 原件只读挂载（知识库版本发布 SHA256 强校验门禁依赖）
-      - ${SHUTONG_STANDARDS_DIR:-../private-data/curriculum_standards}:/app/private-data/curriculum_standards:ro
+      - ${SHUTONG_STANDARDS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/curriculum_standards}:/app/private-data/curriculum_standards:ro
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models as m
-from .database import make_engine
+from .database import DEFAULT_DATABASE_URL, make_engine
 from .fourcorpus import (
     TaxonomyReleaseIn,
     _latest,
@@ -182,7 +182,7 @@ def run_all_subjects(
     force_update_existing: bool = False,
 ) -> list[dict[str, Any]]:
     """对全部四个学科依次执行候选节点全量审核与版本发布。"""
-    db_url = database_url or os.getenv("SHUTONG_DATABASE_URL", "sqlite:///./shutong-dev.sqlite3")
+    db_url = database_url or os.getenv("SHUTONG_DATABASE_URL") or os.getenv("DATABASE_URL") or DEFAULT_DATABASE_URL
     engine = make_engine(db_url)
     results = []
     with Session(engine) as db:

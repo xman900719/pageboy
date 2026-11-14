@@ -26,12 +26,15 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-# 统一路径与临时目录配置
+# 统一路径与临时目录配置（优先使用 pageboy-home/development/run/manual_test）
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TMP_DIR = Path("/tmp/opencode")
+_PAGEBOY_DEV_HOME = Path(os.getenv("PAGEBOY_HOME", "/media/xc/backup_ext4/pageboy-home")) / "development"
+TMP_DIR = (_PAGEBOY_DEV_HOME / "run" / "manual_test") if _PAGEBOY_DEV_HOME.is_dir() else Path("/tmp/opencode")
 PID_FILE = TMP_DIR / "manual_test_env.json"
 DB_FILE = TMP_DIR / "manual_test.sqlite3"
 ATTACHMENTS_DIR = TMP_DIR / "manual_attachments"
+_HOST_STANDARDS_DIR = _PAGEBOY_DEV_HOME / "data" / "curriculum_standards"
+STANDARDS_DIR = _HOST_STANDARDS_DIR if _HOST_STANDARDS_DIR.is_dir() else (TMP_DIR / "manual_standards")
 
 API_PORT = 18765
 WEB_PORT = 4173
@@ -83,6 +86,7 @@ def start_env(use_mock_ai: bool = False) -> int:
     # 2. 准备目录与全新测试数据库
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    STANDARDS_DIR.mkdir(parents=True, exist_ok=True)
     if DB_FILE.exists():
         DB_FILE.unlink()
 
@@ -90,6 +94,7 @@ def start_env(use_mock_ai: bool = False) -> int:
     env_db = os.environ.copy()
     env_db["DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
     env_db["SHUTONG_DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
+    env_db["SHUTONG_STANDARDS_DIR"] = str(STANDARDS_DIR)
     mig_res = subprocess.run(
         ["uv", "run", "python", "-m", "alembic", "upgrade", "head"],
         cwd=API_DIR,
@@ -147,6 +152,7 @@ def start_env(use_mock_ai: bool = False) -> int:
     api_env["SHUTONG_STUDENT_TOKEN"] = STUDENT_TOKEN
     api_env["DATABASE_URL"] = f"sqlite+pysqlite:///{DB_FILE}"
     api_env["SHUTONG_PRIVATE_DIR"] = str(ATTACHMENTS_DIR)
+    api_env["SHUTONG_STANDARDS_DIR"] = str(STANDARDS_DIR)
     api_env["SHUTONG_ENV"] = "test"
 
     api_proc = subprocess.Popen(
@@ -159,7 +165,7 @@ def start_env(use_mock_ai: bool = False) -> int:
     )
 
     if not wait_for_http(f"http://127.0.0.1:{API_PORT}/health/live", timeout=20.0):
-        print("❌ 后端服务启动超时，请查看日志：/tmp/opencode/manual_api.log")
+        print(f"❌ 后端服务启动超时，请查看日志：{api_log_path}")
         stop_env()
         return 1
 

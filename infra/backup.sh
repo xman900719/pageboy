@@ -3,7 +3,7 @@
 # First configure and test against staging; no RPO guarantee without monitoring.
 #
 # Env overrides (all optional except where noted):
-#   ATTACHMENTS_DIR     private attachments root (default: ../private-data/attachments, resolved).
+#   ATTACHMENTS_DIR     private attachments root (default: /media/xc/backup_ext4/pageboy-home/production/data/attachments, resolved).
 #                       Missing dir => loud warning; attachments NOT included in the artifact set.
 #   MIGRATION_REVISION  override alembic head auto-detection (default: auto-detect, 'unknown' on failure).
 #   BACKUP_OUTPUT_DIR   LOCAL DRILL MODE: when set, skip restic entirely and copy the artifact set
@@ -41,7 +41,7 @@ if [[ "$local_drill" -eq 0 ]]; then
 fi
 
 # Attachments dir: resolve; missing dir is allowed ONLY with a loud warning (attachments excluded).
-attachments_requested="${ATTACHMENTS_DIR:-../private-data/attachments}"
+attachments_requested="${ATTACHMENTS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/attachments}"
 attachments_dir=""
 if attachments_dir="$(cd "$attachments_requested" 2>/dev/null && pwd)"; then
   :

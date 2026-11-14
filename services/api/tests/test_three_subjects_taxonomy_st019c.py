@@ -736,7 +736,7 @@ def test_f02_english_clauses_traceability(client, admin_auth):
     assert len(covered_legacy) >= 25
 
 
-def test_f03_release_gate_and_contract_consistency(client, admin_auth):
+def test_f03_release_gate_and_contract_consistency(client, admin_auth, monkeypatch, tmp_path):
     """
     F03 专项测试套件 (F03-T01 ~ F03-T10)：
     验证发布门禁对来源元数据、PDF哈希、契约一致性及快照不可变性的全方位强校验。
@@ -800,20 +800,14 @@ def test_f03_release_gate_and_contract_consistency(client, admin_auth):
         assert_no_release("math-test-pdf-sha-mismatch")
 
         # F03-T04b: 官方原件 PDF 文件缺失时，发布门禁 fail-closed 强行拦截 (400) 并验证无持久化
-        pdf_dir = ROOT / "private-data/curriculum_standards"
-        temp_hidden = ROOT / "private-data/curriculum_standards_temp_hidden"
-        if pdf_dir.exists():
-            pdf_dir.rename(temp_hidden)
-        try:
+        with monkeypatch.context() as mp:
+            mp.setenv("SHUTONG_STANDARDS_DIR", str(tmp_path / "missing_curriculum_standards"))
             resp_missing_pdf = client.post("/api/admin/knowledge/releases", json={
                 "subject": subj, "release_version": "math-test-pdf-missing-fail", "published_by": "auditor"
             }, headers=admin_auth)
             assert resp_missing_pdf.status_code == 400
             assert "不存在或不可访问" in resp_missing_pdf.json()["detail"] or "缺少原件验证证据" in resp_missing_pdf.json()["detail"]
             assert_no_release("math-test-pdf-missing-fail")
-        finally:
-            if temp_hidden.exists():
-                temp_hidden.rename(pdf_dir)
 
         # 恢复 sources 文件
         sources_file.write_text(orig_sources, encoding="utf-8")

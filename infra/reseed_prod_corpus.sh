@@ -4,7 +4,7 @@
 # 必须先执行生产前置热备份，校验可恢复后方可清理并灌库。
 set -euo pipefail
 
-PROD_ROOT="/media/xc/backup_ext4/prod-env/pageboy"
+PROD_ROOT="/media/xc/backup_ext4/pageboy-home/production"
 CORPUS_DIR="/media/xc/backup_ntfs/中考题库/北京中考真题-富尔题库"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
