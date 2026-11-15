@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   createClient,
   SCHOOL_SUBJECTS,
   SCHOOL_SUBJECT_LABELS,
   SUBJECTS,
   SUBJECT_LABELS,
-  type PoolHealth,
   type SchoolSubject,
   type Subject,
 } from './api'
@@ -14,11 +13,9 @@ import { clearDevAuthArtifacts, markDevLoggedIn, markDevLoggedOut, resolveDevAut
 import { ADMIN_VIEWS, type AdminViewId } from './copy'
 import Notice, { type NoticeData, type NoticeTone } from './components/Notice.vue'
 import Gate from './components/Gate.vue'
-import AdminView from './views/AdminView.vue'
-import PoolHealthCard from './components/PoolHealthCard.vue'
+import AdminView, { type LedgerSubTab } from './views/AdminView.vue'
 import SchoolExamCard from './components/admin/SchoolExamCard.vue'
 import KnowledgeReviewCard from './components/admin/KnowledgeReviewCard.vue'
-import Note from './components/Note.vue'
 
 // P0-1 安全整改：管理端令牌仅当前页面内存保存，不再写入 localStorage，杜绝同源本地持久化串用风险
 const token = ref('')
@@ -26,11 +23,10 @@ const subject = ref<Subject>('math')
 // 学校考试支持额外的「道法（ethics）」科目，与核心四科隔离管理
 const examSubject = ref<SchoolSubject>('math')
 const pendingExamId = ref<string | undefined>(undefined)
-const pendingExamTab = ref<'scores' | 'items'>('scores')
+const pendingExamTab = ref<'scores' | 'papers' | 'items'>('scores')
+const ledgerSubTab = ref<LedgerSubTab>('sources')
 const view = ref<AdminViewId>('ledger')
 const notice = ref<NoticeData | null>(null)
-const poolHealth = ref<PoolHealth | null>(null)
-const poolLoading = ref(false)
 
 const client = computed(() => (token.value === '' ? null : createClient(token.value, 'admin')))
 
@@ -41,28 +37,6 @@ function notify(text: string, tone: NoticeTone = 'info') {
 function clearNotice() {
   notice.value = null
 }
-
-async function loadPoolHealth() {
-  if (!client.value) return
-  poolLoading.value = true
-  try {
-    poolHealth.value = await client.value.poolHealth(subject.value)
-  } catch {
-    poolHealth.value = null
-  } finally {
-    poolLoading.value = false
-  }
-}
-
-watch(
-  [() => client.value, () => subject.value, () => view.value],
-  () => {
-    if (view.value === 'health') {
-      void loadPoolHealth()
-    }
-  },
-  { immediate: true }
-)
 
 onMounted(() => {
   // 清理废弃旧键与历史可能残留的管理端本地存储，确保仅当前会话内存持有，不发生任何凭据持久化
@@ -127,7 +101,7 @@ function signOut() {
           </span>
           <div>
             <span class="wordmark">书童 · 综合管理工作台</span>
-            <span class="tagline">题库审核 · 题库体检 · 真实校考台账</span>
+            <span class="tagline">题库与体检 · 学校考试 · 知识点审核</span>
           </div>
         </div>
         <div class="masthead-side">
@@ -179,31 +153,14 @@ function signOut() {
       </nav>
     </header>
 
-    <main v-if="client" class="view" :key="`${view}:${view === 'exams' ? examSubject : subject}`">
+    <main v-if="client" class="view" :key="`${view}:${view === 'ledger' ? 'shared' : view === 'exams' ? examSubject : subject}`">
       <AdminView
         v-if="view === 'ledger'"
+        v-model:sub-tab="ledgerSubTab"
         :client="client"
         :subject="subject"
         :notify="notify"
       />
-
-      <div v-else-if="view === 'health'" class="home-grid">
-        <section class="card" aria-label="题库体检">
-          <div class="card-head">
-            <h2>题库体检大屏</h2>
-            <button type="button" class="ghost small" @click="loadPoolHealth">
-              刷新
-            </button>
-          </div>
-          <PoolHealthCard v-if="poolHealth" :data="poolHealth" />
-          <p v-else class="muted">{{ poolLoading ? '加载中…' : '题库体检加载失败。' }}</p>
-        </section>
-        <div class="home-side">
-          <Note title="题库体检说明">
-            题库体检反映当前科目各知识点的题目储备总量、未见题余量以及已被练习或诊断消耗的曝光情况。请确保各知识点均有充足的未见题储备，以支持客观阶段诊断。
-          </Note>
-        </div>
-      </div>
 
       <div v-else-if="view === 'exams'" class="admin-exams-full">
         <SchoolExamCard

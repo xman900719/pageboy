@@ -8,6 +8,7 @@ import {
   type SourceDetail,
 } from '../../api'
 import { REVIEW_CHECK_LABEL, RIGHTS_STATUS_LABELS, shortTime } from '../../copy'
+import HelpBubble from '../../components/HelpBubble.vue'
 
 type Notify = (text: string, tone?: 'info' | 'success' | 'caution' | 'error') => void
 
@@ -89,9 +90,17 @@ async function submit() {
   <section class="card" aria-label="来源人工审核">
     <div class="card-head">
       <h2>来源人工审核</h2>
-      <span :class="['chip', source.source.verified ? 'good' : 'wait']">
-        {{ source.source.verified ? '已人工审核' : '未审核' }}
-      </span>
+      <div class="card-head-tools">
+        <HelpBubble compact title="来源人工审核要求" label="审核要求">
+          <ul>
+            <li><strong>必填依据：</strong>所有已审核题源必须具备以 <code>https://</code> 开头的溯源链接、版权依据及适用性说明。</li>
+            <li><strong>重传复位：</strong>向已审核题源新上传或重传附件时，题源会自动回退至「未审核」状态，需重新确认后方可发布题目。</li>
+          </ul>
+        </HelpBubble>
+        <span :class="['chip', source.source.verified ? 'good' : 'wait']">
+          {{ source.source.verified ? '已人工审核' : '未审核' }}
+        </span>
+      </div>
     </div>
     <p class="muted">
       题源「{{ source.source.title }}」 · {{ SUBJECT_LABELS[source.source.subject] }} · 版权状态：

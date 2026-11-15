@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   describeError,
   type ApiClient,
@@ -9,7 +9,7 @@ import {
 } from '../../api'
 import { ATTACHMENT_STATUS_LABELS, REUPLOAD_RESET_NOTE, fmtBytes, shortTime } from '../../copy'
 import { getMediaTypeLabel } from '../../config/knowledge'
-import Note from '../../components/Note.vue'
+import HelpBubble from '../../components/HelpBubble.vue'
 import type { NoticeTone } from '../../components/Notice.vue'
 import ConfirmImportForm from './ConfirmImportForm.vue'
 
@@ -43,11 +43,13 @@ function pickMime(file: File): string | null {
 const props = defineProps<{
   client: ApiClient
   source: SourceDetail
+  initialKnowledgeId?: string
   notify: Notify
 }>()
 
 const emit = defineEmits<{
   (e: 'changed'): void
+  (e: 'go-versions'): void
 }>()
 
 const file = ref<File | null>(null)
@@ -56,6 +58,16 @@ const uploadError = ref('')
 const parseBusyId = ref<string | null>(null)
 const confirmingId = ref<string | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const confirmingAttachment = computed(
+  () => props.source.attachments.find(a => a.id === confirmingId.value) ?? null
+)
+
+const readyToImportAttachments = computed(() =>
+  props.source.attachments.filter(
+    a => a.status === 'parsed' || a.status === 'needs_manual_input'
+  )
+)
 
 function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement
@@ -136,113 +148,163 @@ async function parse(attachment: AttachmentOut) {
 </script>
 
 <template>
-  <section class="card" aria-label="附件与解析">
-    <div class="card-head">
-      <h2>附件与解析</h2>
-    </div>
-    <Note tone="caution">{{ REUPLOAD_RESET_NOTE }}</Note>
-
-    <div class="attachment-upload">
-      <!-- 月考/试卷等附件提交内容明确指引说明 -->
-      <div class="note note-neutral" style="margin-bottom: 12px; font-size: 0.9rem;">
-        <b>📄 试卷与教学资料提交规范指引</b>
-        <ul style="margin: 6px 0 0 18px; padding: 0;">
-          <li><b>月考 / 单元检测卷 / 历年真题</b>：请提交包含完整题面、选项与分值的整卷清晰原件或扫描件（PDF / DOCX / PNG / JPG，单文件上限 25 MiB）。</li>
-          <li><b>英语听力试卷</b>：除试题文本扫描件外，请同时上传配套的 MP3 / M4A 录音音频，以支持听力播放组件关联。</li>
-          <li><b>上传后操作流程</b>：上传成功后点击「解析」提取机读文本，随后在下方「逐题录入并确认导入」中录入各题干、题型与考点。</li>
-        </ul>
+  <div role="region" aria-label="附件与解析" class="matrix-2col">
+    <!-- 左栏：上传原始附件与解析队列 -->
+    <section class="card" aria-label="附件上传与解析清单">
+      <div class="card-head">
+        <h2>附件与解析</h2>
+        <div class="card-head-tools">
+          <HelpBubble tone="caution" compact title="提交规范与重传重置说明" label="提交与重传规范">
+            <ul>
+              <li><strong>重传复位提醒：</strong>{{ REUPLOAD_RESET_NOTE }}</li>
+              <li><strong>试卷 / 资料要求：</strong>请提交包含完整题面、选项与分值的清晰原件或扫描件（单文件上限 25 MiB）。</li>
+              <li><strong>英语听力配套：</strong>除试题文本外，请同步上传 MP3 或 M4A 音频文件以便录入时直接关联。</li>
+              <li><strong>标准流程：</strong>上传附件 → 点击「解析」提取文本 → 点击「逐题录入并确认导入」在右侧完成录入。</li>
+            </ul>
+          </HelpBubble>
+        </div>
       </div>
 
-      <label for="attachment-file-input">
-        选择原始附件（PDF / DOCX / PNG / JPG / MP3 / M4A，不超过 25 MiB）
-      </label>
-      <input
-        id="attachment-file-input"
-        ref="fileInputRef"
-        type="file"
-        accept=".pdf,.docx,.png,.jpg,.jpeg,.mp3,.m4a,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,audio/mpeg,audio/mp4"
-        @change="onFileChange"
-        @click="onInputClick"
-      />
+      <div class="attachment-upload" style="border-top: none; padding-top: 4px; margin-top: 6px;">
+        <label for="attachment-file-input">
+          选择原始附件（支持文档、图片、音频，不超过 25 MiB）
+        </label>
+        <input
+          id="attachment-file-input"
+          ref="fileInputRef"
+          type="file"
+          accept=".pdf,.docx,.png,.jpg,.jpeg,.mp3,.m4a,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,audio/mpeg,audio/mp4"
+          @change="onFileChange"
+          @click="onInputClick"
+        />
 
-      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <button
-          type="button"
-          class="primary"
-          @click="upload"
-          :disabled="uploading || !file"
-        >
-          {{ uploading ? '上传中…' : '上传附件' }}
-        </button>
-
-        <span v-if="file" class="chip good" style="font-size: 0.85rem;">
-          已选文件：<b>{{ file.name }}</b>（{{ fmtBytes(file.size) }}）
-        </span>
-        <button
-          v-if="file && !uploading"
-          type="button"
-          class="ghost small"
-          @click="clearFile"
-        >
-          清空
-        </button>
-      </div>
-
-      <p v-if="uploadError" class="form-error">{{ uploadError }}</p>
-    </div>
-
-    <p v-if="source.attachments.length === 0" class="muted">
-      还没有附件：上传后点「解析」生成对照文本，再逐题人工录入并确认导入。
-    </p>
-    <ul v-else class="attachment-list">
-      <li v-for="a in source.attachments" :key="a.id" class="attachment-row">
-        <div class="attachment-main">
-          <b>{{ a.filename }}</b>
-          <span :class="['chip', STATUS_CHIP[a.status]]">
-            {{ ATTACHMENT_STATUS_LABELS[a.status] }}
-          </span>
-          <span class="muted tiny">
-            {{ fmtBytes(a.byte_size) }} · {{ getMediaTypeLabel(a.media_type) }}
-          </span>
-        </div>
-        <div class="attachment-meta">
-          文件校验摘要 {{ a.sha256.slice(0, 16) }}… · 上传于 {{ shortTime(a.created_at) }}
-        </div>
-        <div class="attachment-actions">
+        <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <button
-            v-if="a.status === 'uploaded'"
+            type="button"
+            class="primary"
+            @click="upload"
+            :disabled="uploading || !file"
+          >
+            {{ uploading ? '上传中…' : '上传附件' }}
+          </button>
+
+          <span v-if="file" class="chip good" style="font-size: 0.85rem;">
+            已选文件：<b>{{ file.name }}</b>（{{ fmtBytes(file.size) }}）
+          </span>
+          <button
+            v-if="file && !uploading"
             type="button"
             class="ghost small"
-            @click="parse(a)"
-            :disabled="parseBusyId !== null"
+            @click="clearFile"
           >
-            {{ parseBusyId === a.id ? '解析中…' : '解析' }}
+            清空
           </button>
-          <button
-            v-if="a.status === 'parsed' || a.status === 'needs_manual_input'"
-            type="button"
-            :class="confirmingId === a.id ? 'small' : 'ghost small'"
-            :aria-expanded="confirmingId === a.id"
-            @click="confirmingId = confirmingId === a.id ? null : a.id"
-          >
-            {{ confirmingId === a.id ? '收起逐题录入' : '逐题录入并确认导入' }}
-          </button>
-          <span v-if="a.status === 'confirmed'" class="muted tiny">
-            已导入 {{ a.question_version_ids.length }} 题，等待在下方逐题人工审核。
-          </span>
         </div>
-        <details v-if="a.extracted_text" class="parsed-text">
-          <summary>查看解析文本（供人工录入对照）</summary>
-          <blockquote>{{ a.extracted_text }}</blockquote>
+
+        <p v-if="uploadError" class="form-error">{{ uploadError }}</p>
+      </div>
+
+      <p v-if="source.attachments.length === 0" class="muted" style="margin-top: 12px;">
+        还没有附件：上传后点击「解析」提取对照文本，随后即可在右侧逐题录入并确认导入。
+      </p>
+      <ul v-else class="attachment-list" tabindex="0" aria-label="已上传附件列表">
+        <li
+          v-for="a in source.attachments"
+          :key="a.id"
+          class="attachment-row"
+          :style="confirmingId === a.id ? 'border-color: var(--primary); background: var(--primary-soft);' : undefined"
+        >
+          <div class="attachment-main">
+            <b>{{ a.filename }}</b>
+            <span :class="['chip', STATUS_CHIP[a.status]]">
+              {{ ATTACHMENT_STATUS_LABELS[a.status] }}
+            </span>
+            <span class="muted tiny">
+              {{ fmtBytes(a.byte_size) }} · {{ getMediaTypeLabel(a.media_type) }}
+            </span>
+          </div>
+          <div class="attachment-meta" :title="`校验摘要：${a.sha256}`">
+            已校验原始文件 · 上传于 {{ shortTime(a.created_at) }}
+          </div>
+          <div class="attachment-actions">
+            <button
+              v-if="a.status === 'uploaded'"
+              type="button"
+              class="ghost small"
+              @click="parse(a)"
+              :disabled="parseBusyId !== null"
+            >
+              {{ parseBusyId === a.id ? '解析中…' : '解析' }}
+            </button>
+            <button
+              v-if="a.status === 'parsed' || a.status === 'needs_manual_input'"
+              type="button"
+              :class="confirmingId === a.id ? 'small' : 'ghost small'"
+              :aria-expanded="confirmingId === a.id"
+              @click="confirmingId = confirmingId === a.id ? null : a.id"
+            >
+              {{ confirmingId === a.id ? '收起逐题录入' : '逐题录入并确认导入' }}
+            </button>
+            <template v-if="a.status === 'confirmed'">
+              <span class="muted tiny">
+                已导入 {{ a.question_version_ids.length }} 题，等待逐题人工审核。
+              </span>
+              <button type="button" class="ghost small" @click="emit('go-versions')">
+                前往审核与发布
+              </button>
+            </template>
+          </div>
+          <details v-if="a.extracted_text" class="parsed-text">
+            <summary>查看解析文本（供人工录入对照）</summary>
+            <blockquote>{{ a.extracted_text }}</blockquote>
+          </details>
+        </li>
+      </ul>
+    </section>
+
+    <!-- 右栏：协同对照文本与逐题人工录入表单 -->
+    <section class="card" aria-label="逐题人工录入台">
+      <template v-if="confirmingAttachment">
+        <div class="card-head" style="margin-bottom: 8px;">
+          <h2>逐题人工录入工作台</h2>
+          <button type="button" class="ghost small" @click="confirmingId = null">
+            收起录入台
+          </button>
+        </div>
+        <details v-if="confirmingAttachment.extracted_text" class="parsed-text" open style="margin-bottom: 12px;">
+          <summary>对照解析文本（{{ confirmingAttachment.filename }}）</summary>
+          <blockquote>{{ confirmingAttachment.extracted_text }}</blockquote>
         </details>
         <ConfirmImportForm
-          v-if="confirmingId === a.id"
+          :key="confirmingAttachment.id"
           :client="client"
-          :attachment="a"
+          :attachment="confirmingAttachment"
+          :subject="source.source.subject"
+          :source-attachments="source.attachments"
+          :initial-knowledge-id="initialKnowledgeId"
           :notify="notify"
           @confirmed="confirmingId = null; emit('changed')"
         />
-      </li>
-    </ul>
-  </section>
+      </template>
+      <template v-else>
+        <div class="card-head">
+          <h2>逐题人工录入工作台</h2>
+        </div>
+        <p class="muted">
+          在左侧上传附件并点击「解析」后，点击对应附件的「逐题录入并确认导入」，此处将展开并排录入表单与解析文本对照视图。
+        </p>
+        <div v-if="readyToImportAttachments.length > 0" style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button
+            v-for="att in readyToImportAttachments"
+            :key="att.id"
+            type="button"
+            class="ghost small"
+            @click="confirmingId = att.id"
+          >
+            打开「{{ att.filename }}」录入
+          </button>
+        </div>
+      </template>
+    </section>
+  </div>
 </template>

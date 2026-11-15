@@ -194,6 +194,7 @@ test('审核台：题目草稿列表的公式预览同样安全渲染', async ({
   const ledger = page.getByRole('region', { name: '题源台账' })
   await ledger.getByRole('button', { name: /ST-013 公式渲染题源/ }).click()
 
+  await page.getByRole('tab', { name: /题目审核与发布/ }).click()
   const versions = page.getByRole('region', { name: '题目草稿与发布' })
   const choiceRow = versions.locator('li.version-row', { hasText: '解方程' }).first()
   await expect(choiceRow.locator('.version-stem .katex')).toHaveCount(1)
