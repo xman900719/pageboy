@@ -261,11 +261,16 @@ def _propagate_ai_env(proc_env: dict[str, str], dev_vars: dict[str, str]) -> str
         proc_env.get("SHUTONG_AI_BASE_URL", "").strip()
         or proc_env.get("SHUTONG_VISION_BASE_URL", "").strip()
         or proc_env.get("DEEPSEEK_BASE_URL", "").strip()
-    )
+    ).rstrip("/")
+    # 书童后端走 OpenAI /v1/chat/completions 协议；剥离宿主环境常见的 Anthropic 兼容后缀 /anthropic
+    if ai_base.endswith("/anthropic"):
+        ai_base = ai_base[: -len("/anthropic")].rstrip("/") or "https://api.deepseek.com"
     if ai_base:
-        for k in ("SHUTONG_AI_BASE_URL", "SHUTONG_VISION_BASE_URL", "DEEPSEEK_BASE_URL"):
-            if not proc_env.get(k, "").strip():
+        for k in ("SHUTONG_AI_BASE_URL", "SHUTONG_VISION_BASE_URL"):
+            if not proc_env.get(k, "").strip() or proc_env[k].strip().rstrip("/").endswith("/anthropic"):
                 proc_env[k] = ai_base
+        if not proc_env.get("DEEPSEEK_BASE_URL", "").strip():
+            proc_env["DEEPSEEK_BASE_URL"] = ai_base
     return source_desc
 
 

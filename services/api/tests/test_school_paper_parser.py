@@ -236,3 +236,69 @@ def test_enrich_external_items_fallback_without_key_and_with_deepseek(monkeypatc
     assert rows_ai[0]["error_note"] == "配方法常数项计算出错"
     assert rows_ai[0]["scoring_origin"] == "ocr_draft"
     assert rows_ai[0]["confirmed_by_user"] is False
+
+
+def test_enrich_external_items_chunks_large_exam_batches(monkeypatch):
+    """超过 18 题的大题量试卷自动分批调用 DeepSeek 并聚合全部草稿结果。"""
+    import json
+
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "sk-test")
+    batch_sizes: list[int] = []
+
+    def fake_post(cfg, **kw):
+        # 从 prompt 末尾 JSON 解析本批题目并回传对应标注
+        user_msg = kw["messages"][-1]["content"]
+        payload_text = user_msg.split("待对齐明细：\n", 1)[1]
+        batch_rows = json.loads(payload_text)
+        batch_sizes.append(len(batch_rows))
+        return {
+            "items": [
+                {
+                    "question_label": row["question_label"],
+                    "knowledge_id": "math.eq.quadratic",
+                    "error_category": "method" if row["earned_points"] < row["max_points"] else None,
+                    "error_note": f"{row['question_label']}批注" if row["earned_points"] < row["max_points"] else None,
+                    "reason": "分批对齐验证",
+                }
+                for row in batch_rows
+            ]
+        }
+
+    monkeypatch.setattr(parser, "_post_deepseek_json", fake_post)
+    ext = [
+        {
+            "question_label": str(idx),
+            "earned_points": 1.0 if idx % 2 else 2.0,
+            "max_points": 2.0,
+            "stem_text": f"测试题干 {idx}",
+            "wrong_reason": "思路偏差" if idx % 2 else "",
+        }
+        for idx in range(1, 26)
+    ]
+
+    rows, mode = parser.enrich_external_items_with_deepseek(
+        subject="math",
+        knowledge_catalog=_MATH_CATALOG,
+        external_items=ext,
+        use_ai=True,
+    )
+    assert mode == "external_plus_deepseek-chat"
+    assert batch_sizes == [18, 7]
+    assert len(rows) == 25
+    assert rows[0]["error_category"] == "method"
+    assert rows[0]["error_note"] == "第1题批注"
+    assert rows[1]["error_category"] is None
+    assert rows[-1]["question_label"] == "第25题"
+    assert rows[-1]["error_category"] == "method"
+    assert all(row["scoring_origin"] == "ocr_draft" and row["confirmed_by_user"] is False for row in rows)
+
+
+def test_load_vision_config_strips_anthropic_suffix(monkeypatch):
+    """宿主 Shell 若设置 DEEPSEEK_BASE_URL=.../anthropic，自动归一为 OpenAI 兼容根地址。"""
+    monkeypatch.delenv("SHUTONG_VISION_BASE_URL", raising=False)
+    monkeypatch.delenv("SHUTONG_AI_BASE_URL", raising=False)
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/anthropic/")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-key")
+    cfg = parser.load_vision_config(require_key=True)
+    assert cfg is not None
+    assert cfg.base_url == "https://api.deepseek.com"

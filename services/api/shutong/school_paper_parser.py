@@ -89,6 +89,9 @@ def load_vision_config(*, require_key: bool = True) -> VisionParserConfig | None
         or os.getenv("DEEPSEEK_BASE_URL")
         or "https://api.deepseek.com"
     ).strip().rstrip("/")
+    # 兼容宿主环境为 Anthropic SDK 配置 DEEPSEEK_BASE_URL=https://.../anthropic 的常见情形
+    if base_url.endswith("/anthropic"):
+        base_url = base_url[: -len("/anthropic")].rstrip("/") or "https://api.deepseek.com"
     api_key = (
         os.getenv("SHUTONG_VISION_API_KEY")
         or os.getenv("SHUTONG_AI_API_KEY")
@@ -786,28 +789,34 @@ def enrich_external_items_with_deepseek(
                 }
                 for row in external_items
             ]
-            prompt = (
-                f"请为以下来自校考成绩平台的【{subject_cn}】逐题记录匹配课标考点与错因建议。\n"
-                "必须输出严格 JSON 对象 {\"items\": [...]}，保留每题原 question_label 与分数，"
-                "补充 knowledge_id（必须选自下方列表）、error_category（仅当 earned_points < max_points 时选 "
-                "[\"concept\", \"calculation\", \"reading\", \"method\", \"norm\", \"other\"] 之一，否则 null）、"
-                "error_note（失分复盘建议 60 字内，满分题填 null）与 reason（匹配理由）。\n"
-                f"合法考点列表：\n{catalog_lines}\n\n待对齐明细：\n{json.dumps(sanitized_rows, ensure_ascii=False)}"
-            )
-            data = _post_deepseek_json(
-                cfg,
-                model=cfg.text_model,
-                messages=[
-                    {"role": "system", "content": "你是初中教学知识点标注助手，只输出严格 JSON 对象。"},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=4096,
-            )
-            ai_by_label = {
-                normalize_question_label(str(row.get("question_label") or "")): row
-                for row in (data.get("items") or [])
-                if isinstance(row, dict)
-            }
+            # 大题量试卷（如英语 58 题）按每批 18 题分批请求，避免单次 JSON 输出触及 4096 token 上限被截断。
+            batch_size = 18
+            ai_by_label: dict[str, dict[str, Any]] = {}
+            for start in range(0, len(sanitized_rows), batch_size):
+                batch_rows = sanitized_rows[start : start + batch_size]
+                prompt = (
+                    f"请为以下来自校考成绩平台的【{subject_cn}】逐题记录匹配课标考点与错因建议。\n"
+                    "必须输出严格 JSON 对象 {\"items\": [...]}，保留每题原 question_label 与分数，"
+                    "补充 knowledge_id（必须选自下方列表）、error_category（仅当 earned_points < max_points 时选 "
+                    "[\"concept\", \"calculation\", \"reading\", \"method\", \"norm\", \"other\"] 之一，否则 null）、"
+                    "error_note（失分复盘建议 60 字内，满分题填 null）与 reason（匹配理由）。\n"
+                    f"合法考点列表：\n{catalog_lines}\n\n待对齐明细：\n{json.dumps(batch_rows, ensure_ascii=False)}"
+                )
+                data = _post_deepseek_json(
+                    cfg,
+                    model=cfg.text_model,
+                    messages=[
+                        {"role": "system", "content": "你是初中教学知识点标注助手，只输出严格 JSON 对象。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=4096,
+                )
+                for row in data.get("items") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    ai_lbl = normalize_question_label(str(row.get("question_label") or ""))
+                    if ai_lbl:
+                        ai_by_label[ai_lbl] = row
             merged: list[dict[str, Any]] = []
             for row in sanitized_rows:
                 lbl = row["question_label"]
