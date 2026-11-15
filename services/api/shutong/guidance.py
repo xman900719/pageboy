@@ -416,3 +416,477 @@ def compose_practice_plan(
         "items": items_out,
         "composition_summary": {**counts, "total_selected": len(items_out)},
     }
+
+
+SCHOOL_ERROR_CATEGORIES: tuple[str, ...] = (
+    "concept",
+    "calculation",
+    "reading",
+    "method",
+    "norm",
+    "other",
+)
+
+_SCHOOL_CATEGORY_ORDER: dict[str, int] = {
+    cat: idx for idx, cat in enumerate(SCHOOL_ERROR_CATEGORIES)
+}
+_SCHOOL_CATEGORY_ORDER["uncategorized"] = len(SCHOOL_ERROR_CATEGORIES)
+
+SCHOOL_ERROR_CATEGORY_LABELS: dict[str, str] = {
+    "concept": "概念/公式不清",
+    "calculation": "运算/粗心失误",
+    "reading": "审题/条件遗漏",
+    "method": "思路/方法受阻",
+    "norm": "步骤/书写不规范",
+    "other": "其他原因",
+    "uncategorized": "未归类错因",
+}
+
+
+def _resolve_practice_match(
+    knowledge_id: str,
+    mastery_by_code: dict[str, dict],
+    knowledge_alias_map: dict[str, list[str]] | None,
+) -> dict | None:
+    """在日常练习掌握度映射表中匹配当前考点或其对应新课标节点（优先保留薄弱警示）。"""
+    lookup_codes = [knowledge_id]
+    if knowledge_alias_map:
+        for alias in knowledge_alias_map.get(knowledge_id, ()):
+            if alias not in lookup_codes:
+                lookup_codes.append(alias)
+    matches = [mastery_by_code[c] for c in lookup_codes if c in mastery_by_code]
+    if not matches:
+        return None
+    status_priority = {"weak": 0, "insufficient": 1, "mastered": 2, "untested": 3}
+    matches.sort(
+        key=lambda m: (
+            status_priority.get(m.get("mastery_status", "untested"), 9),
+            m.get("observed_rate") if m.get("observed_rate") is not None else 1.0,
+            -int(m.get("sample_size", 0)),
+        )
+    )
+    return matches[0]
+
+
+def _classify_cross_diagnosis(has_taxonomy: bool, practice_match: dict | None) -> tuple[str, float | None, int, str]:
+    """根据日常独立作答掌握状态与校考失分生成纯规则交叉诊断标签。"""
+    if not has_taxonomy:
+        return ("not_applicable", None, 0, "archive_review")
+    if practice_match is None:
+        return ("untested", None, 0, "blind_spot")
+    status = practice_match.get("mastery_status", "untested")
+    rate = practice_match.get("observed_rate")
+    samples = int(practice_match.get("sample_size", 0))
+    if status == "weak":
+        return ("weak", rate, samples, "double_weak")
+    if status == "mastered":
+        return ("mastered", rate, samples, "exam_slip")
+    return (status, rate, samples, "blind_spot")
+
+
+def _aggregate_recurring_losses(
+    exams_by_id: dict[str, dict],
+    current_lost_kids: set[str],
+) -> tuple[int, list[dict]]:
+    """聚合跨多次校考重复扣分的知识点（同一科目至少在 2 场不同校考中均出现失分）。"""
+    per_kid_hits: dict[str, list[dict]] = defaultdict(list)
+    exams_with_confirmed_items = 0
+
+    sorted_exams = sorted(
+        exams_by_id.values(),
+        key=lambda e: (str(e.get("exam_date", "")), str(e.get("exam_id", ""))),
+        reverse=True,
+    )
+    for ex in sorted_exams:
+        confirmed = [
+            it
+            for it in (ex.get("items") or [])
+            if it.get("confirmed_by_user") and float(it.get("max_points", 0.0)) > 0
+        ]
+        if confirmed:
+            exams_with_confirmed_items += 1
+        per_exam_kid: dict[str, dict] = {}
+        for it in confirmed:
+            max_pts = float(it["max_points"])
+            earned_pts = float(it["earned_points"])
+            if earned_pts >= max_pts:
+                continue
+            lost = max_pts - earned_pts
+            kid = str(it["knowledge_id"])
+            bucket = per_exam_kid.setdefault(
+                kid,
+                {
+                    "exam_id": str(ex["exam_id"]),
+                    "title": str(ex.get("title", "")),
+                    "exam_date": str(ex.get("exam_date", "")),
+                    "knowledge_name": str(it.get("knowledge_name") or kid),
+                    "lost_points": 0.0,
+                    "item_count": 0,
+                    "categories": set(),
+                },
+            )
+            bucket["lost_points"] += lost
+            bucket["item_count"] += 1
+            cat = it.get("error_category")
+            if cat in _SCHOOL_CATEGORY_ORDER and cat != "uncategorized":
+                bucket["categories"].add(cat)
+        for kid, bucket in per_exam_kid.items():
+            per_kid_hits[kid].append(bucket)
+
+    recurring: list[dict] = []
+    for kid, hits in per_kid_hits.items():
+        if len(hits) < 2:
+            continue
+        all_cats = sorted(
+            {c for h in hits for c in h["categories"]},
+            key=lambda c: _SCHOOL_CATEGORY_ORDER.get(c, 99),
+        )
+        recurring.append(
+            {
+                "knowledge_id": kid,
+                "knowledge_name": hits[0]["knowledge_name"],
+                "exam_count": len(hits),
+                "total_lost_points": round(sum(h["lost_points"] for h in hits), 2),
+                "total_item_count": sum(h["item_count"] for h in hits),
+                "repeat_in_current_exam": kid in current_lost_kids,
+                "categories": all_cats,
+                "exams": [
+                    {
+                        "exam_id": h["exam_id"],
+                        "title": h["title"],
+                        "exam_date": h["exam_date"],
+                        "lost_points": round(h["lost_points"], 2),
+                        "item_count": h["item_count"],
+                    }
+                    for h in hits
+                ],
+            }
+        )
+
+    recurring.sort(
+        key=lambda r: (
+            0 if r["repeat_in_current_exam"] else 1,
+            -r["exam_count"],
+            -r["total_lost_points"],
+            r["knowledge_id"],
+        )
+    )
+    return exams_with_confirmed_items, recurring
+
+
+def analyze_school_exam_errors(
+    exam_meta: dict,
+    exam_items: list[dict],
+    history_exams: list[dict],
+    practice_mastery: list[dict] | None = None,
+    has_taxonomy: bool = True,
+    knowledge_alias_map: dict[str, list[str]] | None = None,
+) -> dict:
+    """纯函数：计算单场校考失分结构、错因占比、日常掌握度交叉诊断及同科历次顽固失分点对比。
+
+    红线约束：
+    - 未确认的 OCR 草稿小题（confirmed_by_user=False）不得纳入正式分析（AC-EVI-02）；
+    - 无已确认明细时返回 status='insufficient_items'，绝不根据总分推算考点错因（INV-05 / AC-GAP-01）；
+    - 仅以当前可核实条目如实聚合，缺失即显示不足或未归类。
+    """
+    exam_id = str(exam_meta["id"])
+    exam_confirmed = bool(exam_meta.get("confirmed_by_user"))
+    exam_earned = float(exam_meta.get("earned_points", 0.0))
+    exam_max = float(exam_meta.get("max_points", 0.0))
+    paper_lost_points = round(max(0.0, exam_max - exam_earned), 2) if exam_confirmed else None
+
+    confirmed_items = [
+        it
+        for it in exam_items
+        if it.get("confirmed_by_user") and float(it.get("max_points", 0.0)) > 0
+    ]
+    unconfirmed_draft_count = sum(1 for it in exam_items if not it.get("confirmed_by_user"))
+
+    # 合并本场与同科历史场次（按 exam_id 去重，确保无论调用方是否已含本场都能精确统计跨场次重复扣分）
+    exams_by_id: dict[str, dict] = {}
+    for hx in history_exams:
+        hx_id = str(hx.get("exam_id") or hx.get("id"))
+        exams_by_id[hx_id] = {**hx, "exam_id": hx_id}
+    exams_by_id[exam_id] = {
+        "exam_id": exam_id,
+        "title": exam_meta.get("title", ""),
+        "exam_date": str(exam_meta.get("exam_date", "")),
+        "earned_points": exam_earned,
+        "max_points": exam_max,
+        "confirmed_by_user": exam_confirmed,
+        "items": exam_items,
+    }
+
+    itemized_max = round(sum(float(it["max_points"]) for it in confirmed_items), 2)
+    itemized_earned = round(sum(float(it["earned_points"]) for it in confirmed_items), 2)
+    lost_items_raw = [
+        it for it in confirmed_items if float(it["earned_points"]) < float(it["max_points"])
+    ]
+    itemized_lost = round(
+        sum(float(it["max_points"]) - float(it["earned_points"]) for it in lost_items_raw), 2
+    )
+    unaccounted_lost = (
+        round(max(0.0, paper_lost_points - itemized_lost), 2)
+        if paper_lost_points is not None
+        else None
+    )
+
+    current_lost_kids = {str(it["knowledge_id"]) for it in lost_items_raw}
+    exams_with_items_count, recurring_knowledge = _aggregate_recurring_losses(
+        exams_by_id, current_lost_kids
+    )
+    history_summary = {
+        "same_subject_exam_count": len(exams_by_id),
+        "same_subject_exams_with_items": exams_with_items_count,
+        "recurring_count": len(recurring_knowledge),
+    }
+
+    base_overview = {
+        "confirmed_item_count": len(confirmed_items),
+        "lost_item_count": len(lost_items_raw),
+        "unconfirmed_draft_count": unconfirmed_draft_count,
+        "earned_points": round(exam_earned, 2),
+        "max_points": round(exam_max, 2),
+        "paper_lost_points": paper_lost_points,
+        "itemized_earned_points": itemized_earned,
+        "itemized_max_points": itemized_max,
+        "itemized_lost_points": itemized_lost,
+        "unaccounted_lost_points": unaccounted_lost,
+        "categorized_item_count": 0,
+        "uncategorized_item_count": 0,
+        "primary_error_category": None,
+        "primary_knowledge_id": None,
+        "primary_knowledge_name": None,
+    }
+    disclaimer = "错因分析仅基于已人工核对的逐题失分明细，学校考试总分不拆解考点、不作中考预测；平时表现采用日常练习与诊断独立作答数据对照。"
+
+    if not confirmed_items:
+        if unconfirmed_draft_count > 0:
+            summary = f"当前仅有 {unconfirmed_draft_count} 条未确认的 OCR 草稿小题，人工核对确认前不纳入正式错误分析。"
+        elif exam_confirmed:
+            summary = "当前仅登记了试卷总分，尚无已核对的逐题失分明细；依据诚实口径不从总分推算考点与错因。"
+        else:
+            summary = "当前档案尚无已核对总分与逐题明细，暂不足以生成错误分析。"
+        return {
+            "exam_id": exam_id,
+            "subject": exam_meta["subject"],
+            "title": exam_meta["title"],
+            "exam_date": str(exam_meta["exam_date"]),
+            "confirmed_by_user": exam_confirmed,
+            "has_taxonomy": has_taxonomy,
+            "status": "insufficient_items",
+            "overview": base_overview,
+            "diagnosis_summary": summary,
+            "by_category": [],
+            "by_knowledge": [],
+            "lost_items": [],
+            "history_summary": history_summary,
+            "recurring_knowledge": recurring_knowledge,
+            "disclaimer": disclaimer,
+        }
+
+    if not lost_items_raw:
+        if paper_lost_points is not None and paper_lost_points > 0:
+            summary = (
+                f"已核对的 {len(confirmed_items)} 道小题当前均为满分，但卷面总分仍有 "
+                f"{paper_lost_points:g} 分失分尚未拆解录入明细，可前往「逐题得分与考点」继续补充。"
+            )
+        else:
+            summary = f"已核对的 {len(confirmed_items)} 道小题均为满分，本场暂无失分记录。"
+        return {
+            "exam_id": exam_id,
+            "subject": exam_meta["subject"],
+            "title": exam_meta["title"],
+            "exam_date": str(exam_meta["exam_date"]),
+            "confirmed_by_user": exam_confirmed,
+            "has_taxonomy": has_taxonomy,
+            "status": "no_errors_recorded",
+            "overview": base_overview,
+            "diagnosis_summary": summary,
+            "by_category": [],
+            "by_knowledge": [],
+            "lost_items": [],
+            "history_summary": history_summary,
+            "recurring_knowledge": recurring_knowledge,
+            "disclaimer": disclaimer,
+        }
+
+    # 1. 按错因分类聚合
+    cat_buckets: dict[str, dict] = {}
+    categorized_count = 0
+    uncategorized_count = 0
+    for it in lost_items_raw:
+        raw_cat = it.get("error_category")
+        cat = raw_cat if raw_cat in SCHOOL_ERROR_CATEGORIES else "uncategorized"
+        if cat == "uncategorized":
+            uncategorized_count += 1
+        else:
+            categorized_count += 1
+        lost = float(it["max_points"]) - float(it["earned_points"])
+        entry = cat_buckets.setdefault(
+            cat,
+            {"category": cat, "item_count": 0, "lost_points": 0.0, "question_labels": []},
+        )
+        entry["item_count"] += 1
+        entry["lost_points"] += lost
+        entry["question_labels"].append(str(it["question_label"]))
+
+    by_category: list[dict] = []
+    for entry in cat_buckets.values():
+        lost_rounded = round(entry["lost_points"], 2)
+        share = round(lost_rounded / itemized_lost, 4) if itemized_lost > 0 else 0.0
+        by_category.append(
+            {
+                "category": entry["category"],
+                "item_count": entry["item_count"],
+                "lost_points": lost_rounded,
+                "share_of_itemized_loss": share,
+                "question_labels": sorted(entry["question_labels"]),
+            }
+        )
+    by_category.sort(
+        key=lambda c: (
+            -c["lost_points"],
+            -c["item_count"],
+            _SCHOOL_CATEGORY_ORDER.get(c["category"], 99),
+        )
+    )
+
+    # 2. 按知识点聚合并与日常练习掌握度交叉诊断
+    kid_totals: dict[str, dict] = {}
+    for it in confirmed_items:
+        kid = str(it["knowledge_id"])
+        kt = kid_totals.setdefault(
+            kid,
+            {
+                "knowledge_id": kid,
+                "knowledge_name": str(it.get("knowledge_name") or kid),
+                "item_count": 0,
+                "lost_item_count": 0,
+                "earned_points": 0.0,
+                "max_points": 0.0,
+                "lost_points": 0.0,
+                "categories": set(),
+                "question_labels": [],
+                "notes": [],
+            },
+        )
+        earned = float(it["earned_points"])
+        max_pts = float(it["max_points"])
+        kt["item_count"] += 1
+        kt["earned_points"] += earned
+        kt["max_points"] += max_pts
+        if earned < max_pts:
+            kt["lost_item_count"] += 1
+            kt["lost_points"] += max_pts - earned
+            kt["question_labels"].append(str(it["question_label"]))
+            cat = it.get("error_category")
+            if cat in SCHOOL_ERROR_CATEGORIES:
+                kt["categories"].add(cat)
+            note = (it.get("error_note") or "").strip()
+            if note:
+                kt["notes"].append({"question_label": str(it["question_label"]), "note": note})
+
+    mastery_by_code = {str(m["code"]): m for m in (practice_mastery or []) if m.get("code")}
+    by_knowledge: list[dict] = []
+    for kid, kt in kid_totals.items():
+        if kt["lost_item_count"] == 0:
+            continue
+        lost_rounded = round(kt["lost_points"], 2)
+        max_rounded = round(kt["max_points"], 2)
+        earned_rounded = round(kt["earned_points"], 2)
+        obs_rate = round(earned_rounded / max_rounded, 4) if max_rounded > 0 else 0.0
+        share = round(lost_rounded / itemized_lost, 4) if itemized_lost > 0 else 0.0
+        match = _resolve_practice_match(kid, mastery_by_code, knowledge_alias_map)
+        p_status, p_rate, p_samples, diag_tag = _classify_cross_diagnosis(has_taxonomy, match)
+        cats = sorted(kt["categories"], key=lambda c: _SCHOOL_CATEGORY_ORDER.get(c, 99))
+        by_knowledge.append(
+            {
+                "knowledge_id": kid,
+                "knowledge_name": kt["knowledge_name"],
+                "item_count": kt["item_count"],
+                "lost_item_count": kt["lost_item_count"],
+                "earned_points": earned_rounded,
+                "max_points": max_rounded,
+                "lost_points": lost_rounded,
+                "exam_observed_rate": obs_rate,
+                "share_of_itemized_loss": share,
+                "categories": cats,
+                "question_labels": sorted(kt["question_labels"]),
+                "notes": kt["notes"],
+                "practice_status": p_status,
+                "practice_observed_rate": p_rate,
+                "practice_sample_size": p_samples,
+                "diagnosis_tag": diag_tag,
+            }
+        )
+    by_knowledge.sort(
+        key=lambda k: (-k["lost_points"], k["exam_observed_rate"], k["knowledge_id"])
+    )
+
+    # 3. 失分小题明细清单
+    lost_items_out = [
+        {
+            "id": str(it["id"]),
+            "question_label": str(it["question_label"]),
+            "knowledge_id": str(it["knowledge_id"]),
+            "knowledge_name": str(it.get("knowledge_name") or it["knowledge_id"]),
+            "earned_points": round(float(it["earned_points"]), 2),
+            "max_points": round(float(it["max_points"]), 2),
+            "lost_points": round(float(it["max_points"]) - float(it["earned_points"]), 2),
+            "error_category": it.get("error_category") if it.get("error_category") in SCHOOL_ERROR_CATEGORIES else None,
+            "error_note": (it.get("error_note") or "").strip() or None,
+        }
+        for it in lost_items_raw
+    ]
+    lost_items_out.sort(key=lambda x: (-x["lost_points"], x["question_label"]))
+
+    # 4. 首要错因与综述文案
+    tagged_cats = [c for c in by_category if c["category"] != "uncategorized"]
+    primary_cat = tagged_cats[0]["category"] if tagged_cats else (by_category[0]["category"] if by_category else None)
+    primary_kn = by_knowledge[0] if by_knowledge else None
+
+    repeat_hits = [r for r in recurring_knowledge if r["repeat_in_current_exam"]]
+    cat_phrase = (
+        f"，主要错因为「{SCHOOL_ERROR_CATEGORY_LABELS.get(primary_cat, primary_cat)}」"
+        if primary_cat and primary_cat != "uncategorized"
+        else ""
+    )
+    kn_phrase = f"，首要失分考点为「{primary_kn['knowledge_name']}」" if primary_kn else ""
+    repeat_phrase = f"；其中 {len(repeat_hits)} 个考点在同科历次校考中再次失分" if repeat_hits else ""
+    gap_phrase = (
+        f"（另有 {unaccounted_lost:g} 分卷面失分尚未录入逐题明细）"
+        if unaccounted_lost is not None and unaccounted_lost > 0
+        else ""
+    )
+    summary = (
+        f"本场已核对失分共 {len(lost_items_raw)} 题（已归因 -{itemized_lost:g} 分）"
+        f"{kn_phrase}{cat_phrase}{repeat_phrase}{gap_phrase}。"
+    )
+
+    overview = {
+        **base_overview,
+        "categorized_item_count": categorized_count,
+        "uncategorized_item_count": uncategorized_count,
+        "primary_error_category": primary_cat,
+        "primary_knowledge_id": primary_kn["knowledge_id"] if primary_kn else None,
+        "primary_knowledge_name": primary_kn["knowledge_name"] if primary_kn else None,
+    }
+
+    return {
+        "exam_id": exam_id,
+        "subject": exam_meta["subject"],
+        "title": exam_meta["title"],
+        "exam_date": str(exam_meta["exam_date"]),
+        "confirmed_by_user": exam_confirmed,
+        "has_taxonomy": has_taxonomy,
+        "status": "analyzed",
+        "overview": overview,
+        "diagnosis_summary": summary,
+        "by_category": by_category,
+        "by_knowledge": by_knowledge,
+        "lost_items": lost_items_out,
+        "history_summary": history_summary,
+        "recurring_knowledge": recurring_knowledge,
+        "disclaimer": disclaimer,
+    }

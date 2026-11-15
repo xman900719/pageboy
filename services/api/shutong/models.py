@@ -1,6 +1,7 @@
 """Initial persistence models, deliberately small and without premature abstractions."""
 from __future__ import annotations
 from datetime import date, datetime, timezone
+from typing import Any
 from uuid import uuid4
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Float, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -171,6 +172,14 @@ class SchoolExamItem(Base):
     scoring_origin: Mapped[str] = mapped_column(String(32))
     confirmed_by_user: Mapped[bool] = mapped_column(Boolean)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 校考错误分析结构化错因分类与复盘备注（支持事后补充/修订且绝不改写已锁定得分）
+    error_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 0012：OCR/视觉识别及外部平台抓取的草稿溯源元数据（仅辅助审核确认，绝不替代人工定分）
+    draft_source_attachment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    draft_confidence: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    draft_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_knowledge_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class SchoolPaperAttachment(Base):

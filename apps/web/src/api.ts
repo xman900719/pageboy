@@ -1,12 +1,27 @@
 /* API surface (contracts/openapi.yaml) + in-memory bearer client. Token never persists. */
 
 export type Subject = 'math' | 'chinese' | 'english' | 'physics'
+// 学校考试额外支持「道法（道德与法治）」归档，核心练习/画像仍严格保持四科不变
+export type SchoolSubject = Subject | 'ethics'
 export type Kind = 'single_choice' | 'short_answer' | 'subjective'
 export type Purpose = 'training' | 'evaluation'
 export type GapType = 'INSUFFICIENT_EVIDENCE' | 'KNOWLEDGE_GAP' | 'NO_CONFIRMED_GAP'
+export type SchoolErrorCategory = 'concept' | 'calculation' | 'reading' | 'method' | 'norm' | 'other'
+export type SchoolDraftConfidence = 'high' | 'medium' | 'low' | 'skeleton_only' | 'external_sync'
+
+export interface DraftKnowledgeCandidate {
+  knowledge_id: string
+  title: string
+  reason: string
+}
 
 export const SUBJECTS: Subject[] = ['math', 'chinese', 'english', 'physics']
 export const SUBJECT_LABELS: Record<Subject, string> = { math: '数学', chinese: '语文', english: '英语', physics: '物理' }
+export const SCHOOL_SUBJECTS: SchoolSubject[] = ['math', 'chinese', 'english', 'physics', 'ethics']
+export const SCHOOL_SUBJECT_LABELS: Record<SchoolSubject, string> = {
+  ...SUBJECT_LABELS,
+  ethics: '道法',
+}
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
@@ -281,6 +296,253 @@ export interface SchoolExam {
   confirmed_by_user: boolean
 }
 
+export interface SchoolPaperAttachment {
+  id: string
+  filename: string
+  media_type: string
+  sha256: string
+  byte_size: number
+  created_at: string
+}
+
+export interface SchoolExamItem {
+  id: string
+  question_label: string
+  knowledge_id: string
+  knowledge_name?: string
+  earned_points: number
+  max_points: number
+  lost_points?: number
+  scoring_origin: 'manual_entry' | 'ocr_draft'
+  confirmed_by_user: boolean
+  error_category?: SchoolErrorCategory | null
+  error_note?: string | null
+  draft_source_attachment_id?: string | null
+  draft_confidence?: SchoolDraftConfidence | null
+  draft_reason?: string | null
+  draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
+}
+
+export interface SchoolExamItemInput {
+  question_label: string
+  knowledge_id: string
+  earned_points: number
+  max_points: number
+  scoring_origin: 'manual_entry' | 'ocr_draft'
+  error_category?: SchoolErrorCategory | null
+  error_note?: string | null
+  draft_source_attachment_id?: string | null
+  draft_confidence?: SchoolDraftConfidence | null
+  draft_reason?: string | null
+  draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
+}
+
+export interface SchoolItemConfirmInput {
+  earnedPoints: number
+  maxPoints?: number
+  knowledgeId?: string
+  errorCategory?: SchoolErrorCategory | null
+  errorNote?: string | null
+}
+
+export interface SchoolItemConfirmBatchEntry extends SchoolItemConfirmInput {
+  itemId: string
+}
+
+export interface ParseDraftsResult {
+  parser_mode_used: string
+  meta: { pages_sent?: number; masked_pages?: number; model?: string }
+  created_items: SchoolExamItem[]
+  skipped_labels: string[]
+  evidence_created: number
+}
+
+export interface SchoolExamErrorOverview {
+  confirmed_item_count: number
+  lost_item_count: number
+  unconfirmed_draft_count: number
+  earned_points: number
+  max_points: number
+  paper_lost_points: number | null
+  itemized_earned_points: number
+  itemized_max_points: number
+  itemized_lost_points: number
+  unaccounted_lost_points: number | null
+  categorized_item_count: number
+  uncategorized_item_count: number
+  primary_error_category: string | null
+  primary_knowledge_id: string | null
+  primary_knowledge_name: string | null
+}
+
+export interface SchoolExamErrorCategoryStat {
+  category: string
+  item_count: number
+  lost_points: number
+  share_of_itemized_loss: number
+  question_labels: string[]
+}
+
+export interface SchoolExamErrorKnowledge {
+  knowledge_id: string
+  knowledge_name: string
+  item_count: number
+  lost_item_count: number
+  earned_points: number
+  max_points: number
+  lost_points: number
+  exam_observed_rate: number
+  share_of_itemized_loss: number
+  categories: string[]
+  question_labels: string[]
+  notes: { question_label: string; note: string }[]
+  practice_status: 'mastered' | 'weak' | 'insufficient' | 'untested' | 'not_applicable'
+  practice_observed_rate: number | null
+  practice_sample_size: number
+  diagnosis_tag: 'double_weak' | 'exam_slip' | 'blind_spot' | 'archive_review'
+}
+
+export interface SchoolExamErrorItem {
+  id: string
+  question_label: string
+  knowledge_id: string
+  knowledge_name: string
+  earned_points: number
+  max_points: number
+  lost_points: number
+  error_category: SchoolErrorCategory | null
+  error_note: string | null
+}
+
+export interface SchoolExamRecurringKnowledge {
+  knowledge_id: string
+  knowledge_name: string
+  exam_count: number
+  total_lost_points: number
+  total_item_count: number
+  repeat_in_current_exam: boolean
+  categories: string[]
+  exams: {
+    exam_id: string
+    title: string
+    exam_date: string
+    lost_points: number
+    item_count: number
+  }[]
+}
+
+export interface SchoolExamErrorAnalysis {
+  exam_id: string
+  subject: SchoolSubject
+  title: string
+  exam_date: string
+  confirmed_by_user: boolean
+  has_taxonomy: boolean
+  status: 'insufficient_items' | 'no_errors_recorded' | 'analyzed'
+  overview: SchoolExamErrorOverview
+  diagnosis_summary: string
+  by_category: SchoolExamErrorCategoryStat[]
+  by_knowledge: SchoolExamErrorKnowledge[]
+  lost_items: SchoolExamErrorItem[]
+  history_summary: {
+    same_subject_exam_count: number
+    same_subject_exams_with_items: number
+    recurring_count: number
+  }
+  recurring_knowledge: SchoolExamRecurringKnowledge[]
+  disclaimer: string
+}
+
+export interface SchoolExamDetail extends SchoolExam {
+  subject: SchoolSubject
+  items: SchoolExamItem[]
+  attachments: SchoolPaperAttachment[]
+}
+
+export interface K12100CredentialsSummary {
+  status: string
+  username_masked: string | null
+  deepseek_configured: boolean
+  deepseek_masked: string | null
+  message: string
+}
+
+export interface K12100SubjectResult {
+  subject: SchoolSubject
+  subject_label: string
+  exam_id: string
+  exam_title: string
+  exam_date: string
+  earned_points: number
+  max_points: number
+  confirmed_by_user: boolean
+  score_status: string
+  stem_mode: string
+  parser_mode_used: string
+  attachments_uploaded: number
+  drafts_created: number
+  skipped_labels: string[]
+  warning: string | null
+}
+
+export interface K12100BackfillResult {
+  source_exam_title: string
+  source_exam_date: string | null
+  subjects: K12100SubjectResult[]
+  totals: {
+    subjects_processed: number
+    created_exams: number
+    confirmed_now: number
+    locked_conflicts: number
+    attachments_uploaded: number
+    drafts_created: number
+  }
+  knowledge_evidence_created: number
+}
+
+export interface K12100SyncJob {
+  job_id: string
+  state: 'queued' | 'collecting' | 'backfilling' | 'completed' | 'failed'
+  stage_message: string
+  created_at: string
+  updated_at: string
+  exam_keyword: string | null
+  confirm_total_scores: boolean
+  error_code: string | null
+  error_message: string | null
+  result: K12100BackfillResult | null
+}
+
+export interface K12100RuntimeStatus {
+  environment: string
+  mode: 'host_direct' | 'isolated_import_only'
+  can_run_local: boolean
+  is_isolated: boolean
+  browser_ready: boolean
+  node_available: boolean
+  playwright_available: boolean
+  unavailable_code: string | null
+  unavailable_reason: string | null
+  credentials: K12100CredentialsSummary
+  deepseek_configured: boolean
+  active_job_id: string | null
+  latest_job: K12100SyncJob | null
+  recommended_cli_command: string
+}
+
+export interface K12100BackfillOptions {
+  examKeyword?: string
+  targetExamDate?: string
+  seriesTitlePrefix?: string
+  maxExams?: number
+  confirmTotalScores?: boolean
+  extractExistingPdfs?: boolean
+  uploadMissingCards?: boolean
+  replaceUnconfirmedDrafts?: boolean
+  useAi?: boolean
+  headless?: boolean
+}
+
 export interface GoalResult {
   id: string
   version: number
@@ -289,7 +551,10 @@ export interface GoalResult {
 
 export interface SchoolExamResult {
   id: string
-  status: string
+  status?: string
+  confirmed_by_user?: boolean
+  earned_points?: number
+  max_points?: number
   knowledge_evidence_created: boolean
 }
 
@@ -399,15 +664,54 @@ export interface Client {
   validation(subject: Subject): Promise<Validation>
   poolHealth(subject: Subject): Promise<PoolHealth>
   setGoal(input: { subject: Subject; targetPoints: number; maxPoints: number; minutesPerDay: number }): Promise<GoalResult>
-  schoolExams(subject: Subject): Promise<SchoolExam[]>
+  schoolExams(subject: SchoolSubject): Promise<SchoolExam[]>
+  schoolExamDetail(examId: string): Promise<SchoolExamDetail>
   addSchoolExam(input: {
-    subject: Subject
+    subject: SchoolSubject
     title: string
     examDate: string
     earnedPoints: number
     maxPoints: number
     confirmedByUser: boolean
   }): Promise<SchoolExamResult>
+  confirmSchoolExam(examId: string, earnedPoints: number): Promise<SchoolExamResult>
+  uploadSchoolPaper(examId: string, file: File): Promise<SchoolPaperAttachment>
+  addSchoolExamItems(examId: string, items: SchoolExamItemInput[]): Promise<{ evidence_created: number }>
+  confirmSchoolExamItem(
+    examId: string,
+    itemId: string,
+    input: number | SchoolItemConfirmInput,
+  ): Promise<SchoolExamItem>
+  confirmSchoolExamItemsBatch(
+    examId: string,
+    items: SchoolItemConfirmBatchEntry[],
+  ): Promise<{ items: SchoolExamItem[]; evidence_created: number }>
+  discardSchoolExamItem(
+    examId: string,
+    itemId: string,
+  ): Promise<{ status: string; id: string; question_label: string }>
+  parseSchoolExamDrafts(
+    examId: string,
+    input: {
+      attachmentIds: string[]
+      mode?: 'auto' | 'skeleton_only'
+      maskStudentHeader?: boolean
+      replaceUnconfirmedDrafts?: boolean
+    },
+  ): Promise<ParseDraftsResult>
+  updateSchoolExamItemAnalysis(
+    examId: string,
+    itemId: string,
+    input: { errorCategory: SchoolErrorCategory | null; errorNote: string | null },
+  ): Promise<SchoolExamItem>
+  schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
+  k12100SyncStatus(): Promise<K12100RuntimeStatus>
+  startK12100SyncJob(options?: K12100BackfillOptions): Promise<K12100SyncJob>
+  k12100SyncJob(jobId: string): Promise<K12100SyncJob>
+  importK12100Bundle(
+    bundle: Record<string, unknown>,
+    options?: Omit<K12100BackfillOptions, 'headless'>,
+  ): Promise<K12100BackfillResult>
   fetchAttachment(attachmentId: string): Promise<Blob>
   /* 题库审核台（ST-011）。 */
   adminSources(): Promise<SourceDetail[]>
@@ -578,6 +882,7 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
     setGoal: ({ subject, targetPoints, maxPoints, minutesPerDay }) =>
       call<GoalResult>('/api/goals', 'POST', { subject, target_points: targetPoints, max_points: maxPoints, minutes_per_day: minutesPerDay }),
     schoolExams: subject => call<SchoolExam[]>(`/api/school-exams?subject=${subject}`),
+    schoolExamDetail: examId => call<SchoolExamDetail>(`/api/school-exams/${encodeURIComponent(examId)}`),
     addSchoolExam: ({ subject, title, examDate, earnedPoints, maxPoints, confirmedByUser }) =>
       call<SchoolExamResult>('/api/school-exams', 'POST', {
         subject,
@@ -586,6 +891,100 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         earned_points: earnedPoints,
         max_points: maxPoints,
         confirmed_by_user: confirmedByUser,
+      }),
+    confirmSchoolExam: (examId, earnedPoints) =>
+      call<SchoolExamResult>(`/api/school-exams/${encodeURIComponent(examId)}/confirm`, 'POST', {
+        confirmed_by_user: true,
+        earned_points: earnedPoints,
+      }),
+    // 私人校卷附件上传（与内容附件共享底层校验，≤35 MiB，绝不提供公开下载接口）
+    uploadSchoolPaper: (examId, file) =>
+      request(`/api/school-exams/${encodeURIComponent(examId)}/paper?filename=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      }) as Promise<SchoolPaperAttachment>,
+    addSchoolExamItems: (examId, items) =>
+      call<{ evidence_created: number }>(`/api/school-exams/${encodeURIComponent(examId)}/items`, 'POST', { items }),
+    confirmSchoolExamItem: (examId, itemId, input) => {
+      const norm = typeof input === 'number' ? { earnedPoints: input } : input
+      const body: Record<string, unknown> = {
+        confirmed_by_human: true,
+        earned_points: norm.earnedPoints,
+      }
+      if (norm.maxPoints !== undefined) body.max_points = norm.maxPoints
+      if (norm.knowledgeId !== undefined) body.knowledge_id = norm.knowledgeId
+      if ('errorCategory' in norm) body.error_category = norm.errorCategory ?? null
+      if ('errorNote' in norm) body.error_note = norm.errorNote ?? null
+      return call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/confirm`,
+        'POST',
+        body,
+      )
+    },
+    confirmSchoolExamItemsBatch: (examId, items) =>
+      call<{ items: SchoolExamItem[]; evidence_created: number }>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/confirm-batch`,
+        'POST',
+        {
+          items: items.map(it => ({
+            item_id: it.itemId,
+            confirmed_by_human: true,
+            earned_points: it.earnedPoints,
+            ...(it.maxPoints !== undefined ? { max_points: it.maxPoints } : {}),
+            ...(it.knowledgeId !== undefined ? { knowledge_id: it.knowledgeId } : {}),
+            ...('errorCategory' in it ? { error_category: it.errorCategory ?? null } : {}),
+            ...('errorNote' in it ? { error_note: it.errorNote ?? null } : {}),
+          })),
+        },
+      ),
+    discardSchoolExamItem: (examId, itemId) =>
+      call<{ status: string; id: string; question_label: string }>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/discard`,
+        'POST',
+      ),
+    parseSchoolExamDrafts: (examId, { attachmentIds, mode = 'auto', maskStudentHeader = true, replaceUnconfirmedDrafts = false }) =>
+      call<ParseDraftsResult>(`/api/school-exams/${encodeURIComponent(examId)}/parse-drafts`, 'POST', {
+        attachment_ids: attachmentIds,
+        mode,
+        mask_student_header: maskStudentHeader,
+        replace_unconfirmed_drafts: replaceUnconfirmedDrafts,
+      }),
+    updateSchoolExamItemAnalysis: (examId, itemId, { errorCategory, errorNote }) =>
+      call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/analysis`,
+        'POST',
+        { error_category: errorCategory, error_note: errorNote },
+      ),
+    schoolExamErrorAnalysis: examId =>
+      call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
+    k12100SyncStatus: () => call<K12100RuntimeStatus>('/api/school-exams/k12100-sync/status'),
+    startK12100SyncJob: (options = {}) =>
+      call<K12100SyncJob>('/api/school-exams/k12100-sync/jobs', 'POST', {
+        ...(options.examKeyword ? { exam_keyword: options.examKeyword } : {}),
+        ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
+        ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
+        max_exams: options.maxExams ?? 1,
+        confirm_total_scores: options.confirmTotalScores ?? true,
+        extract_existing_pdfs: options.extractExistingPdfs ?? true,
+        upload_missing_cards: options.uploadMissingCards ?? true,
+        replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
+        use_ai: options.useAi ?? true,
+        headless: options.headless ?? true,
+      }),
+    k12100SyncJob: jobId => call<K12100SyncJob>(`/api/school-exams/k12100-sync/jobs/${encodeURIComponent(jobId)}`),
+    importK12100Bundle: (bundle, options = {}) =>
+      call<K12100BackfillResult>('/api/school-exams/k12100-sync/import-bundle', 'POST', {
+        bundle,
+        ...(options.examKeyword ? { exam_keyword: options.examKeyword } : {}),
+        ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
+        ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
+        max_exams: options.maxExams ?? 1,
+        confirm_total_scores: options.confirmTotalScores ?? true,
+        extract_existing_pdfs: options.extractExistingPdfs ?? true,
+        upload_missing_cards: options.uploadMissingCards ?? true,
+        replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
+        use_ai: options.useAi ?? true,
       }),
     fetchAttachment: async attachmentId => {
       const res = await fetch(`/api/admin/attachments/${attachmentId}/download`, { headers: { Authorization: `Bearer ${token}` } })
@@ -675,6 +1074,28 @@ const API_CODE_TEXT: Record<string, string> = {
   IMPORTED_QUESTION_CONFIRMATION_REQUIRED: '导入的题目缺少确认记录，请先在附件区完成逐题确认导入。',
   QUESTION_NOT_APPROVED_FOR_PRIVATE_PUBLICATION: '来源尚未通过人工审核（或版权状态未核实）：请先完成来源人工审核，再发布题目。',
   KNOWLEDGE_NODE_NOT_FOUND: '未找到对应的已发布知识点节点。',
+  FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY: '满分小题无需标注错因分类。',
+  SCHOOL_ITEM_LABEL_CONFLICT: '该场考试已存在相同题号，请勿重复录入。',
+  SCHOOL_EXAM_ALREADY_CONFIRMED: '该场校考总分已完成人工核对，不能重复确认。',
+  SCHOOL_EXAM_IMMUTABLE: '该场校考总分已核对锁定，不可直接修改原总分。',
+  SCHOOL_ITEM_ALREADY_CONFIRMED: '该小题已完成人工确认，不可重复确认。',
+  SCHOOL_ITEM_IMMUTABLE: '该小题已人工确认并锁定，不可丢弃或修改已锁得分。',
+  SCHOOL_ITEM_DUPLICATE_CONFIRM: '批量确认中包含重复小题编号，请刷新后重试。',
+  VISION_PARSER_NOT_CONFIGURED: '服务端未配置 DeepSeek API Key，请改用「仅本地提取题号与分值骨架」或联系管理员配置 SHUTONG_AI_API_KEY。',
+  VISION_PARSER_TIMEOUT: 'DeepSeek 多模态解析超时，建议缩短页数或先改用本地骨架抽取。',
+  VISION_PARSER_UNAVAILABLE: '暂时无法连接 DeepSeek 多模态服务，请稍后重试。',
+  VISION_PARSER_INVALID_JSON: '多模态模型返回格式无法解析为草稿 JSON，请重试或改用本地骨架模式。',
+  NO_EMBEDDED_TEXT_FOR_SKELETON: '所选附件不含可机读文字层（属纯扫描件），无法本地提取骨架；请改用 DeepSeek 多模态模式。',
+  UNSUPPORTED_ATTACHMENT_FOR_PARSING: '所选附件格式不支持自动提取（支持 PDF / DOCX / PNG / JPG）。',
+  ATTACHMENT_NOT_FOUND: '未找到选中的附件，请刷新列表后重试。',
+  K12100_LOCAL_RUNNER_UNAVAILABLE: '当前后端处于容器隔离或未部署宿主机浏览器，请上传宿主机导出的脱敏采集包 (.json) 或使用宿主 CLI 直连补全。',
+  K12100_CREDENTIALS_NOT_CONFIGURED: '宿主机尚未配置 k12100.com 账号与私密权限（0700/0600），请先在宿主机完成 init-credentials，或直接导入脱敏采集包。',
+  K12100_SYNC_ALREADY_RUNNING: '已有 k12100 全科补全任务正在运行中，请等待当前任务完成，避免触发平台限流。',
+  K12100_SYNC_JOB_NOT_FOUND: '未找到对应的同步任务记录（服务可能已重启），请重新查看状态或再次启动。',
+  K12100_BUNDLE_TOO_LARGE: '上传的采集包体积超过 15 MiB 上限，请减少单次采集场次或取消内嵌大图后重试。',
+  K12100_INVALID_BUNDLE: '采集包 JSON 结构无效或与所填关键词不匹配，请使用 k12100_sync.py collect 生成的最新脱敏文件。',
+  K12100_UNSAFE_CARD_URL: '检测到不安全的答题卡图片链接（仅允许官方 HTTPS 域名且拒绝内网地址），已安全拦截。',
+  K12100_CARD_DOWNLOAD_FAILED: '答题卡图片下载失败（签名链接可能已过期），请重新采集含内嵌图片的 JSON 包后导入。',
 }
 
 export function describeError(error: unknown): string {

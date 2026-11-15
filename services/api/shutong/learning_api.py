@@ -44,8 +44,13 @@ from .topic_labels import get_topic_label
 router = APIRouter(tags=["learning"])
 
 
-def get_evidence(db: Session, learner_id: str, subject: str) -> list[Evidence]:
-    """收集指定学科有效客观作答证据（单知识点已审核真题 + 已人工确认的校考逐题明细）。"""
+def get_evidence(
+    db: Session,
+    learner_id: str,
+    subject: str,
+    include_school_items: bool = True,
+) -> list[Evidence]:
+    """收集指定学科有效客观作答证据（单知识点已审核真题；默认含已人工确认的校考逐题明细）。"""
     rows = db.execute(
         select(m.AnswerAttempt, m.Exposure, m.QuestionVersion)
         .join(m.Exposure, m.Exposure.id == m.AnswerAttempt.exposure_id)
@@ -68,28 +73,29 @@ def get_evidence(db: Session, learner_id: str, subject: str) -> list[Evidence]:
                 is_first_exposure=ex.is_unseen_at_exposure,
             )
         )
-    # 已人工确认的校卷逐题得分并入证据（合成键按 item 独立计数）；总分行永不折算（INV-05）。
-    school_rows = db.execute(
-        select(m.SchoolExamItem, m.SchoolExam).where(
-            m.SchoolExam.id == m.SchoolExamItem.school_exam_id,
-            m.SchoolExam.learner_id == learner_id,
-            m.SchoolExam.subject == subject,
-            m.SchoolExamItem.confirmed_by_user.is_(True),
-            m.SchoolExamItem.max_points > 0,
-        )
-    ).all()
-    for item, _exam in school_rows:
-        result.append(
-            Evidence(
-                source_event_id=item.id,
-                question_version_id=f"school-item:{item.id}",
-                knowledge_id=item.knowledge_id,
-                earned_points=item.earned_points,
-                max_points=item.max_points,
-                independent=True,
-                is_first_exposure=True,
+    if include_school_items:
+        # 已人工确认的校卷逐题得分并入证据（合成键按 item 独立计数）；总分行永不折算（INV-05）。
+        school_rows = db.execute(
+            select(m.SchoolExamItem, m.SchoolExam).where(
+                m.SchoolExam.id == m.SchoolExamItem.school_exam_id,
+                m.SchoolExam.learner_id == learner_id,
+                m.SchoolExam.subject == subject,
+                m.SchoolExamItem.confirmed_by_user.is_(True),
+                m.SchoolExamItem.max_points > 0,
             )
-        )
+        ).all()
+        for item, _exam in school_rows:
+            result.append(
+                Evidence(
+                    source_event_id=item.id,
+                    question_version_id=f"school-item:{item.id}",
+                    knowledge_id=item.knowledge_id,
+                    earned_points=item.earned_points,
+                    max_points=item.max_points,
+                    independent=True,
+                    is_first_exposure=True,
+                )
+            )
     return result
 
 
@@ -198,11 +204,22 @@ def _load_effective_knowledge_nodes(db: Session, subject: str) -> tuple[list[dic
     return fallback, None
 
 
-def _get_mapped_evidence(db: Session, learner_id: str, subject: str, valid_codes: set[str]) -> list[Evidence]:
+def _get_mapped_evidence(
+    db: Session,
+    learner_id: str,
+    subject: str,
+    valid_codes: set[str],
+    include_school_items: bool = True,
+    raw_evidence: list[Evidence] | None = None,
+) -> list[Evidence]:
     """将作答证据中的旧/新考点编码统一映射到当前有效非选学节点。"""
-    raw_evidence = get_evidence(db, learner_id, subject)
+    source_evidence = (
+        raw_evidence
+        if raw_evidence is not None
+        else get_evidence(db, learner_id, subject, include_school_items=include_school_items)
+    )
     mapped: list[Evidence] = []
-    for ev in raw_evidence:
+    for ev in source_evidence:
         targets = resolve_question_to_candidate_codes(subject, [ev.knowledge_id])
         if not targets and ev.knowledge_id in valid_codes:
             targets = [ev.knowledge_id]

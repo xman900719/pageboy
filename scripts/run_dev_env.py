@@ -3,24 +3,28 @@
 书童日常开发环境一键管理脚本（后端 8000 + Vite 热重载 5173 + 隔离开发凭据）。
 
 职责：
-1. init-env      - 在 pageboy-home/development/env/dev.env 初始化或校验独立开发令牌，
+1. init-env      - 在 pageboy-home/development/env/dev.env 初始化或校验独立开发令牌（可选同时录入 DeepSeek API Key），
                    并同步写入已被 Git 忽略的 apps/web/.env.development.local（仅 vite dev 读取）。
-2. start         - 自动执行 init-env 与数据库迁移后，以 127.0.0.1 回环地址启动后端与 Vite dev。
-3. stop          - 优雅停止开发环境进程，释放 8000 与 5173 端口。
-4. status        - 检查服务端口与开发凭据文件状态。
-5. sim           - 打开 iPadOS 竖屏 (810×1080) 模拟机窗口直连开发前端。
-6. sim-landscape - 打开 iPadOS 横屏 (1080×810) 模拟机窗口直连开发前端。
+2. config-ai     - 在 dev.env 中单独配置、从 Shell 导入或清理 DEEPSEEK_API_KEY / 模型参数（不改动既有双端令牌）。
+3. start         - 自动执行 init-env 与数据库迁移后，以 127.0.0.1 回环地址启动后端与 Vite dev（自动透传 DeepSeek Key）。
+4. stop          - 优雅停止开发环境进程，释放 8000 与 5173 端口。
+5. status        - 检查服务端口、开发凭据与 DeepSeek AI 脱敏配置状态。
+6. sim           - 打开 iPadOS 竖屏 (810×1080) 模拟机窗口直连开发前端。
+7. sim-landscape - 打开 iPadOS 横屏 (1080×810) 模拟机窗口直连开发前端。
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import secrets
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
+from getpass import getpass
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -88,7 +92,80 @@ def write_secure_env_file(path: Path, lines: list[str]) -> None:
     os.chmod(path, 0o600)
 
 
-def ensure_dev_env() -> dict[str, str]:
+_AI_ENV_KEYS = {
+    "DEEPSEEK_API_KEY",
+    "SHUTONG_AI_API_KEY",
+    "SHUTONG_VISION_API_KEY",
+    "DEEPSEEK_BASE_URL",
+    "SHUTONG_AI_BASE_URL",
+    "SHUTONG_VISION_BASE_URL",
+    "SHUTONG_AI_MODEL",
+    "SHUTONG_TEXT_ENRICH_MODEL",
+    "SHUTONG_VISION_MODEL",
+}
+
+
+def _mask_secret(value: str) -> str:
+    """仅返回密钥首尾脱敏摘要，避免明文写入终端。"""
+    text = (value or "").strip()
+    if not text:
+        return "未配置"
+    if len(text) <= 8:
+        return "***"
+    return f"{text[:4]}***{text[-4:]}"
+
+
+def _build_ai_updates(
+    api_key: str = "",
+    *,
+    base_url: str = "",
+    vision_model: str = "",
+    text_model: str = "",
+) -> dict[str, str]:
+    """构造 DeepSeek 与书童 AI 统一开发环境变量更新映射。"""
+    updates: dict[str, str] = {}
+    cleaned_key = (api_key or "").strip()
+    if cleaned_key:
+        updates["DEEPSEEK_API_KEY"] = cleaned_key
+        updates["SHUTONG_AI_API_KEY"] = cleaned_key
+        updates["SHUTONG_VISION_API_KEY"] = cleaned_key
+    cleaned_url = (base_url or "").strip().rstrip("/")
+    if cleaned_url:
+        if not cleaned_url.startswith(("http://", "https://")):
+            raise ValueError("DeepSeek Base URL 必须以 http:// 或 https:// 开头")
+        updates["DEEPSEEK_BASE_URL"] = cleaned_url
+        updates["SHUTONG_AI_BASE_URL"] = cleaned_url
+        updates["SHUTONG_VISION_BASE_URL"] = cleaned_url
+    if (vision_model or "").strip():
+        updates["SHUTONG_VISION_MODEL"] = vision_model.strip()
+    if (text_model or "").strip():
+        updates["SHUTONG_AI_MODEL"] = text_model.strip()
+        updates["SHUTONG_TEXT_ENRICH_MODEL"] = text_model.strip()
+    return updates
+
+
+def _load_verified_user_k12100_ai_env() -> dict[str, str]:
+    """在权限严格校验通过（dir 0700、file 0600、当前用户）时，读取 ~/.config/shutong/k12100.env 中的 AI 配置。"""
+    cfg_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(Path.home() / ".config" / "shutong"))).expanduser().resolve()
+    env_file = cfg_dir / "k12100.env"
+    if not cfg_dir.is_dir() or not env_file.is_file():
+        return {}
+    uid = os.getuid()
+    dir_st = cfg_dir.stat()
+    file_st = env_file.stat()
+    if dir_st.st_uid != uid or stat.S_IMODE(dir_st.st_mode) & 0o077 != 0:
+        return {}
+    if file_st.st_uid != uid or stat.S_IMODE(file_st.st_mode) & 0o077 != 0:
+        return {}
+    parsed = parse_env_file(env_file)
+    return {k: v for k, v in parsed.items() if k in _AI_ENV_KEYS and v}
+
+
+def ensure_dev_env(
+    *,
+    ai_updates: dict[str, str] | None = None,
+    remove_keys: set[str] | None = None,
+) -> dict[str, str]:
     """确保 dev.env 与 apps/web/.env.development.local 存在且包含独立的双端开发令牌。"""
     if not DEV_HOME.is_dir():
         raise RuntimeError(f"开发 Home 目录不存在：{DEV_HOME}")
@@ -97,6 +174,12 @@ def ensure_dev_env() -> dict[str, str]:
     os.chmod(DEV_ENV_DIR, 0o700)
 
     env_map = parse_env_file(DEV_ENV_FILE)
+    for k in remove_keys or set():
+        env_map.pop(k, None)
+    for k, v in (ai_updates or {}).items():
+        if v.strip():
+            env_map[k] = v.strip()
+
     env_map["PAGEBOY_HOME"] = str(PAGEBOY_HOME)
     env_map["SHUTONG_ENV"] = "development"
 
@@ -116,11 +199,26 @@ def ensure_dev_env() -> dict[str, str]:
         "SHUTONG_ENV",
         "SHUTONG_STUDENT_TOKEN",
         "SHUTONG_ADMIN_TOKEN",
+        "DEEPSEEK_API_KEY",
+        "SHUTONG_AI_API_KEY",
+        "SHUTONG_VISION_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "SHUTONG_AI_BASE_URL",
+        "SHUTONG_VISION_BASE_URL",
+        "SHUTONG_AI_MODEL",
+        "SHUTONG_TEXT_ENRICH_MODEL",
+        "SHUTONG_VISION_MODEL",
     ]
-    extra_keys = sorted(k for k in env_map if k not in ordered_keys)
+    seen_ordered: set[str] = set()
+    ordered_lines: list[str] = []
+    for k in ordered_keys:
+        if k in env_map and env_map[k]:
+            ordered_lines.append(f"{k}={env_map[k]}")
+            seen_ordered.add(k)
+    extra_keys = sorted(k for k in env_map if k not in seen_ordered and env_map[k])
     dev_lines = [
         "# 书童本地开发环境配置（仅开发态生效，严禁提交至 Git）",
-        *(f"{k}={env_map[k]}" for k in ordered_keys),
+        *ordered_lines,
         *(f"{k}={env_map[k]}" for k in extra_keys),
     ]
     write_secure_env_file(DEV_ENV_FILE, dev_lines)
@@ -135,13 +233,115 @@ def ensure_dev_env() -> dict[str, str]:
     return env_map
 
 
-def init_env_cmd() -> int:
-    """仅初始化并同步开发环境凭据文件。"""
-    env_map = ensure_dev_env()
+def _propagate_ai_env(proc_env: dict[str, str], dev_vars: dict[str, str]) -> str:
+    """将 dev.env、已验权限的 k12100.env 或 Shell 中的 DEEPSEEK_API_KEY 透传给开发后端，返回来源说明。"""
+    source_desc = "未配置"
+    if dev_vars.get("SHUTONG_AI_API_KEY") or dev_vars.get("SHUTONG_VISION_API_KEY") or dev_vars.get("DEEPSEEK_API_KEY"):
+        source_desc = f"dev.env ({_mask_secret(dev_vars.get('DEEPSEEK_API_KEY') or dev_vars.get('SHUTONG_AI_API_KEY') or dev_vars.get('SHUTONG_VISION_API_KEY', ''))})"
+    else:
+        user_ai = _load_verified_user_k12100_ai_env()
+        if user_ai:
+            proc_env.update(user_ai)
+            source_desc = f"~/.config/shutong/k12100.env ({_mask_secret(user_ai.get('DEEPSEEK_API_KEY') or user_ai.get('SHUTONG_AI_API_KEY', ''))})"
+        elif proc_env.get("DEEPSEEK_API_KEY", "").strip():
+            source_desc = f"当前 Shell DEEPSEEK_API_KEY ({_mask_secret(proc_env['DEEPSEEK_API_KEY'])})"
+        elif proc_env.get("SHUTONG_AI_API_KEY", "").strip():
+            source_desc = f"当前 Shell SHUTONG_AI_API_KEY ({_mask_secret(proc_env['SHUTONG_AI_API_KEY'])})"
+
+    ai_key = (
+        proc_env.get("SHUTONG_AI_API_KEY", "").strip()
+        or proc_env.get("SHUTONG_VISION_API_KEY", "").strip()
+        or proc_env.get("DEEPSEEK_API_KEY", "").strip()
+    )
+    if ai_key:
+        for k in ("SHUTONG_AI_API_KEY", "SHUTONG_VISION_API_KEY", "DEEPSEEK_API_KEY"):
+            if not proc_env.get(k, "").strip():
+                proc_env[k] = ai_key
+    ai_base = (
+        proc_env.get("SHUTONG_AI_BASE_URL", "").strip()
+        or proc_env.get("SHUTONG_VISION_BASE_URL", "").strip()
+        or proc_env.get("DEEPSEEK_BASE_URL", "").strip()
+    ).rstrip("/")
+    # 书童后端走 OpenAI /v1/chat/completions 协议；剥离宿主环境常见的 Anthropic 兼容后缀 /anthropic
+    if ai_base.endswith("/anthropic"):
+        ai_base = ai_base[: -len("/anthropic")].rstrip("/") or "https://api.deepseek.com"
+    if ai_base:
+        for k in ("SHUTONG_AI_BASE_URL", "SHUTONG_VISION_BASE_URL"):
+            if not proc_env.get(k, "").strip() or proc_env[k].strip().rstrip("/").endswith("/anthropic"):
+                proc_env[k] = ai_base
+        if not proc_env.get("DEEPSEEK_BASE_URL", "").strip():
+            proc_env["DEEPSEEK_BASE_URL"] = ai_base
+    return source_desc
+
+
+def init_env_cmd(args: argparse.Namespace | None = None) -> int:
+    """仅初始化并同步开发环境凭据文件（可选同时写入 DeepSeek AI 配置）。"""
+    ai_updates: dict[str, str] = {}
+    if args is not None:
+        raw_key = (args.deepseek_api_key or "").strip()
+        if not raw_key and args.from_shell_deepseek:
+            raw_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+            if not raw_key:
+                print("❌ 错误：当前 Shell 环境变量 DEEPSEEK_API_KEY 未设置或为空。", file=sys.stderr)
+                return 1
+        try:
+            ai_updates = _build_ai_updates(
+                raw_key,
+                base_url=args.deepseek_base_url,
+                vision_model=args.deepseek_vision_model,
+                text_model=args.deepseek_model,
+            )
+        except ValueError as exc:
+            print(f"❌ 错误：{exc}", file=sys.stderr)
+            return 1
+
+    env_map = ensure_dev_env(ai_updates=ai_updates or None)
     print("✅ 开发环境学生端与管理端令牌已就绪（仅保存在本地受保护目录）：")
     print(f"   - 后端配置：{DEV_ENV_FILE} (0600)")
     print(f"   - 前端配置：{WEB_DEV_ENV_FILE} (0600，仅 vite dev 生效)")
     print(f"   - 学生令牌长度：{len(env_map['SHUTONG_STUDENT_TOKEN'])}，管理令牌长度：{len(env_map['SHUTONG_ADMIN_TOKEN'])}")
+    ai_key = env_map.get("DEEPSEEK_API_KEY") or env_map.get("SHUTONG_AI_API_KEY") or ""
+    print(f"   - DeepSeek AI Key：{_mask_secret(ai_key)}")
+    return 0
+
+
+def config_ai_cmd(args: argparse.Namespace) -> int:
+    """在 dev.env 中单独配置、从 Shell 导入或清理 DeepSeek AI 参数（保留既有开发令牌）。"""
+    if args.clear:
+        ensure_dev_env(remove_keys=_AI_ENV_KEYS)
+        print(f"✅ 已清理 {DEV_ENV_FILE} 中的 DeepSeek AI 配置（既有学生/管理开发令牌已保留）。")
+        return 0
+
+    raw_key = (args.deepseek_api_key or "").strip()
+    if not raw_key and args.from_shell:
+        raw_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        if not raw_key:
+            print("❌ 错误：当前 Shell 环境变量 DEEPSEEK_API_KEY 未设置或为空。", file=sys.stderr)
+            return 1
+    has_other = any([args.base_url, args.vision_model, args.text_model])
+    if not raw_key and not args.from_shell and not has_other:
+        raw_key = getpass("请输入 DEEPSEEK_API_KEY（不回显）: ").strip()
+
+    try:
+        ai_updates = _build_ai_updates(
+            raw_key,
+            base_url=args.base_url,
+            vision_model=args.vision_model,
+            text_model=args.text_model,
+        )
+    except ValueError as exc:
+        print(f"❌ 错误：{exc}", file=sys.stderr)
+        return 1
+
+    if not ai_updates:
+        print("❌ 错误：未提供 DEEPSEEK_API_KEY 或有效 AI 配置项。", file=sys.stderr)
+        return 1
+
+    env_map = ensure_dev_env(ai_updates=ai_updates)
+    print(f"✅ 已安全写入 DeepSeek AI 配置至 {DEV_ENV_FILE} (0600，保留既有开发令牌)：")
+    print(f"   - DEEPSEEK_API_KEY：{_mask_secret(env_map.get('DEEPSEEK_API_KEY', ''))}")
+    if env_map.get("DEEPSEEK_BASE_URL"):
+        print(f"   - DEEPSEEK_BASE_URL：{env_map['DEEPSEEK_BASE_URL']}")
     return 0
 
 
@@ -160,6 +360,8 @@ def start_env() -> int:
 
     proc_env = os.environ.copy()
     proc_env.update(dev_vars)
+    ai_source = _propagate_ai_env(proc_env, dev_vars)
+    print(f"🤖 DeepSeek AI 配置：{ai_source}")
 
     print("📦 正在检查并升级开发数据库迁移 (alembic upgrade head)...")
     mig = subprocess.run(
@@ -284,16 +486,31 @@ def stop_env() -> int:
 
 
 def status_env() -> int:
-    """检查日常开发环境运行状态与凭据配置情况。"""
+    """检查日常开发环境运行状态与凭据配置情况（仅脱敏展示密钥摘要）。"""
     api_live = is_port_in_use(API_PORT)
     web_live = is_port_in_use(WEB_PORT)
     dev_env_ok = DEV_ENV_FILE.is_file()
     web_env_ok = WEB_DEV_ENV_FILE.is_file()
+    dev_vars = parse_env_file(DEV_ENV_FILE) if dev_env_ok else {}
+    dev_ai = dev_vars.get("DEEPSEEK_API_KEY") or dev_vars.get("SHUTONG_AI_API_KEY") or dev_vars.get("SHUTONG_VISION_API_KEY") or ""
+    k12_ai_map = _load_verified_user_k12100_ai_env()
+    k12_ai = k12_ai_map.get("DEEPSEEK_API_KEY") or k12_ai_map.get("SHUTONG_AI_API_KEY") or ""
+    shell_ai = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if dev_ai:
+        ai_status = f"🟢 已写入 dev.env ({_mask_secret(dev_ai)})"
+    elif k12_ai:
+        ai_status = f"🟡 来自 ~/.config/shutong/k12100.env ({_mask_secret(k12_ai)})"
+    elif shell_ai:
+        ai_status = f"🟡 来自当前 Shell ({_mask_secret(shell_ai)}，可运行 config-ai --from-shell 持久化)"
+    else:
+        ai_status = "🔴 未配置"
+
     print("==================================================================")
     print("🔍 书童日常开发环境状态")
     print("==================================================================")
     print(f"后端凭据 ({DEV_ENV_FILE}): {'🟢 已配置' if dev_env_ok else '🔴 缺失'}")
     print(f"前端凭据 ({WEB_DEV_ENV_FILE}): {'🟢 已同步' if web_env_ok else '🔴 缺失'}")
+    print(f"DeepSeek AI 配置: {ai_status}")
     print(f"后端 API (127.0.0.1:{API_PORT}): {'🟢 在线' if api_live else '🔴 离线'}")
     print(f"前端 Vite dev (127.0.0.1:{WEB_PORT}): {'🟢 在线' if web_live else '🔴 离线'}")
     print("==================================================================")
@@ -313,22 +530,58 @@ def open_sim(landscape: bool = False) -> int:
     return res.returncode
 
 
-def main() -> None:
-    action = sys.argv[1] if len(sys.argv) > 1 else "status"
+def build_parser() -> argparse.ArgumentParser:
+    """构建日常开发环境管理 CLI 参数解析器。"""
+    parser = argparse.ArgumentParser(description="书童日常开发环境管理与 DeepSeek AI 配置 CLI")
+    sub = parser.add_subparsers(dest="command")
+
+    p_init = sub.add_parser("init-env", help="初始化或校验 dev.env 与前端开发令牌（可选同步写入 DeepSeek Key）")
+    p_init.add_argument("--deepseek-api-key", default="", help="同时写入 DEEPSEEK_API_KEY / SHUTONG_AI_API_KEY")
+    p_init.add_argument("--from-shell-deepseek", action="store_true", help="从当前 Shell DEEPSEEK_API_KEY 导入到 dev.env")
+    p_init.add_argument("--deepseek-base-url", default="", help="可选 DeepSeek API Base URL")
+    p_init.add_argument("--deepseek-vision-model", default="", help="可选视觉模型名")
+    p_init.add_argument("--deepseek-model", default="", help="可选文本/助教模型名")
+
+    p_ai = sub.add_parser("config-ai", help="在 dev.env 中单独配置、从 Shell 导入或清理 DeepSeek AI 参数")
+    p_ai.add_argument("--deepseek-api-key", default="", help="传入 DEEPSEEK_API_KEY（不填则交互输入或配合 --from-shell 使用）")
+    p_ai.add_argument("--from-shell", action="store_true", help="从当前 Shell 环境变量 DEEPSEEK_API_KEY 导入")
+    p_ai.add_argument("--base-url", default="", help="可选 DeepSeek API Base URL")
+    p_ai.add_argument("--vision-model", default="", help="可选视觉模型名")
+    p_ai.add_argument("--text-model", default="", help="可选文本/助教模型名")
+    p_ai.add_argument("--clear", action="store_true", help="仅清除 dev.env 中的 DeepSeek AI 配置（保留双端开发令牌）")
+
+    sub.add_parser("start", help="启动本地日常开发环境（后端 8000 + Vite dev 5173）")
+    sub.add_parser("stop", help="停止本地日常开发环境")
+    sub.add_parser("status", help="检查开发服务端口、凭据与 DeepSeek AI 配置状态")
+    sub.add_parser("sim", help="打开 iPadOS 竖屏模拟机窗口直连开发前端")
+    sub.add_parser("sim-portrait", help="打开 iPadOS 竖屏模拟机窗口直连开发前端")
+    sub.add_parser("sim-landscape", help="打开 iPadOS 横屏模拟机窗口直连开发前端")
+    return parser
+
+
+def run_cli(argv: list[str] | None = None) -> int:
+    """执行日常开发环境 CLI 子命令并返回退出码。"""
+    args = build_parser().parse_args(argv)
+    action = args.command or "status"
     if action == "init-env":
-        sys.exit(init_env_cmd())
+        return init_env_cmd(args)
+    if action == "config-ai":
+        return config_ai_cmd(args)
     if action == "start":
-        sys.exit(start_env())
+        return start_env()
     if action == "stop":
-        sys.exit(stop_env())
+        return stop_env()
     if action == "status":
-        sys.exit(status_env())
+        return status_env()
     if action in ("sim", "sim-portrait"):
-        sys.exit(open_sim(landscape=False))
-    if action in ("sim-landscape",):
-        sys.exit(open_sim(landscape=True))
-    print(f"未知子命令: {action}。支持: init-env | start | stop | status | sim | sim-landscape")
-    sys.exit(2)
+        return open_sim(landscape=False)
+    if action == "sim-landscape":
+        return open_sim(landscape=True)
+    return 2
+
+
+def main() -> None:
+    sys.exit(run_cli())
 
 
 if __name__ == "__main__":

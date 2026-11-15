@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { createClient, SUBJECTS, SUBJECT_LABELS, type Subject, type PoolHealth } from './api'
+import {
+  createClient,
+  SCHOOL_SUBJECTS,
+  SCHOOL_SUBJECT_LABELS,
+  SUBJECTS,
+  SUBJECT_LABELS,
+  type PoolHealth,
+  type SchoolSubject,
+  type Subject,
+} from './api'
 import { clearDevAuthArtifacts, markDevLoggedIn, markDevLoggedOut, resolveDevAutoToken } from './devAuth'
 import { ADMIN_VIEWS, type AdminViewId } from './copy'
 import Notice, { type NoticeData, type NoticeTone } from './components/Notice.vue'
@@ -14,6 +23,10 @@ import Note from './components/Note.vue'
 // P0-1 安全整改：管理端令牌仅当前页面内存保存，不再写入 localStorage，杜绝同源本地持久化串用风险
 const token = ref('')
 const subject = ref<Subject>('math')
+// 学校考试支持额外的「道法（ethics）」科目，与核心四科隔离管理
+const examSubject = ref<SchoolSubject>('math')
+const pendingExamId = ref<string | undefined>(undefined)
+const pendingExamTab = ref<'scores' | 'items'>('scores')
 const view = ref<AdminViewId>('ledger')
 const notice = ref<NoticeData | null>(null)
 const poolHealth = ref<PoolHealth | null>(null)
@@ -135,13 +148,30 @@ function signOut() {
           <b>{{ entry.label }}</b>
           <small>{{ entry.hint }}</small>
         </button>
-        <div class="subject-row" role="group" aria-label="科目">
+        <div v-if="view === 'exams'" class="subject-row" role="group" aria-label="科目">
+          <button
+            v-for="id in SCHOOL_SUBJECTS"
+            :key="id"
+            type="button"
+            :class="examSubject === id ? 'subject-chip selected' : 'subject-chip'"
+            @click="
+              examSubject = id;
+              pendingExamId = undefined;
+              pendingExamTab = 'scores';
+              if (id !== 'ethics') subject = id;
+              notify(`已切换到${SCHOOL_SUBJECT_LABELS[id]}。`)
+            "
+          >
+            {{ SCHOOL_SUBJECT_LABELS[id] }}
+          </button>
+        </div>
+        <div v-else class="subject-row" role="group" aria-label="科目">
           <button
             v-for="id in SUBJECTS"
             :key="id"
             type="button"
             :class="subject === id ? 'subject-chip selected' : 'subject-chip'"
-            @click="subject = id; notify(`已切换到${SUBJECT_LABELS[id]}。`)"
+            @click="subject = id; examSubject = id; notify(`已切换到${SUBJECT_LABELS[id]}。`)"
           >
             {{ SUBJECT_LABELS[id] }}
           </button>
@@ -149,7 +179,7 @@ function signOut() {
       </nav>
     </header>
 
-    <main v-if="client" class="view" :key="`${view}:${subject}`">
+    <main v-if="client" class="view" :key="`${view}:${view === 'exams' ? examSubject : subject}`">
       <AdminView
         v-if="view === 'ledger'"
         :client="client"
@@ -175,17 +205,22 @@ function signOut() {
         </div>
       </div>
 
-      <div v-else-if="view === 'exams'" class="home-grid">
+      <div v-else-if="view === 'exams'" class="admin-exams-full">
         <SchoolExamCard
           :client="client"
-          :subject="subject"
+          :subject="examSubject"
           :notify="notify"
+          :initial-exam-id="pendingExamId"
+          :initial-tab="pendingExamTab"
+          @select-subject="
+            (nextSubj, targetExamId, targetTab = 'items') => {
+              pendingExamId = targetExamId
+              pendingExamTab = targetTab
+              examSubject = nextSubj
+              if (nextSubj !== 'ethics') subject = nextSubj
+            }
+          "
         />
-        <div class="home-side">
-          <Note title="校考录入说明">
-            学校考试（如阶段月考、期中、期末试卷）由家长或管理员依据纸质答卷如实录入总得分。总分仅用于阶段记录，不作为中考预测，亦不虚构单个考点得分。
-          </Note>
-        </div>
       </div>
 
       <div v-else-if="view === 'knowledge'" class="admin-knowledge-full">
@@ -205,6 +240,7 @@ function signOut() {
 </template>
 
 <style scoped>
+.admin-exams-full,
 .admin-knowledge-full {
   width: 100%;
   max-width: 100%;

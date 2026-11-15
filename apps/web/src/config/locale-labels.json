@@ -7,7 +7,8 @@
     "math": "数学",
     "chinese": "语文",
     "english": "英语",
-    "physics": "物理"
+    "physics": "物理",
+    "ethics": "道法"
   },
   "modelVersionLabels": {
     "v1.6-uncalibrated-rule": "V1.6 规则诊断基线（未校准）",
@@ -58,5 +59,14 @@
     "published": "已正式发布",
     "draft": "草稿",
     "archived": "历史归档"
+  },
+  "schoolErrorCategoryLabels": {
+    "concept": "概念/公式不清",
+    "calculation": "运算/粗心失误",
+    "reading": "审题/条件遗漏",
+    "method": "思路/方法受阻",
+    "norm": "步骤/书写不规范",
+    "other": "其他原因",
+    "uncategorized": "未归类错因"
   }
 }

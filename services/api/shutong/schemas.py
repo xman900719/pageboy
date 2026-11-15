@@ -3,7 +3,14 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, model_validator
 
+# 核心四科（课标、题库、练习与诊断）
 Subject = Literal["math", "chinese", "english", "physics"]
+# 学校考试归档支持额外科目（ethics：道德与法治/道法，暂不建课标知识图谱）
+SchoolExamSubject = Literal["math", "chinese", "english", "physics", "ethics"]
+# 校考失分题标准错因分类
+SchoolErrorCategory = Literal["concept", "calculation", "reading", "method", "norm", "other"]
+# 校考逐题 OCR / 同步草稿可信度标记
+SchoolDraftConfidence = Literal["high", "medium", "low", "skeleton_only", "external_sync"]
 
 class SourceIn(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -140,7 +147,7 @@ class SelfAssessmentIn(BaseModel):
     self_earned_points: float = Field(ge=0)
 
 class SchoolExamIn(BaseModel):
-    subject: Subject
+    subject: SchoolExamSubject
     exam_date: date
     title: str = Field(min_length=1)
     earned_points: float = Field(ge=0)
@@ -152,30 +159,247 @@ class SchoolExamIn(BaseModel):
             raise ValueError("earned_points exceeds max_points")
         return self
 
+class SchoolExamConfirmIn(BaseModel):
+    """人工补充并确认待核对学校考试总分（确认后不可改写）。"""
+    confirmed_by_user: bool = Field(strict=True, description="必须为 true，表示人工已核对学校考试总分")
+    earned_points: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed_by_user:
+            raise ValueError("human confirmation required")
+        return self
+
+class DraftKnowledgeCandidate(BaseModel):
+    """系统或视觉模型给出的候选知识点及简述理由，供家长核对选择。"""
+    knowledge_id: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=160)
+    reason: str = Field(default="", max_length=300)
+
+
 class SchoolExamItemIn(BaseModel):
     question_label: str = Field(min_length=1, max_length=160)
     knowledge_id: str = Field(min_length=1, max_length=100)
     earned_points: float = Field(ge=0)
     max_points: float = Field(gt=0, le=100)
     scoring_origin: Literal["manual_entry", "ocr_draft"]
+    error_category: SchoolErrorCategory | None = None
+    error_note: str | None = Field(default=None, max_length=500)
+    draft_source_attachment_id: str | None = Field(default=None, max_length=64)
+    draft_confidence: SchoolDraftConfidence | None = None
+    draft_reason: str | None = Field(default=None, max_length=500)
+    draft_knowledge_candidates: list[DraftKnowledgeCandidate] | None = Field(default=None, max_length=5)
+
     @model_validator(mode="after")
     def check_points(self):
         if self.earned_points > self.max_points:
             raise ValueError("earned_points exceeds max_points")
+        if self.error_note is not None:
+            self.error_note = self.error_note.strip() or None
+        if self.draft_reason is not None:
+            self.draft_reason = self.draft_reason.strip() or None
+        if self.earned_points >= self.max_points:
+            # 满分题保持无错因分类，避免无效统计噪音
+            self.error_category = None
+        if self.scoring_origin == "manual_entry":
+            # 人工直录题不保留 OCR 草稿来源元数据
+            self.draft_source_attachment_id = None
+            self.draft_confidence = None
+            self.draft_reason = None
+            self.draft_knowledge_candidates = None
+        return self
+
+class SchoolExamItemAnalysisIn(BaseModel):
+    """补充或修订校考失分小题的结构化错因与复盘备注（不改写已锁定得分）。"""
+    error_category: SchoolErrorCategory | None = None
+    error_note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def normalize_note(self):
+        if self.error_note is not None:
+            self.error_note = self.error_note.strip() or None
         return self
 
 class SchoolExamItemsIn(BaseModel):
     items: list[SchoolExamItemIn] = Field(min_length=1, max_length=100)
 
 class SchoolItemConfirmIn(BaseModel):
+    """人工核对 OCR/同步草稿：可同步校准得分、满分、考点编码、错因与备注。"""
     confirmed_by_human: bool = Field(strict=True, description="必须为 true，表示人工核对 OCR 草稿分数")
     earned_points: float = Field(ge=0)
+    max_points: float | None = Field(default=None, gt=0, le=100)
+    knowledge_id: str | None = Field(default=None, min_length=1, max_length=100)
+    error_category: SchoolErrorCategory | None = None
+    error_note: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def require_confirmation(self):
         if not self.confirmed_by_human:
             raise ValueError("human confirmation required")
+        if self.max_points is not None and self.earned_points > self.max_points:
+            raise ValueError("earned_points exceeds max_points")
+        if self.knowledge_id is not None:
+            self.knowledge_id = self.knowledge_id.strip() or None
+        if self.error_note is not None:
+            self.error_note = self.error_note.strip() or None
         return self
+
+
+class SchoolItemConfirmBatchEntryIn(SchoolItemConfirmIn):
+    """批量人工确认中的单条核对载荷。"""
+    item_id: str = Field(min_length=1, max_length=64)
+
+
+class SchoolItemConfirmBatchIn(BaseModel):
+    """批量人工确认校考草稿列表。"""
+    items: list[SchoolItemConfirmBatchEntryIn] = Field(min_length=1, max_length=100)
+
+
+class SchoolExamParseDraftsIn(BaseModel):
+    """触发从原卷/答题卡附件抽取 M2 逐题待核对草稿的请求。"""
+    attachment_ids: list[str] = Field(min_length=1, max_length=10)
+    mode: Literal["auto", "skeleton_only"] = "auto"
+    mask_student_header: bool = True
+    replace_unconfirmed_drafts: bool = False
+
+
+class ExternalSchoolItemIn(BaseModel):
+    """外部平台（如 k12100.com）抓取的逐题原始得分与错题摘要。"""
+    question_label: str = Field(min_length=1, max_length=160)
+    earned_points: float = Field(ge=0)
+    max_points: float = Field(gt=0, le=100)
+    stem_text: str | None = Field(default=None, max_length=2000)
+    wrong_reason: str | None = Field(default=None, max_length=500)
+    knowledge_id: str | None = Field(default=None, max_length=100)
+    error_category: SchoolErrorCategory | None = None
+
+    @model_validator(mode="after")
+    def check_external_item(self):
+        if self.earned_points > self.max_points:
+            raise ValueError("earned_points exceeds max_points")
+        self.question_label = self.question_label.strip()
+        if self.stem_text is not None:
+            self.stem_text = self.stem_text.strip() or None
+        if self.wrong_reason is not None:
+            self.wrong_reason = self.wrong_reason.strip() or None
+        if self.knowledge_id is not None:
+            self.knowledge_id = self.knowledge_id.strip() or None
+        if self.earned_points >= self.max_points:
+            self.error_category = None
+        return self
+
+
+class SchoolExamSyncDraftsIn(BaseModel):
+    """从校考平台同步待核对逐题草稿的请求载荷。"""
+    items: list[ExternalSchoolItemIn] = Field(min_length=1, max_length=100)
+    source_name: str = Field(default="k12100", min_length=1, max_length=64)
+    use_ai: bool = True
+    replace_unconfirmed_drafts: bool = False
+
+
+class SchoolExamErrorOverviewOut(BaseModel):
+    confirmed_item_count: int
+    lost_item_count: int
+    unconfirmed_draft_count: int
+    earned_points: float
+    max_points: float
+    paper_lost_points: float | None = None
+    itemized_earned_points: float
+    itemized_max_points: float
+    itemized_lost_points: float
+    unaccounted_lost_points: float | None = None
+    categorized_item_count: int
+    uncategorized_item_count: int
+    primary_error_category: str | None = None
+    primary_knowledge_id: str | None = None
+    primary_knowledge_name: str | None = None
+
+
+class SchoolExamErrorCategoryOut(BaseModel):
+    category: str
+    item_count: int
+    lost_points: float
+    share_of_itemized_loss: float
+    question_labels: list[str]
+
+
+class SchoolExamErrorNoteOut(BaseModel):
+    question_label: str
+    note: str
+
+
+class SchoolExamErrorKnowledgeOut(BaseModel):
+    knowledge_id: str
+    knowledge_name: str
+    item_count: int
+    lost_item_count: int
+    earned_points: float
+    max_points: float
+    lost_points: float
+    exam_observed_rate: float
+    share_of_itemized_loss: float
+    categories: list[str]
+    question_labels: list[str]
+    notes: list[SchoolExamErrorNoteOut]
+    practice_status: Literal["mastered", "weak", "insufficient", "untested", "not_applicable"]
+    practice_observed_rate: float | None = None
+    practice_sample_size: int
+    diagnosis_tag: Literal["double_weak", "exam_slip", "blind_spot", "archive_review"]
+
+
+class SchoolExamErrorItemOut(BaseModel):
+    id: str
+    question_label: str
+    knowledge_id: str
+    knowledge_name: str
+    earned_points: float
+    max_points: float
+    lost_points: float
+    error_category: SchoolErrorCategory | None = None
+    error_note: str | None = None
+
+
+class SchoolExamRecurringHitOut(BaseModel):
+    exam_id: str
+    title: str
+    exam_date: str
+    lost_points: float
+    item_count: int
+
+
+class SchoolExamRecurringKnowledgeOut(BaseModel):
+    knowledge_id: str
+    knowledge_name: str
+    exam_count: int
+    total_lost_points: float
+    total_item_count: int
+    repeat_in_current_exam: bool
+    categories: list[str]
+    exams: list[SchoolExamRecurringHitOut]
+
+
+class SchoolExamHistorySummaryOut(BaseModel):
+    same_subject_exam_count: int
+    same_subject_exams_with_items: int
+    recurring_count: int
+
+
+class SchoolExamErrorAnalysisOut(BaseModel):
+    exam_id: str
+    subject: SchoolExamSubject
+    title: str
+    exam_date: str
+    confirmed_by_user: bool
+    has_taxonomy: bool
+    status: Literal["insufficient_items", "no_errors_recorded", "analyzed"]
+    overview: SchoolExamErrorOverviewOut
+    diagnosis_summary: str
+    by_category: list[SchoolExamErrorCategoryOut]
+    by_knowledge: list[SchoolExamErrorKnowledgeOut]
+    lost_items: list[SchoolExamErrorItemOut]
+    history_summary: SchoolExamHistorySummaryOut
+    recurring_knowledge: list[SchoolExamRecurringKnowledgeOut]
+    disclaimer: str
 
 class GoalIn(BaseModel):
     subject: Subject
@@ -377,3 +601,33 @@ class KnowledgeGraphOut(BaseModel):
     summary_counts: dict[str, int]
     nodes: list[KnowledgeMasteryItemOut]
     edges: list[KnowledgeEdgeOut]
+
+
+class K12100SyncJobStartIn(BaseModel):
+    """手动发起宿主机 k12100.com 全科采集补全任务的请求参数。"""
+
+    exam_keyword: str | None = Field(default=None, max_length=120)
+    target_exam_date: date | None = None
+    series_title_prefix: str | None = Field(default=None, max_length=120)
+    max_exams: int = Field(default=1, ge=1, le=3)
+    confirm_total_scores: bool = True
+    extract_existing_pdfs: bool = True
+    upload_missing_cards: bool = True
+    replace_unconfirmed_drafts: bool = True
+    use_ai: bool = True
+    headless: bool = True
+
+
+class K12100ImportBundleIn(BaseModel):
+    """向开发/生产端上传宿主机脱敏 k12100 采集包执行全科补全的请求载荷。"""
+
+    bundle: dict[str, Any]
+    exam_keyword: str | None = Field(default=None, max_length=120)
+    target_exam_date: date | None = None
+    series_title_prefix: str | None = Field(default=None, max_length=120)
+    max_exams: int = Field(default=1, ge=1, le=3)
+    confirm_total_scores: bool = True
+    extract_existing_pdfs: bool = True
+    upload_missing_cards: bool = True
+    replace_unconfirmed_drafts: bool = True
+    use_ai: bool = True
