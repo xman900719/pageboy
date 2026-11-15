@@ -27,11 +27,21 @@ const SENSITIVE_KEY_RE =
 
 const CHALLENGE_KEYWORDS = ['滑块', '滑动验证', '人机验证', '安全验证', '行为验证', '图形验证码', '操作过于频繁', '访问受限', '账号异常']
 
+function resolveDefaultK12100Dir() {
+  const override = (process.env.SHUTONG_K12100_CONFIG_DIR || '').trim()
+  if (override) return path.resolve(override)
+  const pageboyHome = (process.env.PAGEBOY_HOME || '/media/xc/backup_ext4/pageboy-home').trim()
+  const rawEnv = (process.env.SHUTONG_ENV || 'development').trim().toLowerCase()
+  const envDir = rawEnv === 'prod' || rawEnv === 'production' ? 'production' : 'development'
+  return path.join(pageboyHome, envDir, 'k12100')
+}
+
 function parseArgs(argv) {
+  const defaultK12Dir = resolveDefaultK12100Dir()
   const args = {
     mode: 'probe',
-    profileDir: path.join(os.homedir(), '.config', 'shutong', 'k12100-browser-profile'),
-    probeDir: path.join(os.homedir(), '.config', 'shutong', 'probe_snapshot'),
+    profileDir: path.join(defaultK12Dir, 'k12100-browser-profile'),
+    probeDir: path.join(defaultK12Dir, 'probe_snapshot'),
     output: '',
     examKeyword: '',
     maxExams: 2,

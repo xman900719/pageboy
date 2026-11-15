@@ -338,6 +338,8 @@ def test_runtime_status_permissions_isolation_and_single_job_mutex(client, auth,
     status_json = host_status.json()
     assert status_json["can_run_local"] is True
     assert status_json["credentials"]["username_masked"] == "25***u"
+    assert status_json["recommended_cli_command"] == "uv run python scripts/k12100_sync.py collect --env development"
+    assert "~/.config/shutong" not in status_json["recommended_cli_command"]
     assert "TopSecretPassword999" not in host_status.text
     assert "25999stu" not in host_status.text
 
