@@ -5,12 +5,19 @@ import {
   formatKnowledgeTitle,
   formatReleaseChineseName,
   getDomainLabel,
+  getK12ScoreStatusLabel,
   getKnowledgeLabel,
   getMediaTypeLabel,
   getModelVersionLabel,
   getOperatorLabel,
+  getParserModeLabel,
   getReleaseStatusLabel,
   getSchoolErrorCategoryLabel,
+  getStemModeLabel,
+  getSubjectKnowledgeOptions,
+  getSubjectLabel,
+  getSyncJobStateLabel,
+  resolveKnowledgeCodeInput,
   SCHOOL_ERROR_CATEGORY_OPTIONS,
 } from './knowledge'
 
@@ -66,5 +73,27 @@ describe('knowledge 与 locale-labels 配置文件读取与本地化解析', () 
     expect(getSchoolErrorCategoryLabel('concept')).toBe('概念/公式不清')
     expect(getSchoolErrorCategoryLabel('calculation')).toBe('运算/粗心失误')
     expect(getSchoolErrorCategoryLabel(null)).toBe('未归类错因')
+  })
+
+  it('正确解析学科、同步任务状态、解析方式与中文知识点下拉反查', () => {
+    expect(getSubjectLabel('chemistry')).toBe('化学')
+    expect(getOperatorLabel('owner')).toBe('本人 / 管理员')
+    expect(getSyncJobStateLabel('queued')).toBe('排队等待中')
+    expect(getSyncJobStateLabel('completed')).toBe('已完成')
+    expect(getParserModeLabel('deepseek_vision:deepseek-chat')).toBe('多模态智能识图')
+    expect(getParserModeLabel('external_local_rules')).toBe('本地规则匹配')
+    expect(getK12ScoreStatusLabel('locked_conflict')).toBe('已锁定总分冲突（保留原值）')
+    expect(getStemModeLabel('pdf_local_regex')).toBe('原卷文本规则提取')
+
+    const mathOpts = getSubjectKnowledgeOptions('math')
+    expect(mathOpts.length).toBeGreaterThan(10)
+    expect(mathOpts.some(o => o.code === 'math.arithmetic' && o.label === '基础算术运算')).toBe(true)
+    expect(mathOpts.some(o => o.isCandidate)).toBe(false)
+
+    // 中文名称应优先反查为当前学科正式知识点编码，编码输入则原样保留
+    expect(resolveKnowledgeCodeInput('基础算术运算', 'math')).toBe('math.arithmetic')
+    expect(resolveKnowledgeCodeInput('代词分类与用法', 'english')).toBe('english.grammar.pronoun')
+    expect(resolveKnowledgeCodeInput('math.num.real', 'math')).toBe('math.num.real')
+    expect(resolveKnowledgeCodeInput('道法综合主题', 'ethics')).toBe('道法综合主题')
   })
 })

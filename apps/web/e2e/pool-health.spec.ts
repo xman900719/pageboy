@@ -26,9 +26,9 @@ async function expectHonestLanguage(page: Page): Promise<void> {
   }
 }
 
-test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责声明在位', async ({ page }) => {
+test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责说明在位', async ({ page }) => {
   await enterAdminSpace(page)
-  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: /题库体检/ }).click()
+  await page.getByRole('tab', { name: /题库余量体检/ }).click()
 
   const card = page.getByRole('region', { name: '题库体检' })
   await expect(card).toBeVisible()
@@ -44,8 +44,12 @@ test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责�
     await expect(card.locator('li', { has: page.locator('code.kid', { hasText: new RegExp(`${label}|${kid}`) }) })).toBeVisible()
   }
 
-  // 后端免责声明原文在位（.muted .tiny）：不构成分数或能力结论。
-  await expect(card.locator('.muted.tiny')).toContainText('不构成分数或能力结论')
+  // 后端免责声明收纳于顶部「体检口径」说明气泡：不构成分数或能力结论。
+  await card.getByRole('button', { name: /体检口径/ }).click()
+  const dialog = page.getByRole('dialog', { name: '题库体检口径说明' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('不构成分数或能力结论')
+  await dialog.getByRole('button', { name: '关闭说明' }).click()
 
   await expectHonestLanguage(page)
 })
@@ -93,7 +97,7 @@ test('J7b 题库体检：零余量知识点如实显示「暂无未见题余量�
   expect(expRes.ok()).toBe(true)
 
   await enterAdminSpace(page)
-  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: /题库体检/ }).click()
+  await page.getByRole('tab', { name: /题库余量体检/ }).click()
   await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '英语' }).click()
 
   const card = page.getByRole('region', { name: '题库体检' })

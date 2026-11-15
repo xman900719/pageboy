@@ -81,7 +81,7 @@ export function getDomainLabel(domainCode: string | null | undefined): string {
  */
 export function formatReleaseChineseName(releaseVersion: string): string {
   if (!releaseVersion) return ''
-  const match = releaseVersion.match(/^(math|chinese|english|physics)-v(\d+)(?:\.(.+))?$/)
+  const match = releaseVersion.match(/^(math|chinese|english|physics|chemistry|ethics)-v(\d+)(?:\.(.+))?$/)
   if (!match) return releaseVersion
   const subjMap = localeLabels.subjectLabels as Record<string, string>
   const subjName = subjMap[match[1]] ?? match[1]
@@ -147,4 +147,100 @@ export function getSchoolErrorCategoryLabel(category: string | null | undefined)
   if (!category) return (localeLabels.schoolErrorCategoryLabels as Record<string, string>).uncategorized ?? '未归类错因'
   const map = localeLabels.schoolErrorCategoryLabels as Record<string, string>
   return map[category] ?? category
+}
+
+/** 将科目标识映射为中文学科名 */
+export function getSubjectLabel(subject: string | null | undefined): string {
+  if (!subject) return '未知学科'
+  const map = localeLabels.subjectLabels as Record<string, string>
+  return map[subject] ?? subject
+}
+
+/** 将后台校考同步任务状态映射为中文进度描述 */
+export function getSyncJobStateLabel(state: string | null | undefined): string {
+  if (!state) return '状态未知'
+  const map = localeLabels.syncJobStateLabels as Record<string, string>
+  return map[state] ?? state
+}
+
+/** 将解析方式枚举（含模型后缀）映射为中文解析模式名称 */
+export function getParserModeLabel(mode: string | null | undefined): string {
+  if (!mode) return '标准解析'
+  const map = localeLabels.parserModeLabels as Record<string, string>
+  if (map[mode]) return map[mode]
+  const baseMode = mode.split(':', 1)[0]
+  if (map[baseMode]) return map[baseMode]
+  if (mode.startsWith('deepseek_vision')) return map.deepseek_vision ?? '多模态智能识图'
+  if (mode.startsWith('deepseek_')) return map.deepseek_text ?? '智能语义解析'
+  if (mode.startsWith('external_')) return map.external_local_rules ?? '本地规则匹配'
+  return mode
+}
+
+/** 将全科补全总分处理状态映射为中文描述 */
+export function getK12ScoreStatusLabel(status: string | null | undefined): string {
+  if (!status) return '状态未知'
+  const map = localeLabels.k12ScoreStatusLabels as Record<string, string>
+  return map[status] ?? status
+}
+
+/** 将原卷题干提取模式映射为中文描述 */
+export function getStemModeLabel(mode: string | null | undefined): string {
+  if (!mode) return '常规提取'
+  const map = localeLabels.stemModeLabels as Record<string, string>
+  return map[mode] ?? mode
+}
+
+export interface KnowledgeOption {
+  code: string
+  label: string
+  isCandidate: boolean
+}
+
+/**
+ * 获取指定科目的可选知识点中文列表（从配置字典实时提取）
+ * @param subject 学科英文标识
+ * @param includeCandidate 是否包含 *_cand. 候选体系节点，默认不包含以保持与正式题库一致
+ */
+export function getSubjectKnowledgeOptions(
+  subject: string | null | undefined,
+  includeCandidate = false
+): KnowledgeOption[] {
+  if (!subject) return []
+  const formalPrefix = `${subject}.`
+  const candPrefix = `${subject}_cand.`
+  const out: KnowledgeOption[] = []
+  for (const [code, label] of Object.entries(LABELS)) {
+    if (code === '$comment') continue
+    if (code.startsWith(formalPrefix)) {
+      out.push({ code, label, isCandidate: false })
+    } else if (includeCandidate && code.startsWith(candPrefix)) {
+      out.push({ code, label, isCandidate: true })
+    }
+  }
+  return out
+}
+
+/**
+ * 将用户在输入框或下拉中选择的中文知识点名称还原为规范知识点代码；
+ * 若本身已是代码或自定义文本（如道法综合主题），则原样返回去空白后的字符串。
+ */
+export function resolveKnowledgeCodeInput(input: string, subject?: string | null): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+  if (LABELS[trimmed]) return trimmed
+
+  const entries = Object.entries(LABELS).filter(([k]) => k !== '$comment')
+  // 若指定了学科，优先在该学科正式知识点、其次候选知识点中反查中文名称
+  if (subject) {
+    const formalPrefix = `${subject}.`
+    const candPrefix = `${subject}_cand.`
+    const formalMatch = entries.find(([k, v]) => k.startsWith(formalPrefix) && v === trimmed)
+    if (formalMatch) return formalMatch[0]
+    const candMatch = entries.find(([k, v]) => k.startsWith(candPrefix) && v === trimmed)
+    if (candMatch) return candMatch[0]
+  }
+  const anyFormal = entries.find(([k, v]) => !k.includes('_cand.') && v === trimmed)
+  if (anyFormal) return anyFormal[0]
+  const anyMatch = entries.find(([, v]) => v === trimmed)
+  return anyMatch ? anyMatch[0] : trimmed
 }

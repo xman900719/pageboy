@@ -263,24 +263,23 @@ test('J3 知识图谱定向与阶段诊断：基线错题形成短板、复测�
 
 /* ---------- J4 校卷总分 ---------- */
 
-test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总分不产生考点证据」', async ({ page }) => {
+test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明示「总分不产生考点证据」', async ({ page }) => {
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
-  await expect(examRegion).toContainText('总分不产生考点证据')
-  await expect(examRegion).toContainText('也不折算成知识点表现')
 
-  // B1 校考录入说明气泡开关验证
+  // 校考录入说明由气泡弹窗承载：总分不产生考点证据，也不折算成知识点表现
   await examRegion.getByRole('button', { name: /校考录入说明/ }).click()
   const helpDialog = page.getByRole('dialog', { name: '校考录入说明' })
   await expect(helpDialog).toBeVisible()
+  await expect(helpDialog).toContainText('总分不产生考点证据')
+  await expect(helpDialog).toContainText('也不折算成知识点表现')
   await expect(helpDialog).toContainText('不提供公开下载入口')
   await helpDialog.getByRole('button', { name: '关闭说明' }).click()
   await expect(helpDialog).toBeHidden()
 
-  // 切入「+ 新建校考档案」Tab 录入后自动回到「总分台账与核对」Tab
-  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  // 默认落在「总分台账与建档」三列矩阵（右侧即新建校考档案），录入后直接左侧选中并在中间栏锁定展示
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：学校月考')
   await examRegion.getByLabel('考试日期').fill('2026-10-20')
   await examRegion.getByLabel('获得分数').fill('85')
@@ -302,10 +301,10 @@ test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总�
   await expect(analysisPanel).toContainText('当前仅登记了试卷总分，尚无已核对的逐题失分明细')
   await analysisPanel.getByRole('button', { name: '前往补录失分小题' }).click()
 
-  // 在「逐题得分与考点」Tab 录入本场失分小题（带错因分类与复盘备注）
+  // 在「已核对明细与补录」Tab 录入本场失分小题（带错因分类与复盘备注）
   const itemsPanel = examRegion.locator('#exam-panel-items')
   await itemsPanel.getByLabel('题号（如 第1题）').fill('第5题')
-  await itemsPanel.getByLabel('知识点编码').fill('math.arithmetic')
+  await itemsPanel.getByLabel('所属知识点').fill('math.arithmetic')
   await itemsPanel.getByLabel('小题得分').fill('2')
   await itemsPanel.getByLabel('小题满分').fill('6')
   await itemsPanel.getByLabel('错因分类（失分题选填）').selectOption('reading')
@@ -315,8 +314,8 @@ test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总�
   await expect(itemsPanel).toContainText('第5题')
   await expect(itemsPanel).toContainText('漏看条件 x>0')
 
-  // 补充第二场更早数学月考并同样在 math.arithmetic 失分，验证跨考次顽固失分点对比
-  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  // 回「总分台账与建档」补充第二场更早数学月考并同样在 math.arithmetic 失分，验证跨考次顽固失分点对比
+  await examRegion.getByRole('tab', { name: /总分台账与建档/ }).click()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：九月诊断月考')
   await examRegion.getByLabel('考试日期').fill('2026-09-18')
   await examRegion.getByLabel('获得分数').fill('86')
@@ -324,9 +323,9 @@ test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总�
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：九月诊断月考')
 
-  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
   await itemsPanel.getByLabel('题号（如 第1题）').fill('第3题')
-  await itemsPanel.getByLabel('知识点编码').fill('math.arithmetic')
+  await itemsPanel.getByLabel('所属知识点').fill('math.arithmetic')
   await itemsPanel.getByLabel('小题得分').fill('1')
   await itemsPanel.getByLabel('小题满分').fill('4')
   await itemsPanel.getByLabel('错因分类（失分题选填）').selectOption('calculation')
@@ -345,7 +344,7 @@ test('J4 校卷总分：气泡说明可开关、Tab 分流建档并明示「总�
   await expectHonestLanguage(page)
 })
 
-test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷与总分 Tab 后续确认锁定', async ({ page }) => {
+test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁定', async ({ page }) => {
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
 
@@ -353,8 +352,7 @@ test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷�
   await page.getByRole('button', { name: '道法' }).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
-  // 进入「+ 新建校考档案」Tab 并取消勾选“我已人工核对总分”，先以待核对状态归档
-  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
+  // 在「总分台账与建档」右侧取消勾选“我已人工核对总分”，先以待核对状态归档
   await examRegion.getByLabel(/我已人工核对总分/).uncheck()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月道法统一练习')
   await examRegion.getByLabel('考试日期').fill('2026-10-15')
@@ -364,8 +362,8 @@ test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷�
   await expect(page.getByRole('status')).toContainText('待核对学校考试档案已暂存')
   await expect(examRegion.locator('.exam-list')).toContainText('未核对')
 
-  // 切至「原卷与答题卡」Tab 上传私有原卷 PDF（构造规范单页 PDF，验证私有隔离且无公开下载链接）
-  await examRegion.getByRole('tab', { name: /原卷与答题卡/ }).click()
+  // 切至「原卷与草稿校对」Tab 上传私有原卷 PDF（构造规范单页 PDF，验证私有隔离且无公开下载链接）
+  await examRegion.getByRole('tab', { name: /原卷与草稿校对/ }).click()
   const objs = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
@@ -391,13 +389,13 @@ test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷�
   await examRegion.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
 
   await expect(page.getByRole('status')).toContainText('已加密隔离归档')
-  const archiveRegion = examRegion.locator('.exam-detail')
-  await expect(archiveRegion).toContainText('mock-ethics-paper.pdf')
-  await expect(archiveRegion).toContainText('私有已隔离')
-  await expect(archiveRegion.locator('a[download]')).toHaveCount(0)
+  const papersPanel = examRegion.locator('#exam-panel-papers')
+  await expect(papersPanel).toContainText('mock-ethics-paper.pdf')
+  await expect(papersPanel).toContainText('私有已隔离')
+  await expect(papersPanel.locator('a[download]')).toHaveCount(0)
 
-  // 切回「总分台账与核对」Tab 补录并锁定总分
-  await examRegion.getByRole('tab', { name: /总分台账与核对/ }).click()
+  // 切回「总分台账与建档」Tab 补录并锁定总分
+  await examRegion.getByRole('tab', { name: /总分台账与建档/ }).click()
   const detailRegion = examRegion.locator('.exam-detail')
   await detailRegion.getByLabel('补充实得总分').fill('43')
   await detailRegion.getByRole('button', { name: '确认并锁定总分' }).click()
@@ -406,8 +404,8 @@ test('J4b 道法校考归档：暂存待核对、原卷 Tab 上传私有原卷�
   await expect(detailRegion).toContainText('总分已核对锁定')
   await expect(examRegion.locator('.exam-list')).toContainText('43 / 50')
 
-  // 切至「逐题得分与考点」Tab：使用默认主题录入道法失分小题，再行内补充错因分类与复盘备注
-  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  // 切至「已核对明细与补录」Tab：使用默认主题录入道法失分小题，再行内补充错因分类与复盘备注
+  await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
   const ethicsItemsPanel = examRegion.locator('#exam-panel-items')
   await ethicsItemsPanel.getByRole('button', { name: '填入默认主题' }).click()
   await ethicsItemsPanel.getByLabel('题号（如 第1题）').fill('第16题')
@@ -462,12 +460,11 @@ function buildSyntheticTextPdf(lines: string[]): Buffer {
   return Buffer.from(chunks.join(''), 'ascii')
 }
 
-test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿台修订丢弃与逐题确认联动错误分析', async ({ page }) => {
+test('J4c 校考自动草稿：纯文字卷提取题号分值骨架、同屏草稿台修订丢弃与逐题确认联动错误分析', async ({ page }) => {
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
-  await examRegion.getByRole('tab', { name: /新建校考档案/ }).click()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月数学自动草稿演示')
   await examRegion.getByLabel('考试日期').fill('2026-10-16')
   await examRegion.getByLabel('获得分数').fill('84')
@@ -475,9 +472,10 @@ test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
   await expect(page.getByRole('status')).toContainText('学校考试已记录')
 
-  // 上传带可机读文本层的虚构试卷
-  await examRegion.getByRole('tab', { name: /原卷与答题卡/ }).click()
-  await examRegion.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
+  // 上传带可机读文本层的虚构试卷，并直接在同页右侧草稿台生成与校对草稿
+  await examRegion.getByRole('tab', { name: /原卷与草稿校对/ }).click()
+  const papersPanel = examRegion.locator('#exam-panel-papers')
+  await papersPanel.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
     name: 'mock-math-text-paper.pdf',
     mimeType: 'application/pdf',
     buffer: buildSyntheticTextPdf([
@@ -485,28 +483,25 @@ test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿
       '2. Prove triangle congruence',
     ]),
   })
-  await examRegion.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
+  await papersPanel.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
   await expect(page.getByRole('status')).toContainText('已加密隔离归档')
 
-  // 点击快捷跳转进入 Tab 3「逐题得分与考点」
-  await examRegion.getByRole('button', { name: '前往解析 M2 草稿' }).click()
-  const itemsPanel = examRegion.locator('#exam-panel-items')
-  await itemsPanel.getByLabel('草稿解析方式').selectOption('skeleton_only')
-  await itemsPanel.getByRole('button', { name: '生成待核对草稿' }).click()
+  await papersPanel.getByLabel('草稿解析方式').selectOption('skeleton_only')
+  await papersPanel.getByRole('button', { name: '生成待核对草稿' }).click()
 
-  const draftDesk = itemsPanel.getByRole('region', { name: '草稿校对台' })
+  const draftDesk = papersPanel.getByRole('region', { name: '草稿校对台' })
   await expect(draftDesk).toBeVisible()
   await expect(draftDesk).toContainText('第1题')
   await expect(draftDesk).toContainText('第2题')
   await expect(draftDesk).toContainText('未确认 · 不进画像')
 
-  // 未人工确认草稿前，Tab 4 绝不计入正式错误分析
+  // 未人工确认草稿前，「错误分析与复盘」绝不计入正式错误分析
   await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
   const analysisPanel = examRegion.locator('#exam-panel-analysis')
   await expect(analysisPanel).toContainText('待补充逐题失分明细')
 
-  // 回到 Tab 3：丢弃第2题草稿，并修改第1题实得分/满分/错因/备注后确认入账
-  await examRegion.getByRole('tab', { name: /逐题得分与考点/ }).click()
+  // 回到「原卷与草稿校对」：丢弃第2题草稿，并修改第1题实得分/满分/错因/备注后确认入账
+  await examRegion.getByRole('tab', { name: /原卷与草稿校对/ }).click()
   const q2Card = draftDesk.locator('li.draft-card-item', { hasText: '第2题' })
   await q2Card.getByRole('button', { name: '丢弃草稿' }).click()
   await expect(page.getByRole('status')).toContainText('已丢弃「第2题」未确认草稿')
@@ -514,19 +509,22 @@ test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿
   const q1Card = draftDesk.locator('li.draft-card-item', { hasText: '第1题' })
   await q1Card.getByLabel('第1题 草稿实得分').fill('1.5')
   await q1Card.getByLabel('第1题 草稿满分').fill('3')
-  await q1Card.getByLabel('第1题 草稿知识点编码').fill('math.num.real')
+  await q1Card.getByLabel('第1题 草稿所属知识点').fill('math.num.real')
   await q1Card.getByLabel('第1题 草稿错因分类').selectOption('calculation')
   await q1Card.getByLabel('第1题 草稿复盘备注').fill('正负号移项遗漏')
   await q1Card.getByRole('button', { name: '确认入账' }).click()
 
   await expect(page.getByRole('status')).toContainText('已完成人工核对并正式入账')
-  await expect(draftDesk).toHaveCount(0)
+  await expect(draftDesk.locator('li.draft-card-item')).toHaveCount(0)
+
+  await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
+  const itemsPanel = examRegion.locator('#exam-panel-items')
   const confirmedList = itemsPanel.getByRole('region', { name: '逐题得分与考点明细' })
   await expect(confirmedList).toContainText('第1题')
   await expect(confirmedList).toContainText('已确认')
   await expect(confirmedList).toContainText('运算/粗心失误')
 
-  // Tab 4 随之上报真实失分错因
+  // 「错误分析与复盘」随之上报真实失分错因
   await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
   await expect(analysisPanel).toContainText('本场失分概览与错因分布')
   await expect(analysisPanel).toContainText('运算/粗心失误')
@@ -537,12 +535,10 @@ test('J4c 校考 M2 自动草稿：纯文字卷提取题号分值骨架、草稿
 
 test('J5 审核台：题源登记→来源人工审核→附件解析→确认导入→草稿审核→发布（人工门禁全程如实）', async ({ page }) => {
   await enterAdminSpace(page)
-  await adminNavTab(page, /题库审核台/).click()
+  await adminNavTab(page, /题库与体检/).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })
-  const attachments = page.getByRole('region', { name: '附件与解析' })
-  const versions = page.getByRole('region', { name: '题目草稿与发布' })
 
   await ledger.getByLabel('题源标题').fill('虚构测试数据：J5 审核台旅程题源')
   await ledger.getByLabel('版权状态').selectOption('personal_use_reviewed')
@@ -564,6 +560,11 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
   await expect(page.getByRole('status')).toContainText('题源标记为已审核')
   await expect(newRow.locator('.chip.good')).toContainText('已人工审核')
 
+  // 切入「附件解析与录入」子 Tab 完成附件上传、解析与逐题人工导入
+  await page.getByRole('tab', { name: /附件解析与录入/ }).click()
+  const attachments = page.getByRole('region', { name: '附件与解析' })
+  await expect(attachments).toBeVisible()
+
   const mp3 = Buffer.alloc(507)
   mp3.set(Buffer.from('ID3'), 0)
   mp3[3] = 0x03
@@ -575,7 +576,6 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
   await attachments.getByRole('button', { name: '上传附件' }).click()
   await expect(page.getByRole('status')).toContainText('附件已上传')
   await expect(page.getByRole('status')).toContainText('题源回到「未审核」状态')
-  await expect(newRow.locator('.chip.wait')).toContainText('未审核')
 
   await attachments.getByRole('button', { name: '解析' }).click()
   await expect(page.getByRole('status')).toContainText('请逐题人工录入')
@@ -585,15 +585,18 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
   await entryForm.getByLabel('选项 A 内容').fill('甲')
   await entryForm.getByLabel('选项 B 内容').fill('乙')
   await entryForm.getByLabel('正确选项').selectOption({ label: 'A · 甲' })
-  await entryForm.getByLabel('知识点 ID（至少 1 个，逗号或空格分隔）').fill('math.listen')
+  await entryForm.getByLabel('所属知识点（至少 1 个，可直接输入名称或逗号分隔）').fill('math.listen')
   await entryForm.getByRole('button', { name: '加入待导入列表' }).click()
   await expect(entryForm.getByText('已录入 1 题')).toBeVisible()
   await expect(entryForm.getByRole('button', { name: '确认导入 1 题' })).toBeDisabled()
   await entryForm.getByLabel(/我已逐题人工核对/).check()
   await entryForm.getByRole('button', { name: '确认导入 1 题' }).click()
   await expect(page.getByRole('status')).toContainText('已确认导入 1 题，草稿待人工审核')
-  await expect(attachments.getByText('已导入 1 题，等待在下方逐题人工审核。')).toBeVisible()
+  await expect(attachments.getByText('已导入 1 题，等待逐题人工审核。')).toBeVisible()
 
+  // 切入「题目审核与发布」子 Tab 完成人工审核；题源未重审时发布应受门禁阻断
+  await page.getByRole('tab', { name: /题目审核与发布/ }).click()
+  const versions = page.getByRole('region', { name: '题目草稿与发布' })
   const draftRow = versions.locator('li.version-row', { hasText: 'J5 审核台听力题' })
   await expect(draftRow.locator('.badge.qstatus-draft')).toBeVisible()
   await expect(draftRow).toContainText('含媒体附件')
@@ -603,12 +606,19 @@ test('J5 审核台：题源登记→来源人工审核→附件解析→确认�
   await expect(draftRow.getByRole('button', { name: '发布' })).toBeDisabled()
   await expect(draftRow).toContainText('题源未通过人工审核（或版权未核实），发布暂不可用')
 
+  // 回到「题源与来源审核」确认题源回到待审核并重新核验提交，再切回「题目审核与发布」执行正式发布
+  await page.getByRole('tab', { name: /题源与来源审核/ }).click()
+  await expect(newRow.locator('.chip.wait')).toContainText('未审核')
+  await expect(page.locator('#ledger-panel-sources')).not.toContainText('owner')
+  await expect(page.locator('#ledger-panel-sources')).not.toContainText('SHA256')
+  await review.getByLabel(/我已人工核查来源与版权/).check()
   await review.getByRole('button', { name: '提交人工审核' }).click()
   await expect(page.getByRole('status')).toContainText('题源标记为已审核')
+
+  await page.getByRole('tab', { name: /题目审核与发布/ }).click()
   await draftRow.getByRole('button', { name: '发布' }).click()
   await expect(page.getByRole('status')).toContainText('题目已发布，现在会进入练习与诊断的取题池。')
   await expect(draftRow.locator('.badge.qstatus-published')).toBeVisible()
-  await expect(newRow.locator('.chip.good')).toContainText('已人工审核')
 
   await expectHonestLanguage(page)
 })
@@ -714,17 +724,20 @@ test('J7 知识图谱交互展示：SVG 关系图谱、领域筛选、选学排�
   await expectHonestLanguage(page)
 })
 
-/* ---------- J8 管理端知识点审核台：同步→课标草稿→批量审核→发布 ---------- */
+/* ---------- J8 管理端知识点审核：同步→课标草稿→批量审核→发布 ---------- */
 
-test('J8 管理端知识点审核台：同步候选→按课标生成审核依据草稿→批量审核→发布版本快照', async ({ page }) => {
+test('J8 管理端知识点审核：同步候选→按课标生成审核依据草稿→批量审核→发布版本快照', async ({ page }) => {
   await enterAdminSpace(page)
-  await adminNavTab(page, /知识点审核台/).click()
+  await adminNavTab(page, /知识点审核/).click()
 
   await expect(page.getByText('数学权威知识点库审核工作台')).toBeVisible()
+  // 默认隐藏英文技术编码与 MOE 标准代码
+  await expect(page.locator('.knowledge-workbench')).not.toContainText('MOE-2022-')
+
   await page.getByRole('button', { name: '同步候选入库 (待审)' }).click()
   await expect(page.locator('.status-banner')).toContainText('待审核: 48')
 
-  await page.getByLabel('审核人 ID (必填):').fill('owner_e2e_reviewer')
+  await page.getByLabel('审核人实名标识 (必填):').fill('owner_e2e_reviewer')
   await page.getByRole('button', { name: '按课标生成审核依据草稿' }).click()
   await expect(page.getByLabel('审核依据与意见 (必填):')).not.toHaveValue('')
 
@@ -732,9 +745,14 @@ test('J8 管理端知识点审核台：同步候选→按课标生成审核依�
   await expect(page.locator('.status-banner')).toContainText('待审核: 0', { timeout: 15_000 })
   await expect(page.locator('.status-banner')).toContainText('已通过: 48', { timeout: 15_000 })
 
-  await page.getByRole('button', { name: /版本发布与快照/ }).click()
+  await page.getByRole('tab', { name: /版本发布与快照/ }).click()
   await page.getByRole('button', { name: '发布正式版本快照' }).click()
-  await expect(page.locator('.releases-list')).toContainText('math-v2022.1.0')
+  const releasesList = page.locator('.releases-list')
+  await expect(releasesList).toContainText('数学 2022 课标正式版')
+  // 默认不显示原始英文版本号，开启「显示技术编码」后方可展示
+  await expect(releasesList).not.toContainText('math-v2022.1.0')
+  await page.getByRole('button', { name: '显示技术编码' }).click()
+  await expect(releasesList).toContainText('math-v2022.1.0')
 })
 
 /* ---------- J9 会话续答（刷新不空烧未见题） ---------- */
@@ -775,7 +793,7 @@ test('J9 会话续答：未完成练习刷新后自动恢复同一会话与题�
   await expectHonestLanguage(page)
 })
 
-test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转校对与宿主后台任务轮询', async ({ page }) => {
+test('J10 全科校考同步：脱敏采集包导入、跨科草稿跳转校对、全中文化态与宿主后台任务轮询', async ({ page }) => {
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
   page.on('console', msg => {
@@ -784,12 +802,12 @@ test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转
   page.on('pageerror', err => pageErrors.push(String(err)))
 
   await enterAdminSpace(page)
-  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
+  await adminNavTab(page, /学校考试/).click()
   await expect(page.getByRole('region', { name: '学校考试总分' })).toBeVisible()
 
-  // 展开手动补全抽屉：应加载运行态、展示复制命令参考并通过 WCAG AA 无障碍抽检
-  await page.getByRole('button', { name: '从 k12100 补全各科' }).click()
-  const drawer = page.getByRole('region', { name: '从 k12100 补全各科校考信息' })
+  // 切至「全科校考同步」子 Tab：应加载运行态、展示复制命令参考并通过 WCAG AA 无障碍抽检
+  await page.getByRole('tab', { name: /全科校考同步/ }).click()
+  const drawer = page.getByRole('region', { name: '从全科校考平台补全各科校考信息' })
   await expect(drawer).toBeVisible()
   await expect(drawer).toContainText('k12100_sync.py collect')
   // 等 .card 入场渐入动画完成后再测量静态 WCAG 对比度
@@ -800,7 +818,7 @@ test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转
     .analyze()
   expect(axeDrawer.violations.filter(v => v.impact === 'critical' || v.impact === 'serious')).toEqual([])
 
-  // 真实全栈端到端：上传含 2 科（数学 + 英语含真实合法 JPEG 答题卡与 PII 诱饵字段）的脱敏采集包 JSON
+  // 真实全栈端到端：上传含 2 科（数学 + 英语含真实合法 JPEG 答题卡与个人信息诱饵字段）的脱敏采集包
   const tinyJpegBase64 =
     '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3SiiirIP/2Q=='
   const bundlePayload = {
@@ -844,15 +862,17 @@ test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转
     buffer: Buffer.from(JSON.stringify(bundlePayload), 'utf-8'),
   })
 
-  await expect(drawer).toContainText('补全结果 · 虚构测试数据 · 全科自动补全')
+  await expect(drawer).toContainText('最近同步结果：虚构测试数据 · 全科自动补全')
   await expect(drawer).toContainText('处理 2 科')
-  await expect(drawer).toContainText('补传卡图 1 张')
+  await expect(drawer).toContainText('新上传 1 份')
   await expect(drawer).toContainText('待核对草稿 4 题')
   await expect(drawer).toContainText('数学')
   await expect(drawer).toContainText('英语')
   await expect(drawer).not.toContainText('王五')
+  await expect(drawer).not.toContainText('external_local_rules')
+  await expect(drawer).not.toContainText('created_and_confirmed')
 
-  // 点击英语行的「去校对草稿」→ 自动切换管理端当前科目为英语并定位到 Tab 3 草稿校对台
+  // 点击英语行的「去校对草稿」→ 自动切换管理端当前科目为英语并定位到「原卷与草稿校对」草稿校对台
   const englishRow = drawer.locator('tbody tr', { hasText: '英语' })
   await englishRow.getByRole('button', { name: '去校对草稿' }).click()
 
@@ -864,7 +884,7 @@ test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转
     /\bselected\b/,
   )
 
-  // 验证宿主机直连模式（Mock /status + /jobs + /jobs/:id）启动与进度轮询完成态
+  // 验证宿主机直连模式（Mock /status + /jobs + /jobs/:id）启动与进度轮询完成态及全中文化展示
   await page.route('**/api/school-exams/k12100-sync/status', route =>
     route.fulfill({
       status: 200,
@@ -951,13 +971,20 @@ test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转
     }),
   )
 
-  await page.getByRole('button', { name: '从 k12100 补全各科' }).click()
-  const hostDrawer = page.getByRole('region', { name: '从 k12100 补全各科校考信息' })
-  await expect(hostDrawer).toContainText('宿主机直连就绪 · 139****1111')
-  await hostDrawer.getByRole('button', { name: '手动启动 k12100 全科补全' }).click()
-  await expect(hostDrawer).toContainText('任务进度 · completed')
-  await expect(hostDrawer).toContainText('补全结果 · 虚构测试数据 · 宿主机异步采集')
+  await page.getByRole('tab', { name: /全科校考同步/ }).click()
+  const hostDrawer = page.getByRole('region', { name: '从全科校考平台补全各科校考信息' })
+  await hostDrawer.getByRole('button', { name: '刷新状态' }).click()
+  await expect(hostDrawer).toContainText('本机环境已就绪')
+  await expect(hostDrawer).toContainText('139****1111')
+  await hostDrawer.getByRole('button', { name: '手动启动全科校考同步' }).click()
+  await expect(hostDrawer).toContainText('任务进度 · 已完成')
+  await expect(hostDrawer).toContainText('最近同步结果：虚构测试数据 · 宿主机异步采集')
   await expect(hostDrawer).toContainText('物理')
+  await expect(hostDrawer).toContainText('本地规则匹配')
+  await expect(hostDrawer).not.toContainText('queued')
+  await expect(hostDrawer).not.toContainText('completed')
+  await expect(hostDrawer).not.toContainText('external_local_rules')
+  await expect(hostDrawer).not.toContainText('pdf_local_regex')
 
   await page.unrouteAll({ behavior: 'ignoreErrors' })
   await expectHonestLanguage(page)

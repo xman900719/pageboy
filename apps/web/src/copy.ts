@@ -16,13 +16,12 @@ export const MASTERY_LABELS: Record<string, string> = {
   untested: '暂未测验',
 }
 
-export type AdminViewId = 'ledger' | 'health' | 'exams' | 'knowledge'
+export type AdminViewId = 'ledger' | 'exams' | 'knowledge'
 
 export const ADMIN_VIEWS: { id: AdminViewId; label: string; hint: string }[] = [
-  { id: 'ledger', label: '题库审核台', hint: '题源 · 附件 · 人工发布' },
-  { id: 'health', label: '题库体检', hint: '余量与知识点覆盖' },
-  { id: 'exams', label: '学校考试', hint: '月考与期末总分录入' },
-  { id: 'knowledge', label: '知识点审核台', hint: '课标溯源 · 候选审核 · 版本发布' },
+  { id: 'ledger', label: '题库与体检', hint: '题源 · 附件 · 审核 · 余量' },
+  { id: 'exams', label: '学校考试', hint: '台账 · 草稿 · 分析 · 同步' },
+  { id: 'knowledge', label: '知识点审核', hint: '审定 · 课标 · 映射 · 快照' },
 ]
 
 export const GAP_LABELS: Record<GapType, string> = {

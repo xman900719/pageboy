@@ -96,14 +96,14 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
 
   const ledger = page.getByRole('region', { name: '题源台账' })
   const review = page.getByRole('region', { name: '来源人工审核' })
-  const attachments = page.getByRole('region', { name: '附件与解析' })
-  const versions = page.getByRole('region', { name: '题目草稿与发布' })
 
   // ① 选中 beforeAll 建好的题源（已人工审核）。
   await ledger.getByRole('button', { name: new RegExp(SOURCE_TITLE) }).click()
   await expect(ledger.locator('li.source-item', { hasText: 'J8 扫描件题源' })).toContainText('已人工审核')
 
-  // ② 上传运行时生成的图像型 PDF（无文本层）。
+  // ② 切换至「附件解析与录入」上传运行时生成的图像型 PDF（无文本层）。
+  await page.getByRole('tab', { name: /附件解析与录入/ }).click()
+  const attachments = page.getByRole('region', { name: '附件与解析' })
   const scanned = buildScannedPdf()
   expect(scanned.subarray(0, 5).toString()).toBe('%PDF-')
   await attachments.getByLabel(/选择原始附件/).setInputFiles({
@@ -131,23 +131,29 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await entryForm.getByLabel('选项 A 内容').fill('1')
   await entryForm.getByLabel('选项 B 内容').fill('-1')
   await entryForm.getByLabel('正确选项').selectOption({ label: 'A · 1' })
-  await entryForm.getByLabel('知识点 ID（至少 1 个，逗号或空格分隔）').fill(KID)
+  await entryForm.getByLabel('所属知识点（至少 1 个，可直接输入名称或逗号分隔）').fill(KID)
   await entryForm.getByRole('button', { name: '加入待导入列表' }).click()
   await expect(entryForm.getByText('已录入 1 题')).toBeVisible()
   await entryForm.getByLabel(/我已逐题人工核对/).check()
   await entryForm.getByRole('button', { name: '确认导入 1 题' }).click()
   await expect(page.getByRole('status')).toContainText('已确认导入 1 题，草稿待人工审核')
 
-  // ⑤ 草稿人工审核通过；来源因上传复位 → 重新来源人工审核后才可发布（门禁如实）。
+  // ⑤ 切至「题目审核与发布」人工审核通过；来源因上传复位 → 回「题源与来源审核」重审后发布（门禁如实）。
+  await page.getByRole('tab', { name: /题目审核与发布/ }).click()
+  const versions = page.getByRole('region', { name: '题目草稿与发布' })
   const draftRow = versions.locator('li.version-row', { hasText: '由扫描件人工誊写' })
   await expect(draftRow.locator('.badge.qstatus-draft')).toBeVisible()
   await draftRow.getByRole('button', { name: '人工审核通过' }).click()
   await expect(page.getByRole('status')).toContainText('已标记为人工审核')
   await expect(draftRow.getByRole('button', { name: '发布' })).toBeDisabled()
+
+  await page.getByRole('tab', { name: /题源与来源审核/ }).click()
   // 上传把题源复位为未审核：人工核查勾选框按会话重置（默认未勾选），须显式重新勾选后提交。
   await review.getByLabel(/我已人工核查来源与版权/).check()
   await review.getByRole('button', { name: '提交人工审核' }).click()
   await expect(page.getByRole('status')).toContainText('题源标记为已审核')
+
+  await page.getByRole('tab', { name: /题目审核与发布/ }).click()
   await draftRow.getByRole('button', { name: '发布' }).click()
   await expect(page.getByRole('status')).toContainText('题目已发布')
 

@@ -8,6 +8,7 @@
     "chinese": "语文",
     "english": "英语",
     "physics": "物理",
+    "chemistry": "化学",
     "ethics": "道法"
   },
   "modelVersionLabels": {
@@ -27,6 +28,7 @@
     "audio/mp4": "M4A 音频"
   },
   "operatorLabels": {
+    "owner": "本人 / 管理员",
     "admin_owner": "系统管理员",
     "owner_e2e_reviewer": "教研审校员",
     "beijing_zhongkao_expert": "北京市中考全科教研专家",
@@ -68,5 +70,39 @@
     "norm": "步骤/书写不规范",
     "other": "其他原因",
     "uncategorized": "未归类错因"
+  },
+  "syncJobStateLabels": {
+    "queued": "排队等待中",
+    "collecting": "正在采集校考数据",
+    "backfilling": "正在写入草稿台账",
+    "completed": "已完成",
+    "failed": "执行失败"
+  },
+  "parserModeLabels": {
+    "local_text_skeleton": "本地文本骨架提取",
+    "local_text_skeleton_fallback": "本地文本降级提取",
+    "external_local_rules": "本地规则匹配",
+    "external_deepseek_text": "智能语义归类",
+    "deepseek_vision": "多模态智能识图",
+    "deepseek_text": "智能语义解析",
+    "manual": "人工录入",
+    "none": "无解析项"
+  },
+  "k12ScoreStatusLabels": {
+    "created_confirmed": "已建档并核对",
+    "created_and_confirmed": "已建档并核对",
+    "created_unconfirmed": "已建档（待核对）",
+    "confirmed_now": "已补录核对",
+    "updated_unconfirmed": "已更新（待核对）",
+    "already_confirmed_match": "档案一致（已锁定）",
+    "locked_conflict": "已锁定总分冲突（保留原值）"
+  },
+  "stemModeLabels": {
+    "pdf_local_regex": "原卷文本规则提取",
+    "pdf_deepseek": "原卷智能语义提取",
+    "no_pdf": "无原卷（按大题客观结构）",
+    "empty_pdf": "原卷文档无文字层",
+    "pdf_parse_failed": "原卷文本提取异常（已跳过）",
+    "disabled": "未启用原卷提取"
   }
 }

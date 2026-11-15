@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   describeError,
   type ApiClient,
   type AttachmentOut,
   type Kind,
   type QuestionDraftInput,
+  type Subject,
 } from '../../api'
-import { CONFIRM_CHECK_LABEL, KIND_LABELS, excerpt } from '../../copy'
+import { CONFIRM_CHECK_LABEL, KIND_LABELS, excerpt, fmtBytes } from '../../copy'
+import {
+  getKnowledgeLabel,
+  getSubjectKnowledgeOptions,
+  resolveKnowledgeCodeInput,
+} from '../../config/knowledge'
 import type { NoticeTone } from '../../components/Notice.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
@@ -20,6 +26,9 @@ function letter(i: number): string {
 const props = defineProps<{
   client: ApiClient
   attachment: AttachmentOut
+  subject?: Subject
+  sourceAttachments?: AttachmentOut[]
+  initialKnowledgeId?: string
   notify: Notify
 }>()
 
@@ -33,7 +42,8 @@ const kind = ref<Kind>('single_choice')
 const options = ref<string[]>(['', ''])
 const correctIdx = ref(0)
 const answer = ref('')
-const knowledgeInput = ref('')
+const knowledgeInput = ref(props.initialKnowledgeId ? getKnowledgeLabel(props.initialKnowledgeId) : '')
+const pickedKnowledge = ref('')
 const maxPoints = ref('3')
 const groupContext = ref('')
 const mediaId = ref(
@@ -42,6 +52,45 @@ const mediaId = ref(
 const checked = ref(false)
 const error = ref('')
 const busy = ref(false)
+
+watch(
+  () => props.initialKnowledgeId,
+  nextId => {
+    if (nextId && knowledgeInput.value.trim() === '') {
+      knowledgeInput.value = getKnowledgeLabel(nextId)
+    }
+  }
+)
+
+const subjectKnowledgeOptions = computed(() =>
+  props.subject ? getSubjectKnowledgeOptions(props.subject, true) : []
+)
+
+const audioAttachments = computed(() => {
+  const list = props.sourceAttachments ?? [props.attachment]
+  const audios = list.filter(a => a.media_type.startsWith('audio/'))
+  if (
+    props.attachment.media_type.startsWith('audio/') &&
+    !audios.some(a => a.id === props.attachment.id)
+  ) {
+    audios.unshift(props.attachment)
+  }
+  return audios
+})
+
+function appendKnowledgeLabel() {
+  const picked = pickedKnowledge.value.trim()
+  if (!picked) return
+  const existing = knowledgeInput.value
+    .split(/[,，、\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+  if (!existing.includes(picked)) {
+    existing.push(picked)
+  }
+  knowledgeInput.value = existing.join('，')
+  pickedKnowledge.value = ''
+}
 
 function resetEntry() {
   stem.value = ''
@@ -82,9 +131,12 @@ function addEntry() {
       return
     }
   }
-  const knowledgeIds = knowledgeInput.value.split(/[,，、\s]+/).filter(Boolean)
+  const knowledgeIds = knowledgeInput.value
+    .split(/[,，、\s]+/)
+    .map(token => resolveKnowledgeCodeInput(token, props.subject))
+    .filter(Boolean)
   if (knowledgeIds.length < 1) {
-    error.value = '知识点 ID 至少填 1 个（逗号或空格分隔）。'
+    error.value = '所属知识点至少填写或选取 1 个（支持逗号分隔）。'
     return
   }
   const points = Number(maxPoints.value)
@@ -147,7 +199,7 @@ async function confirm() {
         <textarea
           rows="2"
           v-model="stem"
-          placeholder="请输入题干完整文本（支持 $...$ 公式）"
+          placeholder="请输入题干完整文本（支持常规数学公式符号）"
         />
       </label>
       <label>
@@ -216,13 +268,30 @@ async function confirm() {
           placeholder="请输入标准答案或评分参考文本"
         />
       </label>
-      <label class="wide">
-        知识点 ID（至少 1 个，逗号或空格分隔）
-        <input
-          v-model="knowledgeInput"
-          placeholder="例如：math_cand.num.rational, math_cand.alg.poly"
-        />
-      </label>
+      <div class="wide" style="margin-bottom: 12px;">
+        <label style="margin-bottom: 6px;">
+          所属知识点（至少 1 个，可直接输入名称或逗号分隔）
+          <input
+            v-model="knowledgeInput"
+            :list="`knowledge-opt-list-${attachment.id}`"
+            placeholder="请从下方快速选取或输入知识点中文名"
+          />
+        </label>
+        <datalist :id="`knowledge-opt-list-${attachment.id}`">
+          <option v-for="opt in subjectKnowledgeOptions" :key="opt.code" :value="opt.label" />
+        </datalist>
+        <select
+          v-if="subjectKnowledgeOptions.length > 0"
+          aria-label="从当前科目知识点字典快速选取"
+          v-model="pickedKnowledge"
+          @change="appendKnowledgeLabel"
+        >
+          <option value="">＋ 从当前科目知识点清单选取追加…</option>
+          <option v-for="opt in subjectKnowledgeOptions" :key="opt.code" :value="opt.label">
+            {{ opt.label }}{{ opt.isCandidate ? '（新课标候选）' : '' }}
+          </option>
+        </select>
+      </div>
       <label class="wide">
         组内材料（可选，与同组题共用，如阅读材料，≤20000 字）
         <textarea
@@ -232,13 +301,13 @@ async function confirm() {
         />
       </label>
       <label class="wide">
-        媒体附件 ID（可选：听力题填音频附件 id，须属于本来源）
-        <input
-          class="mono-input"
-          v-model="mediaId"
-          placeholder="留空表示无媒体"
-          autocomplete="off"
-        />
+        关联音频附件（可选：英语/语文听力题请选择已上传音频）
+        <select v-model="mediaId">
+          <option value="">无关联音频附件</option>
+          <option v-for="att in audioAttachments" :key="att.id" :value="att.id">
+            {{ att.filename }}（{{ fmtBytes(att.byte_size) }}）
+          </option>
+        </select>
       </label>
     </div>
     <p v-if="error" class="form-error">{{ error }}</p>
