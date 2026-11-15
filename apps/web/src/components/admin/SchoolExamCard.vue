@@ -142,7 +142,7 @@ const isK12JobActive = computed(() => {
 })
 
 const computedCliCommand = computed(() => {
-  const base = runtimeStatus.value?.recommended_cli_command || 'uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong'
+  const base = runtimeStatus.value?.recommended_cli_command || 'uv run python scripts/k12100_sync.py collect'
   const parts = [base]
   const kw = k12ExamKeyword.value.trim()
   if (kw && !base.includes('--exam-keyword')) {

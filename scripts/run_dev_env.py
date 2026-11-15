@@ -145,8 +145,8 @@ def _build_ai_updates(
 
 
 def _load_verified_user_k12100_ai_env() -> dict[str, str]:
-    """在权限严格校验通过（dir 0700、file 0600、当前用户）时，读取 ~/.config/shutong/k12100.env 中的 AI 配置。"""
-    cfg_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(Path.home() / ".config" / "shutong"))).expanduser().resolve()
+    """在权限严格校验通过（dir 0700、file 0600、当前用户）时，读取开发环境 k12100.env 中的 AI 配置。"""
+    cfg_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(DEV_HOME / "k12100"))).expanduser().resolve()
     env_file = cfg_dir / "k12100.env"
     if not cfg_dir.is_dir() or not env_file.is_file():
         return {}
@@ -242,7 +242,7 @@ def _propagate_ai_env(proc_env: dict[str, str], dev_vars: dict[str, str]) -> str
         user_ai = _load_verified_user_k12100_ai_env()
         if user_ai:
             proc_env.update(user_ai)
-            source_desc = f"~/.config/shutong/k12100.env ({_mask_secret(user_ai.get('DEEPSEEK_API_KEY') or user_ai.get('SHUTONG_AI_API_KEY', ''))})"
+            source_desc = f"development/k12100/k12100.env ({_mask_secret(user_ai.get('DEEPSEEK_API_KEY') or user_ai.get('SHUTONG_AI_API_KEY', ''))})"
         elif proc_env.get("DEEPSEEK_API_KEY", "").strip():
             source_desc = f"当前 Shell DEEPSEEK_API_KEY ({_mask_secret(proc_env['DEEPSEEK_API_KEY'])})"
         elif proc_env.get("SHUTONG_AI_API_KEY", "").strip():
@@ -499,7 +499,7 @@ def status_env() -> int:
     if dev_ai:
         ai_status = f"🟢 已写入 dev.env ({_mask_secret(dev_ai)})"
     elif k12_ai:
-        ai_status = f"🟡 来自 ~/.config/shutong/k12100.env ({_mask_secret(k12_ai)})"
+        ai_status = f"🟡 来自 development/k12100/k12100.env ({_mask_secret(k12_ai)})"
     elif shell_ai:
         ai_status = f"🟡 来自当前 Shell ({_mask_secret(shell_ai)}，可运行 config-ai --from-shell 持久化)"
     else:

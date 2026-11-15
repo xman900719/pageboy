@@ -126,11 +126,11 @@ def _inject_ai_env(api_env: dict[str, str], *, no_ai_key: bool = False) -> str:
     if api_env.get("SHUTONG_VISION_API_KEY", "").strip() or api_env.get("SHUTONG_AI_API_KEY", "").strip():
         source_label = "环境变量 SHUTONG_AI_API_KEY / SHUTONG_VISION_API_KEY"
     else:
-        k12_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(Path.home() / ".config" / "shutong"))).expanduser().resolve()
+        k12_dir = Path(os.getenv("SHUTONG_K12100_CONFIG_DIR", str(_PAGEBOY_DEV_HOME / "k12100"))).expanduser().resolve()
         k12_ai = _load_verified_env(k12_dir / "k12100.env", require_secure_dir=True)
         if k12_ai.get("DEEPSEEK_API_KEY") or k12_ai.get("SHUTONG_AI_API_KEY") or k12_ai.get("SHUTONG_VISION_API_KEY"):
             api_env.update(k12_ai)
-            source_label = "~/.config/shutong/k12100.env (0700/0600)"
+            source_label = "development/k12100/k12100.env (0700/0600)"
         else:
             dev_ai = _load_verified_env(_PAGEBOY_DEV_HOME / "env" / "dev.env", require_secure_dir=False)
             if dev_ai.get("DEEPSEEK_API_KEY") or dev_ai.get("SHUTONG_AI_API_KEY") or dev_ai.get("SHUTONG_VISION_API_KEY"):

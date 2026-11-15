@@ -53,26 +53,26 @@ infra/rollback.sh          # 回滚到上一个可用镜像标签
 
 ## 外部校考平台（k12100.com）与 DEEPSEEK_API_KEY 命令行安全配置
 
-本能力运行在宿主机，**所有账号密码、`DEEPSEEK_API_KEY` 与浏览器状态均存放在仓库之外的 `~/.config/shutong/`**（目录 `0700`、文件 `0600`）或受保护的 `$PAGEBOY_HOME/development/env/dev.env`（`0600`），严禁写入 Git，也不在终端回显明文：
+本能力运行在宿主机，**所有账号密码、`DEEPSEEK_API_KEY` 与浏览器状态均按环境隔离存放在仓库之外的 `$PAGEBOY_HOME/<development|production>/k12100/`**（目录 `0700`、文件 `0600`）与 `$PAGEBOY_HOME/development/env/dev.env`（`0600`）或 `$PAGEBOY_HOME/production/env/prod.env`（`0600`），严禁写入 Git，也不在终端回显明文（不再使用全局 `~/.config/shutong/`）：
 
 1. **安全初始化 k12100 凭据（可选同步录入 DeepSeek Key，权限自动锁定 `0600`）**：
-   - 交互录入（推荐，密码与 Key 均不回显）：`uv run python scripts/k12100_sync.py init-credentials`
+   - 交互录入（推荐，密码与 Key 均不回显）：`uv run python scripts/k12100_sync.py init-credentials --env development`
    - 仅从当前 Shell 安全持久化 `DEEPSEEK_API_KEY` 并同步写入开发环境 `dev.env`（不覆盖既有 `k12100` 账号或开发令牌）：
-     - `uv run python scripts/k12100_sync.py config-deepseek --from-shell --sync-dev-env`
+     - `uv run python scripts/k12100_sync.py config-deepseek --env development --from-shell --sync-dev-env`
    - 若仅配置日常开发环境（`8000` 端口）的 DeepSeek Key：
      - `uv run python scripts/run_dev_env.py config-ai --from-shell`（或省略 `--from-shell` 进行无回显交互输入；支持 `--clear` 清理）
 2. **检查凭据权限、DeepSeek Key 脱敏摘要与已同步台账**：
-   - `uv run python scripts/k12100_sync.py status`
+   - `uv run python scripts/k12100_sync.py status --env development`
    - `uv run python scripts/run_dev_env.py status`
 3. **人工测试与日常开发环境启动**：
    - `uv run python scripts/run_manual_test_env.py start` 与 `uv run python scripts/run_dev_env.py start` 会按权限校验顺序自动加载 `DEEPSEEK_API_KEY` / `SHUTONG_AI_API_KEY`（可用 `--no-ai-key` 显式关闭以测 `503` 降级）。
-4. **可见窗口探测（首日推荐）**（打开宿主机 Chromium，登录后手动浏览 1~2 场考试，在 `~/.config/shutong/probe_snapshot/` 生成脱敏页面/XHR 快照）：
-   - `uv run python scripts/k12100_sync.py probe`
-5. **增量去重同步为 M2 待核对草稿**（默认对接本机回环测试端 `http://127.0.0.1:18765`，生产环境可通过 `--api-url` 显式指定）：
-   - `uv run python scripts/k12100_sync.py sync --api-url http://127.0.0.1:18765 --max-exams 2`
+4. **可见窗口探测（首日推荐）**（打开宿主机 Chromium，登录后手动浏览 1~2 场考试，在 `$PAGEBOY_HOME/<env>/k12100/probe_snapshot/` 生成脱敏页面/XHR 快照）：
+   - `uv run python scripts/k12100_sync.py probe --env development`
+5. **增量去重同步为 M2 待核对草稿**（默认对接本机回环测试端 `http://127.0.0.1:18765`，生产环境可通过 `--env production` 与 `--api-url http://127.0.0.1:8180` 指定）：
+   - `uv run python scripts/k12100_sync.py sync --env development --api-url http://127.0.0.1:18765 --max-exams 2`
    - 若遇验证码、滑块或 HTTP `401/403/429`，脚本会立即熔断停止并发出提示，绝不自动重试或绕过校验；同步后仍需家长在管理端 **「草稿校对台」** 人工核对确认。
 6. **管理端「从 k12100 补全各科」与全科离线采集包导入**：
    - 在管理端 **「学校考试」** 顶栏点击 **「从 k12100 补全各科」**，系统自动识别运行环境：宿主机就绪时可直接一键启动单任务后台全科补全；容器化或隔离环境自动切换为通用离线采集包导入（支持上传 `15 MiB` 内脱敏 JSON，服务端强制执行 PII 递归清洗、JPEG 答题卡校验、已有原卷 PDF 提干，并严格将全部逐题草稿标为 `ocr_draft` 待人工确认）。
    - 宿主机配套命令行导出与一站式导入命令：
-     - 导出 `0600` 脱敏采集包：`uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong`
-     - 一站式或离线包导入：`uv run python scripts/k12100_sync.py backfill --config-dir ~/.config/shutong`（支持 `--input-json` 离线包与 `--dry-run` 预演）
+     - 导出 `0600` 脱敏采集包：`uv run python scripts/k12100_sync.py collect --env development`
+     - 一站式或离线包导入：`uv run python scripts/k12100_sync.py backfill --env development`（支持 `--input-json` 离线包与 `--dry-run` 预演）

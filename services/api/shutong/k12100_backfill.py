@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
-from .home import normalize_environment, resolve_repo_root
+from .home import HomeIdentityError, assert_no_cross_environment_path, get_env_home, normalize_environment, resolve_repo_root
 
 # 单张答题卡 JPEG 与单次上传采集包 JSON 的体积安全上限
 MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
@@ -223,14 +223,25 @@ def natural_question_sort_key(question_name_or_label: str) -> tuple[int, int, st
     return (999, 0, raw)
 
 
-def resolve_k12100_config_dir(config_dir: Path | str | None = None) -> Path:
-    """解析本机 k12100 凭据与浏览器配置目录，默认 ~/.config/shutong。"""
+def resolve_k12100_config_dir(
+    config_dir: Path | str | None = None,
+    *,
+    environment: str | None = None,
+) -> Path:
+    """解析当前环境的 k12100 凭据与浏览器配置目录，默认位于 $PAGEBOY_HOME/<env>/k12100。"""
+    legacy_dir = (Path.home() / ".config" / "shutong").resolve()
     if config_dir is not None:
-        return Path(config_dir).expanduser().resolve()
-    env_dir = os.getenv(K12100_CONFIG_DIR_ENV, "").strip()
-    if env_dir:
-        return Path(env_dir).expanduser().resolve()
-    return (Path.home() / ".config" / "shutong").resolve()
+        resolved = Path(config_dir).expanduser().resolve()
+    else:
+        env_dir = os.getenv(K12100_CONFIG_DIR_ENV, "").strip()
+        if env_dir:
+            resolved = Path(env_dir).expanduser().resolve()
+        else:
+            resolved = (get_env_home(environment, require_identity=False) / "k12100").resolve()
+
+    if resolved == legacy_dir or legacy_dir in resolved.parents:
+        raise PermissionError("旧全局配置目录 ~/.config/shutong 已废弃，请改用 $PAGEBOY_HOME/<env>/k12100")
+    return assert_no_cross_environment_path(resolved, expected_env=normalize_environment(environment))
 
 
 def assert_private_path_mode(path: Path, expected_mode: int) -> None:
@@ -265,7 +276,16 @@ def parse_secure_env_file(env_path: Path) -> dict[str, str]:
 
 def inspect_k12100_credentials(config_dir: Path | str | None = None) -> dict[str, Any]:
     """只读检查 k12100 凭据状态并返回脱敏摘要，绝不外泄密码或 API Key。"""
-    cfg_dir = resolve_k12100_config_dir(config_dir)
+    try:
+        cfg_dir = resolve_k12100_config_dir(config_dir)
+    except (PermissionError, HomeIdentityError) as exc:
+        return {
+            "status": "permission_error",
+            "username_masked": None,
+            "deepseek_configured": False,
+            "deepseek_masked": None,
+            "message": str(exc),
+        }
     env_path = cfg_dir / "k12100.env"
     if not env_path.exists():
         return {
@@ -1263,9 +1283,10 @@ def get_k12100_runtime_status(config_dir: Path | str | None = None) -> dict[str,
         active_id = _ACTIVE_JOB_ID
         latest_job = _snapshot_job(_JOBS[_JOB_ORDER[-1]]) if _JOB_ORDER else None
 
+    env_name = normalize_environment()
     env_deepseek = paper_parser.load_vision_config(require_key=False) is not None
     return {
-        "environment": normalize_environment(),
+        "environment": env_name,
         "mode": "host_direct" if unavailable_code is None else "isolated_import_only",
         "can_run_local": unavailable_code is None,
         "is_isolated": is_isolated,
@@ -1278,7 +1299,7 @@ def get_k12100_runtime_status(config_dir: Path | str | None = None) -> dict[str,
         "deepseek_configured": bool(env_deepseek or cred_summary["deepseek_configured"]),
         "active_job_id": active_id,
         "latest_job": latest_job,
-        "recommended_cli_command": "uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong",
+        "recommended_cli_command": f"uv run python scripts/k12100_sync.py collect --env {env_name}",
     }
 
 

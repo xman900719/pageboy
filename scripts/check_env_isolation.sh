@@ -36,6 +36,29 @@ if [[ -f "$dev_home/env/dev.env" ]]; then
   fi
 fi
 
+if [[ -e "$HOME/.config/shutong" ]]; then
+  bad "旧全局配置目录仍存在：$HOME/.config/shutong（应迁移至 \$PAGEBOY_HOME/<env>/k12100 并删除）"
+else
+  ok "旧全局配置目录已清除：$HOME/.config/shutong"
+fi
+
+if [[ -d "$dev_home/k12100" ]]; then
+  dev_k12_perm="$(stat -c '%a:%U' "$dev_home/k12100")"
+  if [[ "$dev_k12_perm" == "700:$(id -un)" ]]; then
+    ok "development k12100 目录权限与属主正确 ($dev_k12_perm)"
+  else
+    bad "development k12100 目录权限或属主异常：$dev_k12_perm（期望 700:$(id -un)）"
+  fi
+  if [[ -f "$dev_home/k12100/k12100.env" ]]; then
+    dev_k12_env_perm="$(stat -c '%a:%U' "$dev_home/k12100/k12100.env")"
+    if [[ "$dev_k12_env_perm" == "600:$(id -un)" ]]; then
+      ok "development k12100.env 权限与属主正确 ($dev_k12_env_perm)"
+    else
+      bad "development k12100.env 权限或属主异常：$dev_k12_env_perm（期望 600:$(id -un)）"
+    fi
+  fi
+fi
+
 if [[ -d "$prod_home" ]]; then
   prod_perm="$(stat -c '%a:%U:%G' "$prod_home")"
   if [[ "$prod_perm" == "710:shutong-prod:shutong-deploy" ]]; then

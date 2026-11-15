@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""k12100.com 校考成绩与错题安全凭据管理及拟人化同步工具（严格防封号 + 宿主机隔离）。
+"""k12100.com 校考成绩与错题安全凭据管理及拟人化同步工具（严格防封号 + 环境隔离）。
 
-所有账号密码、浏览器 Profile、探测快照及去重索引一律保存于仓库之外的
-`~/.config/shutong/`（目录 0700、文件 0600），绝不进入 Git 工作区。
+所有账号密码、浏览器 Profile、探测快照及去重索引一律保存于仓库之外且按环境隔离的
+`$PAGEBOY_HOME/<development|production>/k12100/`（目录 0700、文件 0600），绝不进入 Git 工作区。
 
 子命令：
-  1. init-credentials : 交互或命令行安全写入 k12100 账号及可选 DEEPSEEK_API_KEY 到 ~/.config/shutong/k12100.env（0600）
+  1. init-credentials : 交互或命令行安全写入 k12100 账号及可选 DEEPSEEK_API_KEY 到对应环境的 k12100.env（0600）
   2. config-deepseek  : 单独配置、更新或清空 DEEPSEEK_API_KEY / Base URL / 模型（支持 --from-shell 与 --sync-dev-env）
   3. status           : 校对目录/凭据权限、DeepSeek 密钥状态与本地同步台账
   4. probe            : 打开可见 Chromium 浏览器，低频探测并保存脱敏页面/XHR 快照
@@ -39,22 +39,31 @@ _API_DIR = str(REPO_ROOT / "services" / "api")
 if _API_DIR not in sys.path:
     sys.path.insert(0, _API_DIR)
 
+from shutong.home import get_env_home, normalize_environment  # noqa: E402
 from shutong.k12100_backfill import (  # noqa: E402
     PII_AND_SECRET_KEYS,
     SUBJECT_ALIAS_MAP,
     clamp_max_exams,
     map_subject_code as _shared_map_subject_code,
+    resolve_k12100_config_dir,
     strip_pii_fields,
 )
 
 BROWSER_SCRIPT = REPO_ROOT / "scripts" / "k12100_browser.mjs"
-DEFAULT_CONFIG_DIR = Path.home() / ".config" / "shutong"
 DEFAULT_API_URL = "http://127.0.0.1:18765"
+DEFAULT_PROD_API_URL = "http://127.0.0.1:8180"
 
 
-def get_paths(config_dir: Path | None = None) -> dict[str, Path]:
-    """统一解析宿主机私密配置路径（绝不落入仓库内部）。"""
-    base = (config_dir or Path(os.getenv("SHUTONG_K12100_CONFIG_DIR") or DEFAULT_CONFIG_DIR)).expanduser()
+def _resolve_default_api_url(environment: str | None = None) -> str:
+    return DEFAULT_PROD_API_URL if normalize_environment(environment) == "production" else DEFAULT_API_URL
+
+
+def get_paths(config_dir: Path | None = None, *, environment: str | None = None) -> dict[str, Path]:
+    """统一解析当前环境隔离的 k12100 配置路径（位于 $PAGEBOY_HOME/<env>/k12100，绝不落入仓库或 ~/.config/shutong）。"""
+    if config_dir is not None:
+        base = resolve_k12100_config_dir(config_dir, environment=environment)
+    else:
+        base = resolve_k12100_config_dir(environment=environment)
     return {
         "dir": base,
         "env": base / "k12100.env",
@@ -62,6 +71,12 @@ def get_paths(config_dir: Path | None = None) -> dict[str, Path]:
         "synced": base / "k12100-synced.json",
         "probe_dir": base / "probe_snapshot",
     }
+
+
+def _paths_from_args(args: argparse.Namespace) -> dict[str, Path]:
+    raw_dir = getattr(args, "config_dir", "") or ""
+    raw_env = getattr(args, "env", "") or None
+    return get_paths(Path(raw_dir) if raw_dir else None, environment=raw_env)
 
 
 def ensure_secure_dir(path: Path) -> None:
@@ -457,7 +472,8 @@ def _resolve_deepseek_key(
 
 def cmd_init_credentials(args: argparse.Namespace) -> int:
     """安全录入 k12100 凭据与可选 DeepSeek API Key，并合并写入 0600 文件。"""
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
+    default_api_url = _resolve_default_api_url(getattr(args, "env", None) or None)
     ensure_secure_dir(paths["dir"])
 
     existing: dict[str, str] = {}
@@ -475,14 +491,14 @@ def cmd_init_credentials(args: argparse.Namespace) -> int:
         password = args.password.strip() if args.password else getpass("请输入 k12100.com 登录密码（不回显）: ").strip()
         if non_interactive:
             admin_token = args.admin_token.strip()
-            raw_api_url = args.api_url.strip() or existing.get("K12100_PAGEBOY_API_URL") or DEFAULT_API_URL
+            raw_api_url = args.api_url.strip() or existing.get("K12100_PAGEBOY_API_URL") or default_api_url
         else:
             admin_token = (
                 args.admin_token.strip()
                 if args.admin_token
                 else getpass("请输入书童管理端 Admin Token（SHUTONG_ADMIN_TOKEN，可留空）: ").strip()
             )
-            default_url = existing.get("K12100_PAGEBOY_API_URL") or DEFAULT_API_URL
+            default_url = existing.get("K12100_PAGEBOY_API_URL") or default_api_url
             raw_api_url = (
                 args.api_url.strip()
                 or input(f"书童 API 地址 [默认 {default_url}]: ").strip()
@@ -554,7 +570,7 @@ def cmd_init_credentials(args: argparse.Namespace) -> int:
 
 def cmd_config_deepseek(args: argparse.Namespace) -> int:
     """单独配置、导入或清理 DeepSeek API Key 与模型参数，绝不覆盖 k12100 账号。"""
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
     ensure_secure_dir(paths["dir"])
 
     if args.clear:
@@ -629,7 +645,8 @@ def cmd_config_deepseek(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """核对私密凭据权限、DeepSeek AI Key 状态与已同步场次统计（仅脱敏展示）。"""
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
+    print(f"运行环境：{normalize_environment(getattr(args, 'env', None) or None)}")
     print(f"私密目录：{paths['dir']}")
     try:
         validate_secure_permissions(paths["dir"], is_dir=True)
@@ -690,6 +707,7 @@ def _run_browser_node(mode: str, paths: dict[str, Path], creds: dict[str, str], 
             cmd.append("--headless")
         env = {
             **os.environ,
+            "SHUTONG_ENV": normalize_environment(getattr(args, "env", None) or None),
             "K12100_USERNAME": creds.get("K12100_USERNAME", ""),
             "K12100_PASSWORD": creds.get("K12100_PASSWORD", ""),
         }
@@ -708,7 +726,7 @@ def _require_k12100_credentials(creds: dict[str, str]) -> bool:
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
     creds = load_env_credentials(paths["env"])
     if not _require_k12100_credentials(creds):
         return 1
@@ -718,7 +736,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
     creds: dict[str, str] = {}
     if args.input_json:
         raw_payload = json.loads(Path(args.input_json).read_text(encoding="utf-8"))
@@ -735,7 +753,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
             return 2
         raw_exams = browser_res.get("exams") or []
 
-    api_url = (args.api_url or creds.get("K12100_PAGEBOY_API_URL") or DEFAULT_API_URL).rstrip("/")
+    default_api_url = _resolve_default_api_url(getattr(args, "env", None) or None)
+    api_url = (args.api_url or creds.get("K12100_PAGEBOY_API_URL") or default_api_url).rstrip("/")
     admin_token = args.admin_token or os.getenv("SHUTONG_ADMIN_TOKEN") or creds.get("SHUTONG_ADMIN_TOKEN") or ""
     if not args.dry_run and not admin_token:
         print("错误：同步至书童 API 需要管理员令牌（--admin-token 或环境变量 SHUTONG_ADMIN_TOKEN）。", file=sys.stderr)
@@ -837,7 +856,7 @@ def backfill_sanitized_bundle_to_pageboy(
 
 def cmd_collect(args: argparse.Namespace) -> int:
     """采集全科成绩、逐题明细与答题卡 JPEG，以 0600 写入脱敏 JSON 采集包。"""
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
     try:
         creds = load_env_credentials(paths["env"])
     except (FileNotFoundError, PermissionError) as exc:
@@ -886,7 +905,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 def cmd_backfill(args: argparse.Namespace) -> int:
     """一站式全科补全：采集或加载离线采集包，调用 import-bundle 接口完成闭环。"""
-    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    paths = _paths_from_args(args)
     creds: dict[str, str] = {}
     if args.input_json:
         raw_bundle = json.loads(Path(args.input_json).expanduser().read_text(encoding="utf-8"))
@@ -905,7 +924,8 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             print(json.dumps(strip_pii_fields(raw_bundle), ensure_ascii=False, indent=2), file=sys.stderr)
             return 2 if raw_bundle.get("status") == "login_required" else 3
 
-    api_url = (args.api_url or creds.get("K12100_PAGEBOY_API_URL") or DEFAULT_API_URL).rstrip("/")
+    default_api_url = _resolve_default_api_url(getattr(args, "env", None) or None)
+    api_url = (args.api_url or creds.get("K12100_PAGEBOY_API_URL") or default_api_url).rstrip("/")
     admin_token = args.admin_token or os.getenv("SHUTONG_ADMIN_TOKEN") or creds.get("SHUTONG_ADMIN_TOKEN") or ""
     if not args.dry_run and not admin_token:
         print("错误：调用书童 API 需要管理员令牌（--admin-token 或环境变量 SHUTONG_ADMIN_TOKEN）。", file=sys.stderr)
@@ -936,6 +956,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init-credentials", help="安全交互或 CLI 参数录入 k12100 账号及可选 DEEPSEEK_API_KEY（0600 合并保存）")
+    p_init.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_init.add_argument("--config-dir", default="")
     p_init.add_argument("--username", default="")
     p_init.add_argument("--password", default="")
@@ -952,6 +973,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init_credentials)
 
     p_ds = sub.add_parser("config-deepseek", help="单独配置、从 Shell 导入或清理 DEEPSEEK_API_KEY（保留既有 k12100 凭据）")
+    p_ds.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_ds.add_argument("--config-dir", default="")
     p_ds.add_argument("--deepseek-api-key", default="", help="传入 DEEPSEEK_API_KEY（不填则交互输入或配合 --from-shell 使用）")
     p_ds.add_argument("--from-shell", action="store_true", help="从当前 Shell 环境变量 DEEPSEEK_API_KEY 读取并安全持久化")
@@ -964,10 +986,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_ds.set_defaults(func=cmd_config_deepseek)
 
     p_status = sub.add_parser("status", help="核对私密凭据权限、DeepSeek Key 状态与已去重场次统计")
+    p_status.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_status.add_argument("--config-dir", default="")
     p_status.set_defaults(func=cmd_status)
 
     p_probe = sub.add_parser("probe", help="打开可见浏览器探测 k12100 登录后脱敏页面与 XHR 结构")
+    p_probe.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_probe.add_argument("--config-dir", default="")
     p_probe.add_argument("--wait-seconds", type=int, default=180)
     p_probe.add_argument("--probe-browse-seconds", type=int, default=20)
@@ -975,6 +999,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_probe.set_defaults(func=cmd_probe)
 
     p_sync = sub.add_parser("sync", help="执行去重限流同步，生成待人工核对 ocr_draft 草稿")
+    p_sync.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_sync.add_argument("--config-dir", default="")
     p_sync.add_argument("--api-url", default="")
     p_sync.add_argument("--admin-token", default="")
@@ -989,16 +1014,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.set_defaults(func=cmd_sync)
 
     p_collect = sub.add_parser("collect", help="温和采集 k12100 全科快照并导出 0600 脱敏采集包 JSON")
+    p_collect.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_collect.add_argument("--config-dir", default="")
     p_collect.add_argument("--exam-keyword", default="", help="可选考试标题关键词，如 统一练习一")
     p_collect.add_argument("--max-exams", type=int, default=1, help="单次最多采集场次（硬限制 1~3）")
     p_collect.add_argument("--wait-seconds", type=int, default=180)
-    p_collect.add_argument("--output", default="", help="可选输出 JSON 文件路径（默认写入 ~/.config/shutong/probe_snapshot/）")
+    p_collect.add_argument("--output", default="", help="可选输出 JSON 文件路径（默认写入当前环境 k12100/probe_snapshot/）")
     p_collect.add_argument("--no-card-images", action="store_true", help="跳过随包内嵌答题卡 JPEG 字节（仅保留安全链接）")
     p_collect.add_argument("--headless", action="store_true")
     p_collect.set_defaults(func=cmd_collect)
 
     p_backfill = sub.add_parser("backfill", help="一站式执行 k12100 全科对齐、答题卡上传、PDF 提干与 ocr_draft 入库")
+    p_backfill.add_argument("--env", default="", choices=["", "development", "production", "dev", "prod"], help="目标环境（默认读取 SHUTONG_ENV 或 development）")
     p_backfill.add_argument("--config-dir", default="")
     p_backfill.add_argument("--api-url", default="")
     p_backfill.add_argument("--admin-token", default="")

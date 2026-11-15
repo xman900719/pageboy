@@ -346,6 +346,39 @@ def test_run_dev_env_and_manual_env_ai_cli_helpers(tmp_path, monkeypatch, capsys
     assert "SHUTONG_AI_API_KEY" not in env_disabled
 
 
+def test_k12100_default_paths_isolated_by_environment_and_reject_legacy(tmp_path, monkeypatch):
+    """默认配置目录必须按 SHUTONG_ENV 隔离到 $PAGEBOY_HOME/<env>/k12100，并拒绝旧 ~/.config/shutong 与跨环境访问。"""
+    pb_home = tmp_path / "pb-home"
+    (pb_home / "development").mkdir(parents=True)
+    (pb_home / "production").mkdir(parents=True)
+    monkeypatch.setenv("PAGEBOY_HOME", str(pb_home))
+    monkeypatch.delenv("SHUTONG_K12100_CONFIG_DIR", raising=False)
+
+    monkeypatch.setenv("SHUTONG_ENV", "development")
+    dev_paths = ks.get_paths()
+    assert dev_paths["dir"] == (pb_home / "development" / "k12100").resolve()
+
+    monkeypatch.setenv("SHUTONG_ENV", "production")
+    prod_paths = ks.get_paths()
+    assert prod_paths["dir"] == (pb_home / "production" / "k12100").resolve()
+
+    # 显式传入 --env production 优先于开发环境变量
+    monkeypatch.setenv("SHUTONG_ENV", "development")
+    explicit_prod = ks.get_paths(environment="production")
+    assert explicit_prod["dir"] == (pb_home / "production" / "k12100").resolve()
+
+    # 跨环境覆盖必须被阻断
+    from shutong.home import HomeIdentityError
+
+    with pytest.raises(HomeIdentityError):
+        ks.get_paths(pb_home / "production" / "k12100", environment="development")
+
+    # 旧 ~/.config/shutong 全局目录必须被拒绝
+    legacy_dir = Path.home() / ".config" / "shutong"
+    with pytest.raises(PermissionError, match="已废弃"):
+        ks.get_paths(legacy_dir)
+
+
 def test_cli_collect_writes_0600_sanitized_bundle_and_zero_pii(tmp_path, monkeypatch, capsys):
     """collect 子命令应写出 0600 脱敏采集包 JSON，且磁盘与 stdout 均不得出现凭据或 PII。"""
     import json
