@@ -19,9 +19,11 @@ const REPO_ROOT = path.resolve(__dirname, '..')
 const PLAYWRIGHT_CORE = path.join(REPO_ROOT, 'apps', 'web', 'node_modules', 'playwright-core', 'index.mjs')
 
 const TARGET_LOGIN_URL = 'https://www.k12100.com/#/login'
+const TARGET_REPORT_LIST_URL = 'https://www.k12100.com/studenting/#/jointStudentAnalysisReport/list'
+const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
 
 const SENSITIVE_KEY_RE =
-  /^(student_?name|real_?name|user_?name|nick_?name|xm|student_?id|xuehao|exam_?no|kaohao|seat_?no|class_?name|school_?name|phone|mobile|tel|id_?card|password|pwd|token|access_?token|refresh_?token|cookie|姓名|学生姓名|学号|考号|座位号|班级|学校|手机号|身份证)$/i
+  /^(student_?name|real_?name|user_?name|nick_?name|xm|student_?id|xuehao|exam_?no|kaohao|seat_?no|class_?name|school_?name|phone|mobile|tel|id_?card|password|pwd|token|access_?token|refresh_?token|cookie|姓名|学生姓名|学号|考号|座位号|班级|学校|手机号|身份证|studName|studentName|stuName|className|schoolName|studId|studentId|stuCode|studentNo|studentCode|classIdCode|schoolId|schoolRank|classRank|examRank|regionRank|examRankRate|schoolRankRate|groupClassRanks|examNum|actualExamNum|subjectLeader|createdBy)$/i
 
 const CHALLENGE_KEYWORDS = ['滑块', '滑动验证', '人机验证', '安全验证', '行为验证', '图形验证码', '操作过于频繁', '访问受限', '账号异常']
 
@@ -31,9 +33,11 @@ function parseArgs(argv) {
     profileDir: path.join(os.homedir(), '.config', 'shutong', 'k12100-browser-profile'),
     probeDir: path.join(os.homedir(), '.config', 'shutong', 'probe_snapshot'),
     output: '',
+    examKeyword: '',
     maxExams: 2,
     waitSeconds: 180,
     probeBrowseSeconds: 20,
+    fetchCardImages: false,
     headless: false,
   }
   for (let i = 0; i < argv.length; i += 1) {
@@ -48,8 +52,11 @@ function parseArgs(argv) {
     } else if (key === '--probe-dir' && val) {
       args.probeDir = val
       i += 1
-    } else if (key === '--output' && val) {
+    } else if ((key === '--output' || key === '--out') && val) {
       args.output = val
+      i += 1
+    } else if (key === '--exam-keyword' && val !== undefined) {
+      args.examKeyword = String(val).trim()
       i += 1
     } else if (key === '--max-exams' && val) {
       const n = Number(val)
@@ -63,8 +70,12 @@ function parseArgs(argv) {
       const n = Number(val)
       args.probeBrowseSeconds = Number.isFinite(n) ? Math.max(0, Math.min(300, Math.floor(n))) : 20
       i += 1
+    } else if (key === '--fetch-card-images') {
+      args.fetchCardImages = true
     } else if (key === '--headless') {
       args.headless = true
+    } else if (key === '--headed') {
+      args.headless = false
     }
   }
   return args
@@ -103,19 +114,18 @@ async function humanClick(locator) {
 }
 
 function sanitizeValue(value, depth = 0) {
-  if (depth > 8) return '[TRUNCATED]'
+  if (depth > 10) return '[TRUNCATED]'
   if (value === null || value === undefined) return value
   if (Array.isArray(value)) {
-    return value.slice(0, 60).map(item => sanitizeValue(item, depth + 1))
+    return value.slice(0, 200).map(item => sanitizeValue(item, depth + 1))
   }
   if (typeof value === 'object') {
     const clean = {}
     for (const [k, v] of Object.entries(value)) {
       if (SENSITIVE_KEY_RE.test(String(k).trim())) {
-        clean[k] = '[REDACTED_PII]'
-      } else {
-        clean[k] = sanitizeValue(v, depth + 1)
+        continue
       }
+      clean[k] = sanitizeValue(v, depth + 1)
     }
     return clean
   }
@@ -144,7 +154,7 @@ function isLoginUrl(url) {
   return String(url || '').includes('#/login')
 }
 
-async function ensureLoggedIn(page, { username, password, waitSeconds, state }) {
+async function ensureLoggedIn(page, { username, password, waitSeconds, headless, state }) {
   await page.goto(TARGET_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await humanPause(1800, 3200)
 
@@ -160,6 +170,10 @@ async function ensureLoggedIn(page, { username, password, waitSeconds, state }) 
 
   // 若配置了学生账号密码且无验证码遮挡，则执行拟人化慢速输入并轻点登录
   const challengeBeforeLogin = await detectPageChallenge(page)
+  if (headless && challengeBeforeLogin) {
+    state.circuitBreaker = challengeBeforeLogin
+    return { loggedIn: false, reason: challengeBeforeLogin }
+  }
   if (!challengeBeforeLogin && username && password && (await accountInput.count()) > 0) {
     const studentTab = page.getByText('学生', { exact: true }).first()
     if ((await studentTab.count()) > 0) {
@@ -186,11 +200,18 @@ async function ensureLoggedIn(page, { username, password, waitSeconds, state }) 
     console.error('[书童同步] 请在可见浏览器窗口中确认并完成登录。')
   }
 
-  // 等待用户完成可能的手动验证/登录跳转，绝不并发刷接口或强行重试
+  // 等待用户完成可能的手动验证/登录跳转，绝不并发刷接口或强行重试；无头模式下遇到验证立即熔断
   const deadline = Date.now() + waitSeconds * 1000
   while (Date.now() < deadline) {
     if (state.circuitBreaker) {
       return { loggedIn: false, reason: state.circuitBreaker }
+    }
+    if (headless) {
+      const midChallenge = await detectPageChallenge(page)
+      if (midChallenge) {
+        state.circuitBreaker = `${midChallenge}（无头模式不支持交互，请勾选显示可见窗口）`
+        return { loggedIn: false, reason: state.circuitBreaker }
+      }
     }
     if (!isLoginUrl(page.url())) {
       const checkInput = await accountInput.count()
@@ -262,6 +283,192 @@ function normalizeScrapedExams(xhrPayloads, domSnapshot, maxExams) {
   return exams.slice(0, maxExams)
 }
 
+function isAllowedCardUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl || '').trim())
+    if (parsed.protocol !== 'https:') return false
+    const host = parsed.hostname.toLowerCase()
+    return host === 'k12100.com' || host.endsWith('.k12100.com') || host.endsWith('.aliyuncs.com')
+  } catch {
+    return false
+  }
+}
+
+async function fetchValidatedCardImages(imgUrlList, subjectName) {
+  const images = []
+  const urls = Array.isArray(imgUrlList) ? imgUrlList.slice(0, 12) : []
+  for (let i = 0; i < urls.length; i += 1) {
+    const url = urls[i]
+    if (!isAllowedCardUrl(url)) continue
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(15000) })
+      if (!resp.ok) continue
+      const arrBuf = await resp.arrayBuffer()
+      if (arrBuf.byteLength > MAX_CARD_IMAGE_BYTES || arrBuf.byteLength < 3) continue
+      const bytes = Buffer.from(arrBuf)
+      if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) continue
+      images.push({
+        filename: `${subjectName || '校考'}答_第${i + 1}页.jpg`,
+        media_type: 'image/jpeg',
+        data_base64: bytes.toString('base64'),
+      })
+    } catch {
+      // 单页下载超时时保留 URL 元数据供后端安全回退，不中断其余学科采集
+    }
+  }
+  return images
+}
+
+async function collectExamPackets(page, state, args) {
+  state.collectBucket = []
+  await page.goto(TARGET_REPORT_LIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.locator('.list_item').first().waitFor({ state: 'visible', timeout: 25000 })
+  await humanPause(1600, 2600)
+
+  if (isLoginUrl(page.url())) {
+    return { status: 'login_required', reason: '跳转报告列表后会话失效，需重新登录', exams: [] }
+  }
+  const ch0 = await detectPageChallenge(page)
+  if (ch0 || state.circuitBreaker) {
+    return { status: 'circuit_breaker', reason: state.circuitBreaker || ch0, exams: [] }
+  }
+
+  const examListEntry = [...state.collectBucket].reverse().find(b => b.endpoint === 'queryStudentExamDataList')
+  const examDataList = examListEntry?.data?.data?.examData || []
+
+  let targetLocator = page.locator('.list_item')
+  if (args.examKeyword) {
+    targetLocator = targetLocator.filter({ hasText: args.examKeyword })
+  }
+  const matchedCardsCount = await targetLocator.count()
+  const processLimit = Math.min(matchedCardsCount, clampMaxExams(args.maxExams))
+  if (processLimit === 0) {
+    return {
+      status: 'collected',
+      reason: args.examKeyword
+        ? `成绩列表未找到包含关键词「${args.examKeyword}」的考试记录`
+        : '成绩列表中暂无可采集的考试记录',
+      exams: [],
+    }
+  }
+
+  const collectedExams = []
+  for (let cardIdx = 0; cardIdx < processLimit; cardIdx += 1) {
+    if (state.circuitBreaker) break
+    if (cardIdx > 0) {
+      state.collectBucket = []
+      await page.goto(TARGET_REPORT_LIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await page.locator('.list_item').first().waitFor({ state: 'visible', timeout: 25000 })
+      await humanPause(1800, 3000)
+    }
+
+    const card = targetLocator.nth(cardIdx)
+    await card.scrollIntoViewIfNeeded()
+    const cardText = await card.innerText().catch(() => '')
+    const lines = cardText
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+    const fallbackTitle = lines[0] || `k12100 校考 #${cardIdx + 1}`
+    const matchedMeta =
+      examDataList.find(item => {
+        const name = String(item?.examName || '').trim()
+        return name && (cardText.includes(name) || (!args.examKeyword && cardIdx === 0))
+      }) || {}
+
+    const examName = String(matchedMeta.examName || fallbackTitle).trim()
+    const dateMatch = cardText.match(/\b(20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})\b/)
+    const examDateRaw = String(matchedMeta.examDate || matchedMeta.examTime || (dateMatch ? dateMatch[1] : '')).slice(0, 10)
+    const examDate = examDateRaw.replace(/[/.]/g, '-') || new Date().toISOString().slice(0, 10)
+
+    const totalCourses = await card.locator('.course_img').count()
+    const subjectsCollected = []
+    for (let idx = 0; idx < totalCourses; idx += 1) {
+      if (state.circuitBreaker) break
+      if (idx > 0) {
+        await page.goto(TARGET_REPORT_LIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+        await page.locator('.list_item').first().waitFor({ state: 'visible', timeout: 20000 })
+        await humanPause(1800, 3000)
+      }
+      state.collectBucket = []
+      const cover = card.locator('.course_img').nth(idx)
+      await cover.scrollIntoViewIfNeeded()
+      await sleep(randInt(280, 620))
+      await cover.hover()
+      await sleep(randInt(280, 560))
+      await cover.click({ delay: randInt(50, 110) })
+
+      const deadline = Date.now() + 14000
+      while (Date.now() < deadline && !state.circuitBreaker) {
+        const hasMain = state.collectBucket.some(b => b.endpoint === 'queryOneSubjectData')
+        const hasSmall = state.collectBucket.some(b => b.endpoint === 'queryOneSubjectSmallQuestionData')
+        const hasCard = state.collectBucket.some(b => b.endpoint === 'findStudentCard')
+        if (hasMain && hasSmall && hasCard) break
+        await sleep(350)
+      }
+      await humanPause(1400, 2400)
+
+      const ch = await detectPageChallenge(page)
+      if (ch || state.circuitBreaker) {
+        return {
+          status: 'circuit_breaker',
+          reason: state.circuitBreaker || ch,
+          exams: collectedExams,
+        }
+      }
+
+      const byName = {}
+      for (const rec of state.collectBucket) {
+        byName[rec.endpoint] = rec.data?.data ?? rec.data
+      }
+      const subjInfo = byName.queryOneSubjectData || {}
+      const smallInfo = byName.queryOneSubjectSmallQuestionData || {}
+      const cardInfo = byName.findStudentCard || {}
+      const smallQuestions = Array.isArray(smallInfo.tableData) ? smallInfo.tableData : []
+      if (!subjInfo.subjectName || smallQuestions.length === 0) {
+        // 跳过全科总报告等非单科细目入口
+        continue
+      }
+
+      const imgUrlList = Array.isArray(subjInfo.imgUrlList) ? subjInfo.imgUrlList : []
+      const cardImages = args.fetchCardImages
+        ? await fetchValidatedCardImages(imgUrlList, subjInfo.subjectName)
+        : []
+
+      subjectsCollected.push({
+        course_index: idx,
+        subjectName: subjInfo.subjectName,
+        subjectCode: subjInfo.subjectCode ?? null,
+        score: subjInfo.score ?? null,
+        fullScore: subjInfo.fullScore ?? null,
+        scoreRate: subjInfo.scoreRate ?? null,
+        imgUrlList,
+        card_images: cardImages,
+        smallQuestions,
+        cardPages: cardInfo.pageVOS || [],
+      })
+    }
+
+    collectedExams.push({
+      examName,
+      examDate,
+      totalCourses,
+      subjects: subjectsCollected,
+    })
+  }
+
+  return {
+    status: state.circuitBreaker ? 'circuit_breaker' : 'collected',
+    captured_at: new Date().toISOString(),
+    reason: state.circuitBreaker || `已温和采集 ${collectedExams.length} 场校考全科脱敏快照`,
+    exams: collectedExams,
+  }
+}
+
+function clampMaxExams(val) {
+  return Math.max(1, Math.min(3, Math.floor(Number(val) || 1)))
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const { chromium } = await import(pathToFileURL(PLAYWRIGHT_CORE).href)
@@ -276,6 +483,7 @@ async function main() {
   const state = {
     circuitBreaker: '',
     xhrRecords: [],
+    collectBucket: [],
   }
 
   const context = await chromium.launchPersistentContext(args.profileDir, {
@@ -299,12 +507,21 @@ async function main() {
       if (!ctype.includes('json')) return
       try {
         const json = await resp.json()
+        const cleanJson = sanitizeValue(json)
+        const baseUrl = url.split('?')[0]
         state.xhrRecords.push({
-          url: url.split('?')[0],
+          url: baseUrl,
           status,
           captured_at: new Date().toISOString(),
-          data: sanitizeValue(json),
+          data: cleanJson,
         })
+        if (Array.isArray(state.collectBucket)) {
+          state.collectBucket.push({
+            endpoint: baseUrl.split('/').pop(),
+            url: baseUrl,
+            data: cleanJson,
+          })
+        }
       } catch {
         // 非法或空响应体静默忽略
       }
@@ -314,6 +531,7 @@ async function main() {
       username: process.env.K12100_USERNAME || '',
       password: process.env.K12100_PASSWORD || '',
       waitSeconds: args.waitSeconds,
+      headless: args.headless,
       state,
     })
 
@@ -326,7 +544,16 @@ async function main() {
       }
       if (args.output) fs.writeFileSync(args.output, JSON.stringify(result, null, 2), { mode: 0o600 })
       else process.stdout.write(JSON.stringify(result, null, 2) + '\n')
-      process.exitCode = 2
+      process.exitCode = state.circuitBreaker ? 3 : 2
+      return
+    }
+
+    if (args.mode === 'collect') {
+      const result = await collectExamPackets(page, state, args)
+      if (args.output) fs.writeFileSync(args.output, JSON.stringify(result, null, 2), { mode: 0o600 })
+      else process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+      if (result.status === 'login_required') process.exitCode = 2
+      else if (result.status === 'circuit_breaker') process.exitCode = 3
       return
     }
 

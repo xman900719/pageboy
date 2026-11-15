@@ -25,6 +25,8 @@ const token = ref('')
 const subject = ref<Subject>('math')
 // 学校考试支持额外的「道法（ethics）」科目，与核心四科隔离管理
 const examSubject = ref<SchoolSubject>('math')
+const pendingExamId = ref<string | undefined>(undefined)
+const pendingExamTab = ref<'scores' | 'items'>('scores')
 const view = ref<AdminViewId>('ledger')
 const notice = ref<NoticeData | null>(null)
 const poolHealth = ref<PoolHealth | null>(null)
@@ -154,6 +156,8 @@ function signOut() {
             :class="examSubject === id ? 'subject-chip selected' : 'subject-chip'"
             @click="
               examSubject = id;
+              pendingExamId = undefined;
+              pendingExamTab = 'scores';
               if (id !== 'ethics') subject = id;
               notify(`已切换到${SCHOOL_SUBJECT_LABELS[id]}。`)
             "
@@ -206,6 +210,16 @@ function signOut() {
           :client="client"
           :subject="examSubject"
           :notify="notify"
+          :initial-exam-id="pendingExamId"
+          :initial-tab="pendingExamTab"
+          @select-subject="
+            (nextSubj, targetExamId, targetTab = 'items') => {
+              pendingExamId = targetExamId
+              pendingExamTab = targetTab
+              examSubject = nextSubj
+              if (nextSubj !== 'ethics') subject = nextSubj
+            }
+          "
         />
       </div>
 

@@ -1071,8 +1071,72 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 .attempt-trace { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px }
 .attempt-trace li { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line-soft); font-size: 0.84rem }
 
+/* k12100.com 全科手动补全抽屉样式（适配桌面与 iPad 竖横屏） */
+button.k12-drawer-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--primary); background: var(--primary-soft); color: var(--primary-strong);
+  border-radius: 999px; padding: 6px 13px; font-size: 0.82rem; font-weight: 700;
+}
+button.k12-drawer-trigger:hover:not(:disabled),
+button.k12-drawer-trigger.active {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+}
+.sync-pulse-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--amber);
+  display: inline-block; flex: none;
+}
+.k12-backfill-drawer { border-color: var(--primary-line); background: #fff }
+.k12-head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.k12-isolation-note { display: block; margin-top: 6px; color: var(--ink-2) }
+.k12-options-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; margin-bottom: 12px;
+}
+.k12-checks-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px;
+  margin-bottom: 14px; padding: 10px 12px; border-radius: var(--radius-s);
+  background: var(--card-warm); border: 1px solid var(--line-soft);
+}
+.k12-check-item {
+  display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 0.83rem; color: var(--ink); font-weight: 500;
+}
+.k12-check-item input { width: auto; margin-top: 3px; flex: none }
+.k12-action-split {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; align-items: stretch;
+}
+.k12-mode-box {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--radius-s);
+  border: 1px solid var(--line); background: var(--card-warm); min-width: 0;
+}
+.k12-mode-box.host-ready { border-color: var(--primary-line); background: #f8fcf9 }
+.k12-mode-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem }
+.k12-bundle-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.sr-only-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none }
+.k12-cli-box {
+  margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.k12-cli-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.k12-cli-row code {
+  flex: 1 1 200px; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: #fff;
+  font-size: 0.76rem; color: var(--ink);
+}
+.k12-job-status {
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-s);
+  border: 1px solid var(--teal-line); background: var(--teal-soft);
+}
+.k12-job-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.86rem }
+.k12-error-banner {
+  margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-s);
+  border: 1px solid var(--red-line); background: var(--red-soft); color: var(--red); font-size: 0.84rem;
+}
+.k12-result-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line) }
+.k12-result-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px }
+.k12-result-kpis { display: flex; gap: 6px; flex-wrap: wrap }
+.k12-row-warn { margin-top: 4px; color: var(--red); font-size: 0.76rem }
+
 @media (max-width: 900px) {
-  .lobby-controls, .wrong-review-layout, .domain-visual-grid, .strength-weak-grid, .graph-workspace, .legend-grid, .pool-kpi-grid, .tab-card-grid-2 {
+  .lobby-controls, .wrong-review-layout, .domain-visual-grid, .strength-weak-grid, .graph-workspace, .legend-grid, .pool-kpi-grid, .tab-card-grid-2, .k12-options-grid, .k12-checks-grid {
     grid-template-columns: 1fr;
   }
   .lobby-metrics, .growth-kpis, .exam-analysis-kpis, .draft-edit-grid {
@@ -1081,7 +1145,7 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 }
 
 @media (max-width: 640px) {
-  .exam-kpi-row, .exam-create-grid, .exam-analysis-kpis, .draft-edit-grid {
+  .exam-kpi-row, .exam-create-grid, .exam-analysis-kpis, .draft-edit-grid, .k12-action-split {
     grid-template-columns: 1fr;
   }
   .draft-edit-grid .wide-note {

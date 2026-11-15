@@ -342,3 +342,189 @@ def test_run_dev_env_and_manual_env_ai_cli_helpers(tmp_path, monkeypatch, capsys
     assert "--no-ai-key" in disabled_label
     assert "DEEPSEEK_API_KEY" not in env_disabled
     assert "SHUTONG_AI_API_KEY" not in env_disabled
+
+
+def test_cli_collect_writes_0600_sanitized_bundle_and_zero_pii(tmp_path, monkeypatch, capsys):
+    """collect 子命令应写出 0600 脱敏采集包 JSON，且磁盘与 stdout 均不得出现凭据或 PII。"""
+    import json
+    import stat
+
+    cfg_dir = tmp_path / "cfg"
+    assert (
+        ks.main(
+            [
+                "init-credentials",
+                "--config-dir",
+                str(cfg_dir),
+                "--username",
+                "13900001111",
+                "--password",
+                "Secret-K12-Pwd",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    seen: dict[str, object] = {}
+
+    def _fake_browser(mode, paths, creds, args):
+        seen["mode"] = mode
+        seen["exam_keyword"] = getattr(args, "exam_keyword", "")
+        return {
+            "status": "collected",
+            "studName": "李四",
+            "studentId": "S-PII-001",
+            "exams": [
+                {
+                    "examName": "虚构测试数据 · 期中测试",
+                    "examDate": "2026-10-18",
+                    "schoolRank": 3,
+                    "subjects": [
+                        {
+                            "subjectName": "数学",
+                            "score": 95,
+                            "fullScore": 100,
+                            "smallQuestions": [{"questionName": "1", "score": 2, "fullScore": 2}],
+                            "card_images": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(ks, "_run_browser_node", _fake_browser)
+    out_file = tmp_path / "collected_bundle.json"
+    rc = ks.main(
+        [
+            "collect",
+            "--config-dir",
+            str(cfg_dir),
+            "--exam-keyword",
+            "虚构测试数据",
+            "--output",
+            str(out_file),
+            "--headless",
+        ]
+    )
+    assert rc == 0
+    assert seen == {"mode": "collect", "exam_keyword": "虚构测试数据"}
+    assert out_file.exists()
+    assert stat.S_IMODE(out_file.stat().st_mode) == 0o600
+
+    disk_text = out_file.read_text(encoding="utf-8")
+    for forbidden in ("李四", "S-PII-001", "schoolRank", "studName", "13900001111", "Secret-K12-Pwd"):
+        assert forbidden not in disk_text
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    for forbidden in ("李四", "S-PII-001", "13900001111", "Secret-K12-Pwd"):
+        assert forbidden not in combined
+    summary = json.loads(captured.out)
+    assert summary["status"] == "collected"
+    assert summary["output_file"] == str(out_file.resolve())
+
+
+def test_backfill_cli_dry_run_and_real_import_bundle_creates_0600_ledger(tmp_path, client, capsys, monkeypatch):
+    """backfill 编排器与 CLI 子命令应支持 dry-run 预演，且真实导入后写入 0600 去重台账。"""
+    import base64
+    from io import BytesIO
+    import json
+    import stat
+    from PIL import Image
+
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    buf = BytesIO()
+    Image.new("RGB", (48, 48), color=(240, 245, 250)).save(buf, format="JPEG")
+    card_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    bundle = {
+        "examName": "虚构测试数据 · 离线采集包测试",
+        "examDate": "2026-10-16",
+        "exams": [
+            {
+                "examName": "虚构测试数据 · 离线采集包测试",
+                "examDate": "2026-10-16",
+                "subjects": [
+                    {
+                        "subjectName": "数学",
+                        "score": 92,
+                        "fullScore": 100,
+                        "smallQuestions": [
+                            {"questionName": "1", "score": 2, "fullScore": 2},
+                            {"questionName": "2", "score": 0, "fullScore": 2},
+                        ],
+                        "card_images": [{"filename": "math_card_1.jpg", "data_base64": card_b64}],
+                    }
+                ],
+            }
+        ],
+    }
+
+    ledger_path = tmp_path / "cfg" / "synced_exams.json"
+
+    def _forbid_request(*args, **kwargs):
+        raise AssertionError("dry_run 不应发起 HTTP 请求")
+
+    dry_res = ks.backfill_sanitized_bundle_to_pageboy(
+        bundle,
+        api_url="http://127.0.0.1:8000",
+        admin_token="test-admin-secret",
+        ledger_path=ledger_path,
+        dry_run=True,
+        request_fn=_forbid_request,
+    )
+    assert dry_res["dry_run"] is True
+    assert dry_res["subjects"][0]["smallQuestionsCount"] == 2
+    assert not ledger_path.exists()
+
+    def _client_request(api_url, path, token, *, method="GET", body=None, timeout=240):
+        resp = client.request(
+            method,
+            path,
+            json=body,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    real_res = ks.backfill_sanitized_bundle_to_pageboy(
+        bundle,
+        api_url="http://127.0.0.1:8000",
+        admin_token="test-admin-secret",
+        ledger_path=ledger_path,
+        use_ai=False,
+        request_fn=_client_request,
+    )
+    assert len(real_res["subjects"]) == 1
+    subj = real_res["subjects"][0]
+    assert subj["subject"] == "math"
+    assert subj["drafts_created"] == 2
+    assert subj["attachments_uploaded"] == 1
+    assert real_res["knowledge_evidence_created"] == 0
+    assert ledger_path.exists()
+    assert stat.S_IMODE(ledger_path.stat().st_mode) == 0o600
+
+    # 再验证 CLI backfill --input-json --dry-run 端到端参数解析
+    cfg_dir = tmp_path / "cli_cfg"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    bundle_file = tmp_path / "offline_bundle.json"
+    bundle_file.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+    rc = ks.main(
+        [
+            "backfill",
+            "--config-dir",
+            str(cfg_dir),
+            "--input-json",
+            str(bundle_file),
+            "--dry-run",
+        ]
+    )
+    assert rc == 0
+    cli_out = json.loads(capsys.readouterr().out)
+    assert cli_out["dry_run"] is True
+    assert cli_out["exam_count"] == 1

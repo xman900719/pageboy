@@ -4,6 +4,10 @@ import {
   describeError,
   SCHOOL_SUBJECT_LABELS,
   type ApiClient,
+  type K12100BackfillResult,
+  type K12100RuntimeStatus,
+  type K12100SubjectResult,
+  type K12100SyncJob,
   type SchoolErrorCategory,
   type SchoolExam,
   type SchoolExamDetail,
@@ -69,10 +73,36 @@ function pickPaperMime(file: File): string | null {
   return EXT_TYPES[ext] ?? null
 }
 
+const K12_MAX_BUNDLE_BYTES = 15 * 1024 * 1024
+
+const SCORE_STATUS_LABEL: Record<string, { text: string; tone: string }> = {
+  created_confirmed: { text: '已补建并锁定总分', tone: 'good' },
+  created_unconfirmed: { text: '已补建（总分待手锁）', tone: 'wait' },
+  confirmed_now: { text: '已核对锁定总分', tone: 'good' },
+  updated_unconfirmed: { text: '已更新暂存总分', tone: 'wait' },
+  already_confirmed_match: { text: '总分已锁且一致', tone: 'good' },
+  locked_conflict: { text: '保留原锁分（分值不同）', tone: 'bad' },
+}
+
+const STEM_MODE_LABEL: Record<string, string> = {
+  pdf_deepseek: '原卷 PDF + DeepSeek 提干',
+  pdf_local_regex: '原卷 PDF 本地切分',
+  no_pdf: '无原卷（按大题客观结构）',
+  empty_pdf: '原卷 PDF 无文字层',
+  pdf_parse_failed: '原卷提取异常（已跳过）',
+  disabled: '未启用 PDF 提干',
+}
+
 const props = defineProps<{
   client: ApiClient
   subject: SchoolSubject
   notify: Notify
+  initialExamId?: string
+  initialTab?: ExamTabId
+}>()
+
+const emit = defineEmits<{
+  (e: 'select-subject', subject: SchoolSubject, examId?: string, tab?: 'scores' | 'items'): void
 }>()
 
 const exams = ref<SchoolExam[] | null>(null)
@@ -80,7 +110,46 @@ const selectedExamId = ref<string | null>(null)
 const selectedDetail = ref<SchoolExamDetail | null>(null)
 const errorAnalysis = ref<SchoolExamErrorAnalysis | null>(null)
 const loadingDetail = ref(false)
-const activeTab = ref<ExamTabId>('scores')
+const activeTab = ref<ExamTabId>(props.initialTab ?? 'scores')
+
+// k12100.com 全科补全抽屉状态与轮询管理
+const showK12100Panel = ref(false)
+const loadingK12Status = ref(false)
+const runtimeStatus = ref<K12100RuntimeStatus | null>(null)
+const k12ExamKeyword = ref('')
+const k12TargetDate = ref('')
+const k12SeriesPrefix = ref('')
+const k12ConfirmTotalScores = ref(true)
+const k12ExtractExistingPdfs = ref(true)
+const k12UploadMissingCards = ref(true)
+const k12ReplaceUnconfirmedDrafts = ref(true)
+const k12UseAi = ref(true)
+const k12ShowBrowserWindow = ref(false)
+const startingK12Job = ref(false)
+const importingK12Bundle = ref(false)
+const activeK12Job = ref<K12100SyncJob | null>(null)
+const lastK12Result = ref<K12100BackfillResult | null>(null)
+const k12ErrorText = ref('')
+const k12BundleInputRef = ref<HTMLInputElement | null>(null)
+let k12PollTimer: ReturnType<typeof setInterval> | null = null
+
+const isK12JobActive = computed(() => {
+  const st = activeK12Job.value?.state
+  return st === 'queued' || st === 'collecting' || st === 'backfilling'
+})
+
+const computedCliCommand = computed(() => {
+  const base = runtimeStatus.value?.recommended_cli_command || 'uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong'
+  const parts = [base]
+  const kw = k12ExamKeyword.value.trim()
+  if (kw && !base.includes('--exam-keyword')) {
+    parts.push(`--exam-keyword "${kw.replace(/"/g, '')}"`)
+  }
+  if (!k12ConfirmTotalScores.value && base.includes('backfill')) {
+    parts.push('--no-confirm-total-scores')
+  }
+  return parts.join(' ')
+})
 
 // B1「? 校考录入说明」锚点浮层气泡状态
 const showHelp = ref(false)
@@ -262,6 +331,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   document.removeEventListener('keydown', onDocumentKeydown)
+  stopK12Polling()
 })
 
 async function loadDetail(examId: string) {
@@ -341,6 +411,7 @@ async function refreshExams(preferId?: string) {
 watch(
   [() => props.client, () => props.subject],
   () => {
+    stopK12Polling()
     paperFile.value = null
     uploadError.value = ''
     showHelp.value = false
@@ -350,7 +421,7 @@ watch(
     parseDraftError.value = ''
     lastParseSummary.value = ''
     draftEdits.value = {}
-    void refreshExams()
+    void refreshExams(props.initialExamId)
   },
   { immediate: true }
 )
@@ -705,6 +776,175 @@ function jumpToEditItem(itemId: string) {
     startEditAnalysis(target)
   }
 }
+
+function stopK12Polling() {
+  if (k12PollTimer !== null) {
+    clearInterval(k12PollTimer)
+    k12PollTimer = null
+  }
+}
+
+function buildK12BackfillOptions(includeHeadless = false) {
+  return {
+    ...(k12ExamKeyword.value.trim() ? { examKeyword: k12ExamKeyword.value.trim() } : {}),
+    ...(k12TargetDate.value.trim() ? { targetExamDate: k12TargetDate.value.trim() } : {}),
+    ...(k12SeriesPrefix.value.trim() ? { seriesTitlePrefix: k12SeriesPrefix.value.trim() } : {}),
+    maxExams: 1,
+    confirmTotalScores: k12ConfirmTotalScores.value,
+    extractExistingPdfs: k12ExtractExistingPdfs.value,
+    uploadMissingCards: k12UploadMissingCards.value,
+    replaceUnconfirmedDrafts: k12ReplaceUnconfirmedDrafts.value,
+    useAi: k12UseAi.value,
+    ...(includeHeadless ? { headless: !k12ShowBrowserWindow.value } : {}),
+  }
+}
+
+function startK12Polling(jobId: string) {
+  stopK12Polling()
+  const pollOnce = async () => {
+    try {
+      const job = await props.client.k12100SyncJob(jobId)
+      activeK12Job.value = job
+      if (job.state === 'completed') {
+        stopK12Polling()
+        lastK12Result.value = job.result
+        k12ErrorText.value = ''
+        await refreshExams()
+        const totals = job.result?.totals
+        props.notify(
+          totals
+            ? `k12100 全科补全完成：处理 ${totals.subjects_processed} 科，生成 ${totals.drafts_created} 道待校对草稿。`
+            : 'k12100 全科补全完成。',
+          'success'
+        )
+      } else if (job.state === 'failed') {
+        stopK12Polling()
+        k12ErrorText.value = job.error_message || job.stage_message || '同步任务失败。'
+        props.notify(k12ErrorText.value, 'error')
+      }
+    } catch (e) {
+      stopK12Polling()
+      k12ErrorText.value = describeError(e)
+      props.notify(k12ErrorText.value, 'error')
+    }
+  }
+  k12PollTimer = setInterval(() => {
+    void pollOnce()
+  }, 1500)
+}
+
+async function loadK12100Status() {
+  loadingK12Status.value = true
+  try {
+    const status = await props.client.k12100SyncStatus()
+    runtimeStatus.value = status
+    if (status.latest_job) {
+      activeK12Job.value = status.latest_job
+      if (status.latest_job.result) {
+        lastK12Result.value = status.latest_job.result
+      }
+      if (
+        status.latest_job.state === 'queued' ||
+        status.latest_job.state === 'collecting' ||
+        status.latest_job.state === 'backfilling'
+      ) {
+        startK12Polling(status.latest_job.job_id)
+      }
+    }
+  } catch (e) {
+    k12ErrorText.value = describeError(e)
+  } finally {
+    loadingK12Status.value = false
+  }
+}
+
+async function toggleK12100Panel() {
+  showK12100Panel.value = !showK12100Panel.value
+  if (showK12100Panel.value) {
+    k12ErrorText.value = ''
+    await loadK12100Status()
+  }
+}
+
+async function runHostK12100Sync() {
+  startingK12Job.value = true
+  k12ErrorText.value = ''
+  try {
+    const job = await props.client.startK12100SyncJob(buildK12BackfillOptions(true))
+    activeK12Job.value = job
+    startK12Polling(job.job_id)
+    props.notify('已发起 k12100 全科补全后台任务，请留意阶段进度…', 'info')
+  } catch (e) {
+    k12ErrorText.value = describeError(e)
+    props.notify(k12ErrorText.value, 'error')
+    await loadK12100Status()
+  } finally {
+    startingK12Job.value = false
+  }
+}
+
+function triggerK12BundlePicker() {
+  k12BundleInputRef.value?.click()
+}
+
+async function handleK12BundleFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > K12_MAX_BUNDLE_BYTES) {
+    k12ErrorText.value = '上传的采集包体积超过 15 MiB 上限，请减少场次或剔除大图后重试。'
+    props.notify(k12ErrorText.value, 'caution')
+    return
+  }
+  k12ErrorText.value = ''
+  importingK12Bundle.value = true
+  try {
+    const parsed = JSON.parse(await file.text()) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('所选 JSON 文件根节点必须是对象格式。')
+    }
+    const res = await props.client.importK12100Bundle(
+      parsed as Record<string, unknown>,
+      buildK12BackfillOptions(false)
+    )
+    lastK12Result.value = res
+    await refreshExams()
+    props.notify(
+      `采集包导入完成：补全 ${res.totals.subjects_processed} 科，新建 ${res.totals.created_exams} 科，生成 ${res.totals.drafts_created} 道待校对草稿。`,
+      'success'
+    )
+  } catch (e) {
+    k12ErrorText.value = e instanceof SyntaxError ? 'JSON 文件格式损坏，无法解析。' : describeError(e)
+    props.notify(k12ErrorText.value, 'error')
+  } finally {
+    importingK12Bundle.value = false
+  }
+}
+
+async function copyCliCommand() {
+  const cmd = computedCliCommand.value
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(cmd)
+      props.notify('已复制宿主机采集命令，请粘贴至本地终端执行。', 'success')
+      return
+    }
+  } catch {
+    // 剪贴板权限受限时降级提示手动复制
+  }
+  props.notify(`请手动复制命令：${cmd}`, 'info')
+}
+
+async function jumpToResultSubject(row: K12100SubjectResult) {
+  if (row.subject === props.subject) {
+    await selectExam(row.exam_id)
+    activeTab.value = 'items'
+    showK12100Panel.value = false
+    return
+  }
+  emit('select-subject', row.subject, row.exam_id, 'items')
+}
 </script>
 
 <template>
@@ -754,11 +994,254 @@ function jumpToEditItem(itemId: string) {
             </ul>
           </div>
         </div>
+        <button
+          type="button"
+          :class="['k12-drawer-trigger', showK12100Panel ? 'active' : '']"
+          :aria-expanded="showK12100Panel"
+          aria-controls="k12100-backfill-drawer"
+          @click="toggleK12100Panel"
+        >
+          <span v-if="isK12JobActive" class="sync-pulse-dot" aria-hidden="true" />
+          从 k12100 补全各科
+        </button>
         <button type="button" class="ghost small" @click="refreshExams()">
           刷新
         </button>
       </div>
     </div>
+
+    <!-- k12100.com 手动全科补全可折叠抽屉（宿主机直跑 + 隔离容器采集包双模闭环） -->
+    <section
+      v-if="showK12100Panel"
+      id="k12100-backfill-drawer"
+      class="card k12-backfill-drawer"
+      aria-label="从 k12100 补全各科校考信息"
+    >
+      <div class="card-head">
+        <div>
+          <h3>从 k12100.com 手动补全各科校考信息</h3>
+          <p class="card-sub">
+            对齐已录入月考系列、自动补建缺失科目与答题卡、抽提已有原卷 PDF 题干并生成待人工校对草稿
+          </p>
+        </div>
+        <div class="k12-head-right">
+          <span v-if="loadingK12Status" class="chip">探测运行态…</span>
+          <span
+            v-else-if="runtimeStatus?.can_run_local"
+            class="chip good"
+          >
+            宿主机直连就绪 · {{ runtimeStatus.credentials.username_masked || '已配置' }}
+          </span>
+          <span v-else class="chip wait">
+            隔离 / 离线导入模式
+          </span>
+          <button type="button" class="ghost small" @click="showK12100Panel = false">
+            收起
+          </button>
+        </div>
+      </div>
+
+      <div class="analysis-callout">
+        <strong>安全与审核口径（INV-04）：</strong>
+        仅在管理员手动触发时执行单次采集/导入（限 1~3 场，遇风控/验证码立即熔断）。所有逐题知识点归属与错因建议
+        <b>强制标记为「OCR / 同步草稿（待核对）」</b>，须经「OCR / 同步草稿校对台」人工确认后才计入能力画像。
+        <span v-if="runtimeStatus && !runtimeStatus.can_run_local && runtimeStatus.unavailable_reason" class="k12-isolation-note">
+          当前环境说明：{{ runtimeStatus.unavailable_reason }}
+        </span>
+      </div>
+
+      <div class="k12-options-grid">
+        <label>
+          考试关键词筛选（可选）
+          <input
+            v-model="k12ExamKeyword"
+            placeholder="如：统一练习一 / 期中考试（留空抓取最新 1 场）"
+          />
+        </label>
+        <label>
+          统一对齐校考日期（可选）
+          <input v-model="k12TargetDate" type="date" />
+        </label>
+        <label>
+          补建缺失科目标题前缀（可选）
+          <input
+            v-model="k12SeriesPrefix"
+            placeholder="留空自动匹配同月/同系列档案前缀"
+          />
+        </label>
+      </div>
+
+      <div class="k12-checks-grid">
+        <label class="k12-check-item">
+          <input v-model="k12ConfirmTotalScores" type="checkbox" />
+          <span>以 k12100 官方总分直接确认锁定各科总分（已手动锁定且分值不同时自动保留原值）</span>
+        </label>
+        <label class="k12-check-item">
+          <input v-model="k12ExtractExistingPdfs" type="checkbox" />
+          <span>从库中已上传原卷 PDF 自动抽提真实题干与设问</span>
+        </label>
+        <label class="k12-check-item">
+          <input v-model="k12UploadMissingCards" type="checkbox" />
+          <span>为尚无附件的科目补传 k12100 答题卡 JPEG</span>
+        </label>
+        <label class="k12-check-item">
+          <input v-model="k12ReplaceUnconfirmedDrafts" type="checkbox" />
+          <span>覆盖同题号尚未人工确认的旧草稿（已确认题目永不改写）</span>
+        </label>
+        <label class="k12-check-item">
+          <input v-model="k12UseAi" type="checkbox" />
+          <span>使用 DeepSeek 自动匹配课标考点与失分错因建议</span>
+        </label>
+        <label v-if="runtimeStatus?.can_run_local" class="k12-check-item">
+          <input v-model="k12ShowBrowserWindow" type="checkbox" />
+          <span>弹出可见 Chromium 窗口（首次登录或遇滑块/图形验证码时勾选）</span>
+        </label>
+      </div>
+
+      <div class="k12-action-split">
+        <div v-if="runtimeStatus?.can_run_local" class="k12-mode-box host-ready">
+          <div class="k12-mode-head">
+            <b>方式 A · 宿主机直接采集并全科补全</b>
+            <span class="chip mid">
+              DeepSeek：{{ runtimeStatus.deepseek_configured ? '已配置' : '未配置（将用本地规则）' }}
+            </span>
+          </div>
+          <p class="muted tiny">
+            复用本机 0700/0600 持久化浏览器会话与账号低频翻看，全程不暴露明文密码与学生姓名。
+          </p>
+          <button
+            type="button"
+            class="primary"
+            :disabled="startingK12Job || isK12JobActive || importingK12Bundle"
+            @click="runHostK12100Sync"
+          >
+            {{ startingK12Job || isK12JobActive ? '正在采集并补全各科…' : '手动启动 k12100 全科补全' }}
+          </button>
+        </div>
+
+        <div class="k12-mode-box">
+          <div class="k12-mode-head">
+            <b>
+              {{ runtimeStatus?.can_run_local ? '方式 B · 导入宿主机脱敏采集包 (.json)' : '上传宿主机导出的脱敏采集包 (.json)' }}
+            </b>
+            <span class="chip">{{ runtimeStatus?.can_run_local ? '通用导入 / 离线重放' : '隔离容器推荐' }}</span>
+          </div>
+          <p class="muted tiny">
+            适用于容器化生产端或已在宿主机预先采集的场景；上传文件体积上限 15 MiB，服务端先清洗 PII 再入库。
+          </p>
+          <div class="k12-bundle-actions">
+            <input
+              ref="k12BundleInputRef"
+              type="file"
+              accept=".json,application/json"
+              class="sr-only-input"
+              aria-label="选择 k12100 脱敏采集包 JSON 文件"
+              @change="handleK12BundleFile"
+            />
+            <button
+              type="button"
+              :class="runtimeStatus?.can_run_local ? 'secondary' : 'primary'"
+              :disabled="importingK12Bundle || isK12JobActive"
+              @click="triggerK12BundlePicker"
+            >
+              {{ importingK12Bundle ? '正在解析与入库…' : '选择脱敏采集包 (.json) 并导入' }}
+            </button>
+          </div>
+          <div class="k12-cli-box">
+            <span class="muted tiny">宿主机导出 / CLI 直连参考命令：</span>
+            <div class="k12-cli-row">
+              <code>{{ computedCliCommand }}</code>
+              <button type="button" class="ghost small" @click="copyCliCommand">
+                复制命令
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="activeK12Job" class="k12-job-status">
+        <div class="k12-job-head">
+          <b>任务进度 · {{ activeK12Job.state }}</b>
+          <span
+            :class="[
+              'chip',
+              activeK12Job.state === 'completed'
+                ? 'good'
+                : activeK12Job.state === 'failed'
+                  ? 'bad'
+                  : 'wait',
+            ]"
+          >
+            {{ activeK12Job.stage_message }}
+          </span>
+        </div>
+      </div>
+
+      <p v-if="k12ErrorText" class="k12-error-banner" role="alert">
+        {{ k12ErrorText }}
+      </p>
+
+      <div v-if="lastK12Result" class="k12-result-block">
+        <div class="k12-result-head">
+          <b>
+            补全结果 · {{ lastK12Result.source_exam_title }}
+            <small v-if="lastK12Result.source_exam_date" class="muted">（源日期 {{ lastK12Result.source_exam_date }}）</small>
+          </b>
+          <div class="k12-result-kpis">
+            <span class="chip good">处理 {{ lastK12Result.totals.subjects_processed }} 科</span>
+            <span class="chip">新建 {{ lastK12Result.totals.created_exams }} 科</span>
+            <span class="chip">补传卡图 {{ lastK12Result.totals.attachments_uploaded }} 张</span>
+            <span class="chip wait">待核对草稿 {{ lastK12Result.totals.drafts_created }} 题</span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="trace">
+            <thead>
+              <tr>
+                <th>科目</th>
+                <th>对齐校考档案</th>
+                <th>总分处理</th>
+                <th>原卷提干与 AI 标注</th>
+                <th>附件</th>
+                <th>生成草稿</th>
+                <th>快捷校对</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in lastK12Result.subjects" :key="row.exam_id">
+                <td><b>{{ row.subject_label }}</b></td>
+                <td class="answer-cell">
+                  <div>{{ row.exam_title }}</div>
+                  <div class="muted tiny">{{ row.exam_date }}</div>
+                  <div v-if="row.warning" class="k12-row-warn">{{ row.warning }}</div>
+                </td>
+                <td>
+                  <div>{{ fmtPoints(row.earned_points) }} / {{ fmtPoints(row.max_points) }}</div>
+                  <span :class="['chip', SCORE_STATUS_LABEL[row.score_status]?.tone || 'mid']">
+                    {{ SCORE_STATUS_LABEL[row.score_status]?.text || row.score_status }}
+                  </span>
+                </td>
+                <td>
+                  <div>{{ STEM_MODE_LABEL[row.stem_mode] || row.stem_mode }}</div>
+                  <div class="muted tiny">{{ row.parser_mode_used }}</div>
+                </td>
+                <td>{{ row.attachments_uploaded > 0 ? `+${row.attachments_uploaded} 张` : '保持已有' }}</td>
+                <td><b>{{ row.drafts_created }}</b> 题</td>
+                <td>
+                  <button
+                    type="button"
+                    class="ghost small"
+                    @click="jumpToResultSubject(row)"
+                  >
+                    去校对草稿
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <!-- 同类内容卡片分类 Tab 导航 -->
     <div class="category-tabs" role="tablist" aria-label="校考同类内容分类">

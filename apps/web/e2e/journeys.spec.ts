@@ -12,6 +12,7 @@
  * - J9 练习会话刷新续答（重载恢复同一未完成会话与题干，交卷后无残留）
  */
 import { test, expect, type Locator, type Page } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 
 const ADMIN_TOKEN = 'test-admin-secret'
 const STUDENT_TOKEN = 'test-student-secret'
@@ -772,4 +773,194 @@ test('J9 会话续答：未完成练习刷新后自动恢复同一会话与题�
   await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
 
   await expectHonestLanguage(page)
+})
+
+test('J10 k12100 手动全科补全：脱敏采集包导入、跨科草稿跳转校对与宿主后台任务轮询', async ({ page }) => {
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', msg => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', err => pageErrors.push(String(err)))
+
+  await enterAdminSpace(page)
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
+  await expect(page.getByRole('region', { name: '学校考试总分' })).toBeVisible()
+
+  // 展开手动补全抽屉：应加载运行态、展示复制命令参考并通过 WCAG AA 无障碍抽检
+  await page.getByRole('button', { name: '从 k12100 补全各科' }).click()
+  const drawer = page.getByRole('region', { name: '从 k12100 补全各科校考信息' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer).toContainText('k12100_sync.py collect')
+  // 等 .card 入场渐入动画完成后再测量静态 WCAG 对比度
+  await page.evaluate(() => Promise.allSettled(Array.from(document.getAnimations()).map(a => a.finished)))
+  const axeDrawer = await new AxeBuilder({ page })
+    .include('#k12100-backfill-drawer')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(axeDrawer.violations.filter(v => v.impact === 'critical' || v.impact === 'serious')).toEqual([])
+
+  // 真实全栈端到端：上传含 2 科（数学 + 英语含真实合法 JPEG 答题卡与 PII 诱饵字段）的脱敏采集包 JSON
+  const tinyJpegBase64 =
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3SiiirIP/2Q=='
+  const bundlePayload = {
+    examName: '虚构测试数据 · 全科自动补全',
+    examDate: '2026-10-18',
+    studName: '王五',
+    schoolRank: 1,
+    exams: [
+      {
+        examName: '虚构测试数据 · 全科自动补全',
+        examDate: '2026-10-18',
+        studName: '王五',
+        subjects: [
+          {
+            subjectName: '数学',
+            score: 91,
+            fullScore: 100,
+            smallQuestions: [
+              { questionName: '1', score: 2, fullScore: 2 },
+              { questionName: '2', score: 0, fullScore: 2 },
+            ],
+            card_images: [],
+          },
+          {
+            subjectName: '英语',
+            score: 88,
+            fullScore: 100,
+            smallQuestions: [
+              { questionName: '1', score: 2, fullScore: 2 },
+              { questionName: '21', score: 1, fullScore: 2 },
+            ],
+            card_images: [{ filename: 'english_card_1.jpg', data_base64: tinyJpegBase64 }],
+          },
+        ],
+      },
+    ],
+  }
+  await drawer.locator('input[type="file"]').setInputFiles({
+    name: 'mock_k12100_bundle.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(bundlePayload), 'utf-8'),
+  })
+
+  await expect(drawer).toContainText('补全结果 · 虚构测试数据 · 全科自动补全')
+  await expect(drawer).toContainText('处理 2 科')
+  await expect(drawer).toContainText('补传卡图 1 张')
+  await expect(drawer).toContainText('待核对草稿 4 题')
+  await expect(drawer).toContainText('数学')
+  await expect(drawer).toContainText('英语')
+  await expect(drawer).not.toContainText('王五')
+
+  // 点击英语行的「去校对草稿」→ 自动切换管理端当前科目为英语并定位到 Tab 3 草稿校对台
+  const englishRow = drawer.locator('tbody tr', { hasText: '英语' })
+  await englishRow.getByRole('button', { name: '去校对草稿' }).click()
+
+  const draftBench = page.getByRole('region', { name: '草稿校对台' })
+  await expect(draftBench).toBeVisible()
+  await expect(draftBench).toContainText('待核对 2 题')
+  await expect(draftBench).toContainText('未确认 · 不进画像')
+  await expect(page.getByRole('group', { name: '科目' }).getByRole('button', { name: '英语' })).toHaveClass(
+    /\bselected\b/,
+  )
+
+  // 验证宿主机直连模式（Mock /status + /jobs + /jobs/:id）启动与进度轮询完成态
+  await page.route('**/api/school-exams/k12100-sync/status', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        can_run_local: true,
+        is_isolated_runtime: false,
+        unavailable_reason: null,
+        credentials: { env_exists: true, env_mode_ok: true, username_masked: '139****1111', configured: true },
+        deepseek_configured: true,
+        has_browser_state: true,
+        recommended_cli_command: 'uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong',
+        latest_job: null,
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/jobs', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          job_id: 'job-e2e-mock-1',
+          state: 'queued',
+          stage: 'queued',
+          stage_message: '任务已入队，准备启动宿主机安全同步。',
+          created_at: '2026-11-15T00:00:00Z',
+          updated_at: '2026-11-15T00:00:00Z',
+          error_code: null,
+          error_message: null,
+          result: null,
+        }),
+      })
+      return
+    }
+    await route.continue()
+  })
+  await page.route('**/api/school-exams/k12100-sync/jobs/job-e2e-mock-1', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        job_id: 'job-e2e-mock-1',
+        state: 'completed',
+        stage: 'completed',
+        stage_message: '已完成全科采集与入库。',
+        created_at: '2026-11-15T00:00:00Z',
+        updated_at: '2026-11-15T00:00:02Z',
+        error_code: null,
+        error_message: null,
+        result: {
+          source_exam_title: '虚构测试数据 · 宿主机异步采集',
+          source_exam_date: '2026-10-19',
+          subjects: [
+            {
+              subject: 'physics',
+              subject_label: '物理',
+              exam_id: 'exam-e2e-phy-1',
+              exam_title: '虚构测试数据 · 物理',
+              exam_date: '2026-10-19',
+              earned_points: 65,
+              max_points: 70,
+              confirmed_by_user: true,
+              score_status: 'created_and_confirmed',
+              stem_mode: 'pdf_local_regex',
+              parser_mode_used: 'external_local_rules',
+              attachments_uploaded: 1,
+              drafts_created: 3,
+              skipped_labels: [],
+              warning: null,
+            },
+          ],
+          totals: {
+            subjects_processed: 1,
+            created_exams: 1,
+            confirmed_now: 1,
+            locked_conflicts: 0,
+            attachments_uploaded: 1,
+            drafts_created: 3,
+          },
+          knowledge_evidence_created: 0,
+        },
+      }),
+    }),
+  )
+
+  await page.getByRole('button', { name: '从 k12100 补全各科' }).click()
+  const hostDrawer = page.getByRole('region', { name: '从 k12100 补全各科校考信息' })
+  await expect(hostDrawer).toContainText('宿主机直连就绪 · 139****1111')
+  await hostDrawer.getByRole('button', { name: '手动启动 k12100 全科补全' }).click()
+  await expect(hostDrawer).toContainText('任务进度 · completed')
+  await expect(hostDrawer).toContainText('补全结果 · 虚构测试数据 · 宿主机异步采集')
+  await expect(hostDrawer).toContainText('物理')
+
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+  await expectHonestLanguage(page)
+  expect(pageErrors).toEqual([])
+  expect(consoleErrors).toEqual([])
 })

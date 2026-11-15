@@ -601,3 +601,33 @@ class KnowledgeGraphOut(BaseModel):
     summary_counts: dict[str, int]
     nodes: list[KnowledgeMasteryItemOut]
     edges: list[KnowledgeEdgeOut]
+
+
+class K12100SyncJobStartIn(BaseModel):
+    """手动发起宿主机 k12100.com 全科采集补全任务的请求参数。"""
+
+    exam_keyword: str | None = Field(default=None, max_length=120)
+    target_exam_date: date | None = None
+    series_title_prefix: str | None = Field(default=None, max_length=120)
+    max_exams: int = Field(default=1, ge=1, le=3)
+    confirm_total_scores: bool = True
+    extract_existing_pdfs: bool = True
+    upload_missing_cards: bool = True
+    replace_unconfirmed_drafts: bool = True
+    use_ai: bool = True
+    headless: bool = True
+
+
+class K12100ImportBundleIn(BaseModel):
+    """向开发/生产端上传宿主机脱敏 k12100 采集包执行全科补全的请求载荷。"""
+
+    bundle: dict[str, Any]
+    exam_keyword: str | None = Field(default=None, max_length=120)
+    target_exam_date: date | None = None
+    series_title_prefix: str | None = Field(default=None, max_length=120)
+    max_exams: int = Field(default=1, ge=1, le=3)
+    confirm_total_scores: bool = True
+    extract_existing_pdfs: bool = True
+    upload_missing_cards: bool = True
+    replace_unconfirmed_drafts: bool = True
+    use_ai: bool = True

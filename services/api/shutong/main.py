@@ -21,7 +21,8 @@ from .database import get_db
 from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, GoalIn, Subject, SchoolExamSubject
+from . import k12100_backfill
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -747,6 +748,98 @@ def sync_school_exam_drafts(
         "skipped_labels": skipped_labels,
         "evidence_created": 0,
     }
+
+
+@app.get("/api/school-exams/k12100-sync/status")
+def get_k12100_sync_status(owner: str = Depends(require_admin)):
+    """查询当前运行环境的 k12100 直连采集能力、脱敏凭据状态与最近任务快照。"""
+    _ = owner
+    return k12100_backfill.get_k12100_runtime_status()
+
+
+@app.post("/api/school-exams/k12100-sync/jobs", status_code=202)
+def start_k12100_sync_job_endpoint(
+    payload: K12100SyncJobStartIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """手动触发宿主机持久化浏览器单次采集与全科补全任务（容器隔离或并发时返回 409）。"""
+    return k12100_backfill.start_k12100_sync_job(
+        db,
+        owner=owner,
+        resolve_knowledge_fn=_resolve_school_knowledge_meta,
+        persist_drafts_fn=_persist_draft_items,
+        save_paper_fn=save_school_paper,
+        exam_keyword=payload.exam_keyword,
+        target_exam_date=payload.target_exam_date,
+        series_title_prefix=payload.series_title_prefix,
+        max_exams=payload.max_exams,
+        confirm_total_scores=payload.confirm_total_scores,
+        extract_existing_pdfs=payload.extract_existing_pdfs,
+        upload_missing_cards=payload.upload_missing_cards,
+        replace_unconfirmed_drafts=payload.replace_unconfirmed_drafts,
+        use_ai=payload.use_ai,
+        headless=payload.headless,
+    )
+
+
+@app.get("/api/school-exams/k12100-sync/jobs/{job_id}")
+def get_k12100_sync_job_endpoint(job_id: str, owner: str = Depends(require_admin)):
+    """轮询单个手动同步任务的进度与逐科结果摘要。"""
+    _ = owner
+    job = k12100_backfill.get_k12100_sync_job(job_id)
+    if job is None:
+        raise HTTPException(404, detail="K12100_SYNC_JOB_NOT_FOUND")
+    return job
+
+
+@app.post(
+    "/api/school-exams/k12100-sync/import-bundle",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": K12100ImportBundleIn.model_json_schema(),
+                }
+            },
+        }
+    },
+)
+async def import_k12100_bundle_endpoint(
+    request: Request,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """导入宿主机导出的脱敏 k12100 采集包（≤ 15 MiB），跨环境统一执行全科建档/提干与草稿入库。"""
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > k12100_backfill.MAX_BUNDLE_BODY_BYTES:
+            raise HTTPException(413, detail="K12100_BUNDLE_TOO_LARGE")
+        raw.extend(chunk)
+    try:
+        payload = K12100ImportBundleIn.model_validate_json(bytes(raw))
+    except Exception as exc:
+        raise HTTPException(422, detail="K12100_INVALID_BUNDLE") from exc
+
+    return await run_in_threadpool(
+        k12100_backfill.apply_k12100_bundle,
+        db,
+        owner=owner,
+        raw_bundle=payload.bundle,
+        resolve_knowledge_fn=_resolve_school_knowledge_meta,
+        persist_drafts_fn=_persist_draft_items,
+        save_paper_fn=save_school_paper,
+        exam_keyword=payload.exam_keyword,
+        target_exam_date=payload.target_exam_date,
+        series_title_prefix=payload.series_title_prefix,
+        max_exams=payload.max_exams,
+        confirm_total_scores=payload.confirm_total_scores,
+        extract_existing_pdfs=payload.extract_existing_pdfs,
+        upload_missing_cards=payload.upload_missing_cards,
+        replace_unconfirmed_drafts=payload.replace_unconfirmed_drafts,
+        use_ai=payload.use_ai,
+    )
 
 @app.post("/api/school-exams/{exam_id}/items/{item_id}/analysis")
 def update_school_exam_item_analysis(

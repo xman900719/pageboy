@@ -412,6 +412,59 @@ components:
       - questions
       title: ImportConfirmationIn
       type: object
+    K12100SyncJobStartIn:
+      description: 手动发起宿主机 k12100.com 全科采集补全任务的请求参数。
+      properties:
+        confirm_total_scores:
+          default: true
+          title: Confirm Total Scores
+          type: boolean
+        exam_keyword:
+          anyOf:
+          - maxLength: 120
+            type: string
+          - type: 'null'
+          title: Exam Keyword
+        extract_existing_pdfs:
+          default: true
+          title: Extract Existing Pdfs
+          type: boolean
+        headless:
+          default: true
+          title: Headless
+          type: boolean
+        max_exams:
+          default: 1
+          maximum: 3.0
+          minimum: 1.0
+          title: Max Exams
+          type: integer
+        replace_unconfirmed_drafts:
+          default: true
+          title: Replace Unconfirmed Drafts
+          type: boolean
+        series_title_prefix:
+          anyOf:
+          - maxLength: 120
+            type: string
+          - type: 'null'
+          title: Series Title Prefix
+        target_exam_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Target Exam Date
+        upload_missing_cards:
+          default: true
+          title: Upload Missing Cards
+          type: boolean
+        use_ai:
+          default: true
+          title: Use Ai
+          type: boolean
+      title: K12100SyncJobStartIn
+      type: object
     KnowledgeEdgeOut:
       description: 知识图谱关系边（层级隶属或前置依赖）。
       properties:
@@ -4376,6 +4429,181 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add School Exam
+  /api/school-exams/k12100-sync/import-bundle:
+    post:
+      description: 导入宿主机导出的脱敏 k12100 采集包（≤ 15 MiB），跨环境统一执行全科建档/提干与草稿入库。
+      operationId: import_k12100_bundle_endpoint_api_school_exams_k12100_sync_import_bundle_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              description: 向开发/生产端上传宿主机脱敏 k12100 采集包执行全科补全的请求载荷。
+              properties:
+                bundle:
+                  additionalProperties: true
+                  title: Bundle
+                  type: object
+                confirm_total_scores:
+                  default: true
+                  title: Confirm Total Scores
+                  type: boolean
+                exam_keyword:
+                  anyOf:
+                  - maxLength: 120
+                    type: string
+                  - type: 'null'
+                  title: Exam Keyword
+                extract_existing_pdfs:
+                  default: true
+                  title: Extract Existing Pdfs
+                  type: boolean
+                max_exams:
+                  default: 1
+                  maximum: 3
+                  minimum: 1
+                  title: Max Exams
+                  type: integer
+                replace_unconfirmed_drafts:
+                  default: true
+                  title: Replace Unconfirmed Drafts
+                  type: boolean
+                series_title_prefix:
+                  anyOf:
+                  - maxLength: 120
+                    type: string
+                  - type: 'null'
+                  title: Series Title Prefix
+                target_exam_date:
+                  anyOf:
+                  - format: date
+                    type: string
+                  - type: 'null'
+                  title: Target Exam Date
+                upload_missing_cards:
+                  default: true
+                  title: Upload Missing Cards
+                  type: boolean
+                use_ai:
+                  default: true
+                  title: Use Ai
+                  type: boolean
+              required:
+              - bundle
+              title: K12100ImportBundleIn
+              type: object
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Import K12100 Bundle Endpoint
+  /api/school-exams/k12100-sync/jobs:
+    post:
+      description: 手动触发宿主机持久化浏览器单次采集与全科补全任务（容器隔离或并发时返回 409）。
+      operationId: start_k12100_sync_job_endpoint_api_school_exams_k12100_sync_jobs_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/K12100SyncJobStartIn'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Start K12100 Sync Job Endpoint
+  /api/school-exams/k12100-sync/jobs/{job_id}:
+    get:
+      description: 轮询单个手动同步任务的进度与逐科结果摘要。
+      operationId: get_k12100_sync_job_endpoint_api_school_exams_k12100_sync_jobs__job_id__get
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          title: Job Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get K12100 Sync Job Endpoint
+  /api/school-exams/k12100-sync/status:
+    get:
+      description: 查询当前运行环境的 k12100 直连采集能力、脱敏凭据状态与最近任务快照。
+      operationId: get_k12100_sync_status_api_school_exams_k12100_sync_status_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get K12100 Sync Status
   /api/school-exams/{exam_id}:
     get:
       description: 考试详情 + 逐题得分（含确认状态与错因备注）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。

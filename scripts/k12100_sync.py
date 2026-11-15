@@ -12,11 +12,14 @@
   4. probe            : 打开可见 Chromium 浏览器，低频探测并保存脱敏页面/XHR 快照
   5. sync             : 去重后增量抓取（单次 1~3 场）并通过 /api/school-exams/*/sync-drafts
                         落库为未确认 ocr_draft 草稿，交由家长人工校对
+  6. collect          : 采集 k12100 全科成绩/逐题明细/答题卡 JPEG 并导出 0600 脱敏 JSON 包（供管理端上传）
+  7. backfill         : 一站式全科建档/总分确认/答题卡上传/已有原卷 PDF 提干与 ocr_draft 入库
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from getpass import getpass
 from hashlib import sha256
 import json
@@ -32,61 +35,21 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+_API_DIR = str(REPO_ROOT / "services" / "api")
+if _API_DIR not in sys.path:
+    sys.path.insert(0, _API_DIR)
+
+from shutong.k12100_backfill import (  # noqa: E402
+    PII_AND_SECRET_KEYS,
+    SUBJECT_ALIAS_MAP,
+    clamp_max_exams,
+    map_subject_code as _shared_map_subject_code,
+    strip_pii_fields,
+)
+
 BROWSER_SCRIPT = REPO_ROOT / "scripts" / "k12100_browser.mjs"
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "shutong"
 DEFAULT_API_URL = "http://127.0.0.1:18765"
-
-# 同步进本系统前，递归剥离一切学生个人身份 PII 与平台会话字段
-PII_AND_SECRET_KEYS = {
-    "student_name",
-    "real_name",
-    "user_name",
-    "username",
-    "nick_name",
-    "xm",
-    "student_id",
-    "xuehao",
-    "exam_no",
-    "kaohao",
-    "seat_no",
-    "class_name",
-    "school_name",
-    "phone",
-    "mobile",
-    "tel",
-    "id_card",
-    "password",
-    "pwd",
-    "token",
-    "access_token",
-    "refresh_token",
-    "cookie",
-    "姓名",
-    "学生姓名",
-    "学号",
-    "考号",
-    "座位号",
-    "班级",
-    "学校",
-    "手机号",
-    "身份证",
-}
-
-SUBJECT_ALIAS_MAP = {
-    "math": "math",
-    "数学": "math",
-    "chinese": "chinese",
-    "语文": "chinese",
-    "english": "english",
-    "英语": "english",
-    "physics": "physics",
-    "物理": "physics",
-    "ethics": "ethics",
-    "道法": "ethics",
-    "道德与法治": "ethics",
-    "政治": "ethics",
-    "思想品德": "ethics",
-}
 
 
 def get_paths(config_dir: Path | None = None) -> dict[str, Path]:
@@ -290,36 +253,9 @@ def _sync_deepseek_to_dev_env(
     return target
 
 
-def strip_pii_fields(obj: Any) -> Any:
-    """递归移除外部数据中的姓名、学号、考号、手机号及认证字段。"""
-    if isinstance(obj, list):
-        return [strip_pii_fields(el) for el in obj]
-    if isinstance(obj, dict):
-        cleaned: dict[str, Any] = {}
-        for k, v in obj.items():
-            key_norm = str(k).strip().lower()
-            if key_norm in PII_AND_SECRET_KEYS or str(k).strip() in PII_AND_SECRET_KEYS:
-                continue
-            cleaned[k] = strip_pii_fields(v)
-        return cleaned
-    return obj
-
-
-def clamp_max_exams(raw: int) -> int:
-    """防封号限流：单次抓取强制钳制在 1~3 场以内。"""
-    return max(1, min(3, int(raw)))
-
-
 def map_subject_code(raw_subject: str) -> str:
-    """将外部平台学科文本映射为书童支持的校考科目代码。"""
-    text = str(raw_subject or "").strip()
-    lowered = text.lower()
-    if lowered in SUBJECT_ALIAS_MAP:
-        return SUBJECT_ALIAS_MAP[lowered]
-    for alias, code in SUBJECT_ALIAS_MAP.items():
-        if alias in text:
-            return code
-    return "math"
+    """将外部平台学科文本映射为书童支持的校考科目代码（兼容单科增量未知回退 math）。"""
+    return _shared_map_subject_code(raw_subject, default="math") or "math"
 
 
 def exam_fingerprint(exam: dict[str, Any]) -> str:
@@ -348,7 +284,15 @@ def save_synced_ledger(path: Path, ledger: dict[str, Any]) -> None:
     write_secure_file(path, json.dumps(ledger, ensure_ascii=False, indent=2) + "\n")
 
 
-def _api_request(base_url: str, path: str, token: str, *, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
+def _api_request(
+    base_url: str,
+    path: str,
+    token: str,
+    *,
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+    timeout: int = 240,
+) -> Any:
     """访问本地或内网 Pageboy Admin API；回环地址绕过宿主代理避免 socks5 干扰。"""
     url = base_url.rstrip("/") + path
     is_loopback = (urlparse(url).hostname or "") in {"127.0.0.1", "localhost", "::1"}
@@ -360,7 +304,7 @@ def _api_request(base_url: str, path: str, token: str, *, method: str = "GET", b
         data_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = Request(url, data=data_bytes, headers=headers, method=method)
     try:
-        with opener.open(req, timeout=45) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else None
     except HTTPError as exc:
@@ -738,6 +682,10 @@ def _run_browser_node(mode: str, paths: dict[str, Path], creds: dict[str, str], 
         ]
         if mode == "probe" and hasattr(args, "probe_browse_seconds"):
             cmd.extend(["--probe-browse-seconds", str(args.probe_browse_seconds)])
+        if getattr(args, "exam_keyword", ""):
+            cmd.extend(["--exam-keyword", str(args.exam_keyword).strip()])
+        if mode == "collect" and not getattr(args, "no_card_images", False):
+            cmd.append("--fetch-card-images")
         if getattr(args, "headless", False):
             cmd.append("--headless")
         env = {
@@ -808,6 +756,181 @@ def cmd_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def backfill_sanitized_bundle_to_pageboy(
+    raw_bundle: dict[str, Any],
+    *,
+    api_url: str,
+    admin_token: str,
+    ledger_path: Path,
+    exam_keyword: str | None = None,
+    target_exam_date: str | None = None,
+    series_title_prefix: str | None = None,
+    max_exams: int = 1,
+    confirm_total_scores: bool = True,
+    extract_existing_pdfs: bool = True,
+    upload_missing_cards: bool = True,
+    replace_unconfirmed_drafts: bool = True,
+    use_ai: bool = True,
+    dry_run: bool = False,
+    request_fn=_api_request,
+) -> dict[str, Any]:
+    """将已脱敏 k12100 采集包通过统一 import-bundle 接口完成全科建档、提干与草稿入库。"""
+    clean_bundle = strip_pii_fields(raw_bundle)
+    if dry_run:
+        exams = clean_bundle.get("exams") if isinstance(clean_bundle.get("exams"), list) else [clean_bundle]
+        return {
+            "dry_run": True,
+            "exam_count": len(exams),
+            "subjects": [
+                {
+                    "subjectName": s.get("subjectName") or s.get("subject"),
+                    "score": s.get("score") or s.get("earned_points"),
+                    "fullScore": s.get("fullScore") or s.get("max_points"),
+                    "smallQuestionsCount": len(s.get("smallQuestions") or s.get("items") or []),
+                }
+                for pkt in exams[: clamp_max_exams(max_exams)]
+                for s in (pkt.get("subjects") or [pkt])
+                if isinstance(s, dict)
+            ],
+        }
+
+    payload: dict[str, Any] = {
+        "bundle": clean_bundle,
+        "max_exams": clamp_max_exams(max_exams),
+        "confirm_total_scores": bool(confirm_total_scores),
+        "extract_existing_pdfs": bool(extract_existing_pdfs),
+        "upload_missing_cards": bool(upload_missing_cards),
+        "replace_unconfirmed_drafts": bool(replace_unconfirmed_drafts),
+        "use_ai": bool(use_ai),
+    }
+    if exam_keyword:
+        payload["exam_keyword"] = exam_keyword
+    if target_exam_date:
+        payload["target_exam_date"] = target_exam_date
+    if series_title_prefix:
+        payload["series_title_prefix"] = series_title_prefix
+
+    res = request_fn(
+        api_url,
+        "/api/school-exams/k12100-sync/import-bundle",
+        admin_token,
+        method="POST",
+        body=payload,
+    )
+    ledger = load_synced_ledger(ledger_path)
+    synced_map: dict[str, Any] = ledger.setdefault("synced", {})
+    for subj_res in res.get("subjects") or []:
+        fp_key = f"{subj_res['subject']}|{subj_res['exam_date']}|{subj_res['exam_title']}"
+        fp = f"k12100:{subj_res['subject']}:sha:{sha256(fp_key.encode('utf-8')).hexdigest()[:16]}"
+        synced_map[fp] = {
+            "title": subj_res["exam_title"],
+            "subject": subj_res["subject"],
+            "exam_date": subj_res["exam_date"],
+            "source_exam_date": res.get("source_exam_date"),
+            "school_exam_id": subj_res["exam_id"],
+            "drafts_created": subj_res["drafts_created"],
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+        }
+    save_synced_ledger(ledger_path, ledger)
+    return res
+
+
+def cmd_collect(args: argparse.Namespace) -> int:
+    """采集全科成绩、逐题明细与答题卡 JPEG，以 0600 写入脱敏 JSON 采集包。"""
+    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    try:
+        creds = load_env_credentials(paths["env"])
+    except (FileNotFoundError, PermissionError) as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
+    if not _require_k12100_credentials(creds):
+        return 1
+
+    raw_res = _run_browser_node("collect", paths, creds, args)
+    if raw_res.get("status") != "collected":
+        print(json.dumps(strip_pii_fields(raw_res), ensure_ascii=False, indent=2), file=sys.stderr)
+        return 2 if raw_res.get("status") == "login_required" else 3
+
+    clean_res = strip_pii_fields(raw_res)
+    if args.output:
+        out_path = Path(args.output).expanduser().resolve()
+    else:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = paths["probe_dir"] / f"k12100_bundle_{stamp}.json"
+    write_secure_file(out_path, json.dumps(clean_res, ensure_ascii=False, indent=2) + "\n")
+
+    summary = {
+        "status": "collected",
+        "output_file": str(out_path),
+        "exams": [
+            {
+                "examName": ex.get("examName"),
+                "examDate": ex.get("examDate"),
+                "subjects": [
+                    {
+                        "subjectName": s.get("subjectName"),
+                        "score": s.get("score"),
+                        "fullScore": s.get("fullScore"),
+                        "smallQuestions": len(s.get("smallQuestions") or []),
+                        "cardImages": len(s.get("card_images") or []),
+                    }
+                    for s in (ex.get("subjects") or [])
+                ],
+            }
+            for ex in (clean_res.get("exams") or [])
+        ],
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_backfill(args: argparse.Namespace) -> int:
+    """一站式全科补全：采集或加载离线采集包，调用 import-bundle 接口完成闭环。"""
+    paths = get_paths(Path(args.config_dir) if args.config_dir else None)
+    creds: dict[str, str] = {}
+    if args.input_json:
+        raw_bundle = json.loads(Path(args.input_json).expanduser().read_text(encoding="utf-8"))
+        if paths["env"].exists():
+            creds = load_env_credentials(paths["env"])
+    else:
+        try:
+            creds = load_env_credentials(paths["env"])
+        except (FileNotFoundError, PermissionError) as exc:
+            print(f"错误：{exc}", file=sys.stderr)
+            return 1
+        if not _require_k12100_credentials(creds):
+            return 1
+        raw_bundle = _run_browser_node("collect", paths, creds, args)
+        if raw_bundle.get("status") != "collected":
+            print(json.dumps(strip_pii_fields(raw_bundle), ensure_ascii=False, indent=2), file=sys.stderr)
+            return 2 if raw_bundle.get("status") == "login_required" else 3
+
+    api_url = (args.api_url or creds.get("K12100_PAGEBOY_API_URL") or DEFAULT_API_URL).rstrip("/")
+    admin_token = args.admin_token or os.getenv("SHUTONG_ADMIN_TOKEN") or creds.get("SHUTONG_ADMIN_TOKEN") or ""
+    if not args.dry_run and not admin_token:
+        print("错误：调用书童 API 需要管理员令牌（--admin-token 或环境变量 SHUTONG_ADMIN_TOKEN）。", file=sys.stderr)
+        return 1
+
+    summary = backfill_sanitized_bundle_to_pageboy(
+        raw_bundle,
+        api_url=api_url,
+        admin_token=admin_token,
+        ledger_path=paths["synced"],
+        exam_keyword=args.exam_keyword or None,
+        target_exam_date=args.target_exam_date or None,
+        series_title_prefix=args.series_title_prefix or None,
+        max_exams=args.max_exams,
+        confirm_total_scores=args.confirm_total_scores,
+        extract_existing_pdfs=not args.no_extract_pdfs,
+        upload_missing_cards=not args.no_upload_cards,
+        replace_unconfirmed_drafts=args.replace_unconfirmed_drafts,
+        use_ai=not args.no_ai,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="书童 · k12100.com 拟人化安全同步与 DeepSeek 凭据配置 CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -864,6 +987,46 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--dry-run", action="store_true")
     p_sync.add_argument("--headless", action="store_true")
     p_sync.set_defaults(func=cmd_sync)
+
+    p_collect = sub.add_parser("collect", help="温和采集 k12100 全科快照并导出 0600 脱敏采集包 JSON")
+    p_collect.add_argument("--config-dir", default="")
+    p_collect.add_argument("--exam-keyword", default="", help="可选考试标题关键词，如 统一练习一")
+    p_collect.add_argument("--max-exams", type=int, default=1, help="单次最多采集场次（硬限制 1~3）")
+    p_collect.add_argument("--wait-seconds", type=int, default=180)
+    p_collect.add_argument("--output", default="", help="可选输出 JSON 文件路径（默认写入 ~/.config/shutong/probe_snapshot/）")
+    p_collect.add_argument("--no-card-images", action="store_true", help="跳过随包内嵌答题卡 JPEG 字节（仅保留安全链接）")
+    p_collect.add_argument("--headless", action="store_true")
+    p_collect.set_defaults(func=cmd_collect)
+
+    p_backfill = sub.add_parser("backfill", help="一站式执行 k12100 全科对齐、答题卡上传、PDF 提干与 ocr_draft 入库")
+    p_backfill.add_argument("--config-dir", default="")
+    p_backfill.add_argument("--api-url", default="")
+    p_backfill.add_argument("--admin-token", default="")
+    p_backfill.add_argument("--input-json", default="", help="可选离线脱敏采集包 JSON，传入时直接导入不启浏览器")
+    p_backfill.add_argument("--exam-keyword", default="")
+    p_backfill.add_argument("--target-exam-date", default="", help="可选统一对齐日期 YYYY-MM-DD")
+    p_backfill.add_argument("--series-title-prefix", default="", help="可选补建科目标题前缀")
+    p_backfill.add_argument("--max-exams", type=int, default=1, help="单次最多同步场次（硬限制 1~3）")
+    p_backfill.add_argument(
+        "--confirm-total-scores",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="以 k12100 官方总分直接确认锁定未锁科目总分（默认开启）",
+    )
+    p_backfill.add_argument("--no-extract-pdfs", action="store_true", help="跳过从已有原卷 PDF 抽提真实题干")
+    p_backfill.add_argument("--no-upload-cards", action="store_true", help="跳过为无附件科目补传答题卡 JPEG")
+    p_backfill.add_argument(
+        "--replace-unconfirmed-drafts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="覆盖同题号尚未人工确认的旧 ocr_draft（默认开启）",
+    )
+    p_backfill.add_argument("--no-card-images", action="store_true")
+    p_backfill.add_argument("--no-ai", action="store_true")
+    p_backfill.add_argument("--headless", action="store_true")
+    p_backfill.add_argument("--wait-seconds", type=int, default=180)
+    p_backfill.add_argument("--dry-run", action="store_true")
+    p_backfill.set_defaults(func=cmd_backfill)
 
     return parser
 

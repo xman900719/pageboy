@@ -74,12 +74,20 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expect(page.getByRole('region', { name: '知识点关系图谱展示' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  // 管理端工作台（/admin.html）：台账与工作区卡片只读加载后度量，无横向溢出。
+  // 管理端工作台（/admin.html）：台账、学校考试与 k12100 补全抽屉只读加载后度量，无横向溢出。
   await page.goto('/admin.html')
   await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await expect(page.getByRole('region', { name: '题源台账' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
+  await expect(page.getByRole('region', { name: '学校考试总分' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: '从 k12100 补全各科' }).click()
+  await expect(page.getByRole('region', { name: '从 k12100 补全各科校考信息' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

@@ -71,3 +71,8 @@ infra/rollback.sh          # 回滚到上一个可用镜像标签
 5. **增量去重同步为 M2 待核对草稿**（默认对接本机回环测试端 `http://127.0.0.1:18765`，生产环境可通过 `--api-url` 显式指定）：
    - `uv run python scripts/k12100_sync.py sync --api-url http://127.0.0.1:18765 --max-exams 2`
    - 若遇验证码、滑块或 HTTP `401/403/429`，脚本会立即熔断停止并发出提示，绝不自动重试或绕过校验；同步后仍需家长在管理端 **「草稿校对台」** 人工核对确认。
+6. **管理端「从 k12100 补全各科」与全科离线采集包导入**：
+   - 在管理端 **「学校考试」** 顶栏点击 **「从 k12100 补全各科」**，系统自动识别运行环境：宿主机就绪时可直接一键启动单任务后台全科补全；容器化或隔离环境自动切换为通用离线采集包导入（支持上传 `15 MiB` 内脱敏 JSON，服务端强制执行 PII 递归清洗、JPEG 答题卡校验、已有原卷 PDF 提干，并严格将全部逐题草稿标为 `ocr_draft` 待人工确认）。
+   - 宿主机配套命令行导出与一站式导入命令：
+     - 导出 `0600` 脱敏采集包：`uv run python scripts/k12100_sync.py collect --config-dir ~/.config/shutong`
+     - 一站式或离线包导入：`uv run python scripts/k12100_sync.py backfill --config-dir ~/.config/shutong`（支持 `--input-json` 离线包与 `--dry-run` 预演）

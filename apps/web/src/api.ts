@@ -459,6 +459,90 @@ export interface SchoolExamDetail extends SchoolExam {
   attachments: SchoolPaperAttachment[]
 }
 
+export interface K12100CredentialsSummary {
+  status: string
+  username_masked: string | null
+  deepseek_configured: boolean
+  deepseek_masked: string | null
+  message: string
+}
+
+export interface K12100SubjectResult {
+  subject: SchoolSubject
+  subject_label: string
+  exam_id: string
+  exam_title: string
+  exam_date: string
+  earned_points: number
+  max_points: number
+  confirmed_by_user: boolean
+  score_status: string
+  stem_mode: string
+  parser_mode_used: string
+  attachments_uploaded: number
+  drafts_created: number
+  skipped_labels: string[]
+  warning: string | null
+}
+
+export interface K12100BackfillResult {
+  source_exam_title: string
+  source_exam_date: string | null
+  subjects: K12100SubjectResult[]
+  totals: {
+    subjects_processed: number
+    created_exams: number
+    confirmed_now: number
+    locked_conflicts: number
+    attachments_uploaded: number
+    drafts_created: number
+  }
+  knowledge_evidence_created: number
+}
+
+export interface K12100SyncJob {
+  job_id: string
+  state: 'queued' | 'collecting' | 'backfilling' | 'completed' | 'failed'
+  stage_message: string
+  created_at: string
+  updated_at: string
+  exam_keyword: string | null
+  confirm_total_scores: boolean
+  error_code: string | null
+  error_message: string | null
+  result: K12100BackfillResult | null
+}
+
+export interface K12100RuntimeStatus {
+  environment: string
+  mode: 'host_direct' | 'isolated_import_only'
+  can_run_local: boolean
+  is_isolated: boolean
+  browser_ready: boolean
+  node_available: boolean
+  playwright_available: boolean
+  unavailable_code: string | null
+  unavailable_reason: string | null
+  credentials: K12100CredentialsSummary
+  deepseek_configured: boolean
+  active_job_id: string | null
+  latest_job: K12100SyncJob | null
+  recommended_cli_command: string
+}
+
+export interface K12100BackfillOptions {
+  examKeyword?: string
+  targetExamDate?: string
+  seriesTitlePrefix?: string
+  maxExams?: number
+  confirmTotalScores?: boolean
+  extractExistingPdfs?: boolean
+  uploadMissingCards?: boolean
+  replaceUnconfirmedDrafts?: boolean
+  useAi?: boolean
+  headless?: boolean
+}
+
 export interface GoalResult {
   id: string
   version: number
@@ -621,6 +705,13 @@ export interface Client {
     input: { errorCategory: SchoolErrorCategory | null; errorNote: string | null },
   ): Promise<SchoolExamItem>
   schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
+  k12100SyncStatus(): Promise<K12100RuntimeStatus>
+  startK12100SyncJob(options?: K12100BackfillOptions): Promise<K12100SyncJob>
+  k12100SyncJob(jobId: string): Promise<K12100SyncJob>
+  importK12100Bundle(
+    bundle: Record<string, unknown>,
+    options?: Omit<K12100BackfillOptions, 'headless'>,
+  ): Promise<K12100BackfillResult>
   fetchAttachment(attachmentId: string): Promise<Blob>
   /* 题库审核台（ST-011）。 */
   adminSources(): Promise<SourceDetail[]>
@@ -867,6 +958,34 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       ),
     schoolExamErrorAnalysis: examId =>
       call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
+    k12100SyncStatus: () => call<K12100RuntimeStatus>('/api/school-exams/k12100-sync/status'),
+    startK12100SyncJob: (options = {}) =>
+      call<K12100SyncJob>('/api/school-exams/k12100-sync/jobs', 'POST', {
+        ...(options.examKeyword ? { exam_keyword: options.examKeyword } : {}),
+        ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
+        ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
+        max_exams: options.maxExams ?? 1,
+        confirm_total_scores: options.confirmTotalScores ?? true,
+        extract_existing_pdfs: options.extractExistingPdfs ?? true,
+        upload_missing_cards: options.uploadMissingCards ?? true,
+        replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
+        use_ai: options.useAi ?? true,
+        headless: options.headless ?? true,
+      }),
+    k12100SyncJob: jobId => call<K12100SyncJob>(`/api/school-exams/k12100-sync/jobs/${encodeURIComponent(jobId)}`),
+    importK12100Bundle: (bundle, options = {}) =>
+      call<K12100BackfillResult>('/api/school-exams/k12100-sync/import-bundle', 'POST', {
+        bundle,
+        ...(options.examKeyword ? { exam_keyword: options.examKeyword } : {}),
+        ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
+        ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
+        max_exams: options.maxExams ?? 1,
+        confirm_total_scores: options.confirmTotalScores ?? true,
+        extract_existing_pdfs: options.extractExistingPdfs ?? true,
+        upload_missing_cards: options.uploadMissingCards ?? true,
+        replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
+        use_ai: options.useAi ?? true,
+      }),
     fetchAttachment: async attachmentId => {
       const res = await fetch(`/api/admin/attachments/${attachmentId}/download`, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new ApiError(res.status, 'ATTACHMENT_UNAVAILABLE')
@@ -969,6 +1088,14 @@ const API_CODE_TEXT: Record<string, string> = {
   NO_EMBEDDED_TEXT_FOR_SKELETON: '所选附件不含可机读文字层（属纯扫描件），无法本地提取骨架；请改用 DeepSeek 多模态模式。',
   UNSUPPORTED_ATTACHMENT_FOR_PARSING: '所选附件格式不支持自动提取（支持 PDF / DOCX / PNG / JPG）。',
   ATTACHMENT_NOT_FOUND: '未找到选中的附件，请刷新列表后重试。',
+  K12100_LOCAL_RUNNER_UNAVAILABLE: '当前后端处于容器隔离或未部署宿主机浏览器，请上传宿主机导出的脱敏采集包 (.json) 或使用宿主 CLI 直连补全。',
+  K12100_CREDENTIALS_NOT_CONFIGURED: '宿主机尚未配置 k12100.com 账号与私密权限（0700/0600），请先在宿主机完成 init-credentials，或直接导入脱敏采集包。',
+  K12100_SYNC_ALREADY_RUNNING: '已有 k12100 全科补全任务正在运行中，请等待当前任务完成，避免触发平台限流。',
+  K12100_SYNC_JOB_NOT_FOUND: '未找到对应的同步任务记录（服务可能已重启），请重新查看状态或再次启动。',
+  K12100_BUNDLE_TOO_LARGE: '上传的采集包体积超过 15 MiB 上限，请减少单次采集场次或取消内嵌大图后重试。',
+  K12100_INVALID_BUNDLE: '采集包 JSON 结构无效或与所填关键词不匹配，请使用 k12100_sync.py collect 生成的最新脱敏文件。',
+  K12100_UNSAFE_CARD_URL: '检测到不安全的答题卡图片链接（仅允许官方 HTTPS 域名且拒绝内网地址），已安全拦截。',
+  K12100_CARD_DOWNLOAD_FAILED: '答题卡图片下载失败（签名链接可能已过期），请重新采集含内嵌图片的 JSON 包后导入。',
 }
 
 export function describeError(error: unknown): string {
