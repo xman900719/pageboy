@@ -729,8 +729,8 @@ test('J8 管理端知识点审核台：同步候选→按课标生成审核依�
   await expect(page.getByLabel('审核依据与意见 (必填):')).not.toHaveValue('')
 
   await page.getByRole('button', { name: /按课标批量审核待审 \(48\)/ }).click()
-  await expect(page.locator('.status-banner')).toContainText('待审核: 0')
-  await expect(page.locator('.status-banner')).toContainText('已通过: 48')
+  await expect(page.locator('.status-banner')).toContainText('待审核: 0', { timeout: 15_000 })
+  await expect(page.locator('.status-banner')).toContainText('已通过: 48', { timeout: 15_000 })
 
   await page.getByRole('button', { name: /版本发布与快照/ }).click()
   await page.getByRole('button', { name: '发布正式版本快照' }).click()

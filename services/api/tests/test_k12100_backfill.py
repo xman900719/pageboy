@@ -104,7 +104,10 @@ def test_strip_pii_fields_and_ssrf_guardrails(monkeypatch):
         assert exc.value.detail == "K12100_UNSAFE_CARD_URL"
 
 
-def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_redline(client, auth, student_auth, monkeypatch):
+def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_redline(
+    tmp_path, client, auth, student_auth, monkeypatch
+):
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
     monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
     monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -295,6 +298,14 @@ def test_runtime_status_permissions_isolation_and_single_job_mutex(client, auth,
     cfg_dir = tmp_path / "k12cfg"
     cfg_dir.mkdir(mode=0o700)
     monkeypatch.setenv("SHUTONG_K12100_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
+
+    # 伪造最小仓库目录结构（不依赖 CI api-and-docs 是否安装 node_modules）
+    fake_repo = tmp_path / "fake_repo"
+    (fake_repo / "scripts").mkdir(parents=True)
+    (fake_repo / "scripts" / "k12100_browser.mjs").write_text("// stub\n", encoding="utf-8")
+    (fake_repo / "apps" / "web" / "node_modules" / "playwright-core").mkdir(parents=True)
+    monkeypatch.setattr(kb, "resolve_repo_root", lambda *_args: fake_repo)
 
     # 隔离容器模式探测与 409 fail-closed
     monkeypatch.setenv("SHUTONG_DISABLE_LOCAL_K12100_RUNNER", "1")
@@ -401,7 +412,8 @@ def test_runtime_status_permissions_isolation_and_single_job_mutex(client, auth,
     assert client.get("/api/school-exams/k12100-sync/jobs/nonexistent-id", headers=auth).status_code == 404
 
 
-def test_pdf_deepseek_stem_extraction_batches_when_configured(client, auth, monkeypatch):
+def test_pdf_deepseek_stem_extraction_batches_when_configured(tmp_path, client, auth, monkeypatch):
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
     ex = client.post(
         "/api/school-exams",
         json={

@@ -91,6 +91,7 @@ def test_strip_pii_fields_and_clamp_helpers():
 
 
 def test_sync_sanitized_exams_to_pageboy_draft_gate_and_dedup(client, auth, student_auth, published, tmp_path, monkeypatch):
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
     monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
     monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -183,6 +184,7 @@ def test_k12100_browser_mjs_syntax():
 
 
 def test_cli_merge_k12100_and_deepseek_zero_echo(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
     monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
     monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -433,6 +435,7 @@ def test_backfill_cli_dry_run_and_real_import_bundle_creates_0600_ledger(tmp_pat
     import stat
     from PIL import Image
 
+    monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
     monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
     monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
