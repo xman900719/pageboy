@@ -122,6 +122,13 @@ def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_re
             "earned_points": 0,
             "max_points": 100,
             "confirmed_by_user": False,
+            "school_name": "虚构测试数据实验学校",
+            "grade": "九年级",
+            "exam_type": "monthly",
+            "academic_year": "2026-2027",
+            "term": "first",
+            "series_title": "虚构测试数据 十月统一练习",
+            "external_exam_id": "mock-exam-202610",
         },
         headers=auth,
     ).json()
@@ -143,6 +150,13 @@ def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_re
             "earned_points": 88,
             "max_points": 100,
             "confirmed_by_user": True,
+            "school_name": "虚构测试数据实验学校",
+            "grade": "九年级",
+            "exam_type": "monthly",
+            "academic_year": "2026-2027",
+            "term": "first",
+            "series_title": "虚构测试数据 十月统一练习",
+            "external_exam_id": "mock-exam-202610",
         },
         headers=auth,
     ).json()
@@ -151,8 +165,15 @@ def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_re
     # 2. 构造含语文（待确认更新总分 + 自然题号含默写/11（1））、数学（锁分保护冲突）、英语（自动补建 + JPEG 答题卡）的采集包
     valid_jpeg_b64 = base64.b64encode(_make_valid_jpeg_bytes()).decode("ascii")
     bundle = {
-        "examName": "统一练习一",
+        "examName": "虚构测试数据 十月统一练习",
         "examDate": "2026-10-10",
+        "schoolName": "虚构测试数据实验学校",
+        "gradeName": "九年级",
+        "examTypeName": "月考",
+        "academicYear": "2026-2027",
+        "termName": "第一学期",
+        "seriesTitle": "虚构测试数据 十月统一练习",
+        "examId": "mock-exam-202610",
         "studName": "应被脱敏的学生姓名",
         "subjects": [
             {
@@ -199,7 +220,12 @@ def test_import_bundle_series_alignment_locked_score_protection_and_ocr_draft_re
 
     resp = client.post(
         "/api/school-exams/k12100-sync/import-bundle",
-        json={"bundle": bundle, "confirm_total_scores": True, "use_ai": False},
+        json={
+            "bundle": bundle,
+            "target_exam_date": "2026-10-15",
+            "confirm_total_scores": True,
+            "use_ai": False,
+        },
         headers=auth,
     )
     assert resp.status_code == 200, resp.text
@@ -425,6 +451,12 @@ def test_pdf_deepseek_stem_extraction_batches_when_configured(tmp_path, client, 
             "earned_points": 80,
             "max_points": 100,
             "confirmed_by_user": False,
+            "school_name": "虚构测试数据实验学校",
+            "grade": "九年级",
+            "exam_type": "midterm",
+            "academic_year": "2026-2027",
+            "term": "first",
+            "series_title": "虚构测试数据 期中考试",
         },
         headers=auth,
     ).json()
@@ -467,9 +499,16 @@ def test_pdf_deepseek_stem_extraction_batches_when_configured(tmp_path, client, 
             "bundle": {
                 "examName": "虚构测试数据：分批提干测试",
                 "examDate": "2026-11-12",
+                "schoolName": "虚构测试数据实验学校",
+                "gradeName": "九年级",
+                "examTypeName": "期中",
+                "academicYear": "2026-2027",
+                "termName": "第一学期",
+                "seriesTitle": "虚构测试数据 期中考试",
                 "subjects": [{"subjectName": "语文", "score": 20, "fullScore": 20, "smallQuestions": small_qs}],
             },
             "use_ai": True,
+            "target_exam_date": "2026-11-12",
         },
         headers=auth,
     )
@@ -477,3 +516,13 @@ def test_pdf_deepseek_stem_extraction_batches_when_configured(tmp_path, client, 
     assert resp.status_code == 200
     assert len(calls) >= 2
     assert resp.json()["subjects"][0]["stem_mode"] == "pdf_deepseek"
+
+def test_validate_collected_bundle_distinguishes_empty_from_invalid():
+    with pytest.raises(RuntimeError, match="K12100_NO_EXAMS"):
+        kb.validate_collected_bundle({"status": "collected", "exams": []})
+    with pytest.raises(RuntimeError, match="K12100_NO_SUBJECTS"):
+        kb.validate_collected_bundle({"status": "collected", "exams": [{"subjects": []}]})
+    with pytest.raises(RuntimeError, match="K12100_INVALID_BUNDLE"):
+        kb.validate_collected_bundle([])
+    valid = {"status": "collected", "exams": [{"subjects": [{"subjectName": "数学"}]}]}
+    assert kb.validate_collected_bundle(valid) is valid

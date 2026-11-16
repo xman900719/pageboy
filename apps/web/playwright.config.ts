@@ -1,7 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /**
- * ST-008 F1 用户旅程验收：uvicorn API（临时 SQLite）+ vite preview 双服务。
+ * ST-008 F1 用户旅程验收：uvicorn API（临时 SQLite）+ Vite dev 双服务（统一 5173）。
  * 顺序执行（workers=1）保证 J1 的「全新数据库」断言成立——旅程按文件内声明次序串行运行。
  *
  * 可移植性（CI 首跑 2026-10-23 修复）：PY_CMD 默认本地 venv（仓库根），CI（verify.yml
@@ -9,6 +11,7 @@ import { defineConfig, devices } from '@playwright/test'
  * （本机约定目录），引导命令 mkdir -p 自建，Runner 上同样可用。
  */
 const pyCmd = process.env.PY_CMD ?? '../../.venv/bin/python'
+const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../services/api')
 const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
 const dbFile = `${tmpRoot}/st008-e2e.sqlite3`
 const attachmentsDir = `${tmpRoot}/st008-e2e-attachments`
@@ -29,7 +32,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: 'http://127.0.0.1:5173',
     serviceWorkers: 'block',
     ...(ipad ? { ...devices['iPad (gen 7)'], browserName: 'webkit' as const } : {}),
   },
@@ -59,9 +62,8 @@ export default defineConfig({
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
         SHUTONG_STANDARDS_DIR: standardsDir,
-        // shutong 包位于 services/api；相对路径按 webServer cwd（apps/web）解析。
-        // CI 经 pip -e 安装时本变量冗余无害。
-        PYTHONPATH: '../services/api',
+        // 必须用绝对路径指向当前 checkout，避免从已安装的旧 shutong 包导入。
+        PYTHONPATH: apiRoot,
       },
     },
     {
@@ -72,12 +74,18 @@ export default defineConfig({
       stdout: 'ignore',
     },
     {
-      command: 'npm run preview -- --port 4173 --strictPort',
-      url: 'http://127.0.0.1:4173',
+      command: 'npm run dev -- --port 5173 --strictPort',
+      url: 'http://127.0.0.1:5173',
       reuseExistingServer: false,
       timeout: 60_000,
-      // vite preview 代理跟随 E2E API 端口（vite.config.ts 的 API_PROXY_TARGET 钩子）。
-      env: { API_PROXY_TARGET: 'http://127.0.0.1:18765' },
+      // Vite dev 代理跟随 E2E API 端口（vite.config.ts 的 API_PROXY_TARGET 钩子）。
+      // 显式关闭开发自动登录：E2E 使用自己的临时 API 与显式令牌门。
+      env: {
+        API_PROXY_TARGET: 'http://127.0.0.1:18765',
+        VITE_DISABLE_DEV_AUTH: '1',
+        VITE_DEV_ADMIN_TOKEN: '',
+        VITE_DEV_STUDENT_TOKEN: '',
+      },
     },
   ],
 })

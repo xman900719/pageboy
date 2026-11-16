@@ -426,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dir", type=Path, help="包含各科试卷与答题卡文件的目录路径")
     parser.add_argument("--manifest", type=Path, help="可选外部 JSON 清单文件路径（与 --dir 二选一）")
     parser.add_argument("--title-prefix", default="", help="考试名称前缀（默认使用目录名）")
-    parser.add_argument("--exam-date", default="2026-10-15", help="考试日期 YYYY-MM-DD（默认 2026-10-15）")
+    parser.add_argument("--exam-date", default="", help="考试日期 YYYY-MM-DD；目录模式必填，禁止默认日期")
     parser.add_argument("--max-points", default="", help="各科满分映射，如 math=100,physics=70,chinese=100,ethics=50")
     parser.add_argument("--earned-points", default="", help="各科实得总分映射（默认 0）")
     parser.add_argument("--confirmed", action="store_true", help="创建时直接标记为已人工核对总分（默认 false 待确认）")
@@ -439,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.manifest and not args.dir:
         parser.error("必须提供 --dir 或 --manifest")
+    if args.dir and not args.exam_date:
+        parser.error("目录模式必须显式提供 --exam-date，禁止补默认日期")
     if args.manifest:
         plans = build_plan_from_manifest(args.manifest)
     else:

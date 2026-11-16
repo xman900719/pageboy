@@ -56,7 +56,7 @@ make docs   # 自动编译 Mermaid 图表并校验 Markdown 资产
 uv run python scripts/check_openapi.py
 cd apps/web && npm run test:unit
 cd apps/web && npm run build
-cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + preview:4173）
+cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + dev:5173）
 cd apps/web && npm run test:e2e:ipad   # iPad（WebKit 仿真）通道：旅程+可访问性+720–980px 响应式断言
 ```
 

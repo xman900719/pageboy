@@ -15,7 +15,7 @@
 
 初始 ORM 表包括 `source_documents`, `questions`, `question_versions`, `exposures`, `answer_attempts`, `school_exams`, `goals`；本包中的骨架存储设计**不代表已经实现所有不变量**。新增表必须来源于对应功能而不是猜测未来形态。
 
-学校私人试卷上传、考点级阅卷核对及关联附件仍待实现，不得用总分创建考点 Evidence。多考点综合题如无明确逐步骤采分点，不将总分重复分配给每个考点。
+学校私人试卷上传、考点级阅卷核对及关联附件已由 ST-006 实现；ST-EXAM-AUTOSYNC-01 增加本地卷宗发现与严格身份匹配，但**真实授权卷源与真实 k12100 联调仍待验证**。不得用总分创建考点 Evidence；多考点综合题如无明确逐步骤采分点，不将总分重复分配给每个考点。
 
 
 ## ST-002 版本行为
@@ -66,3 +66,37 @@
 归一化规则**对含意差敏感**：`'  X=-1  '` 与 `'x=-1'` 判同；`'x = - 1'`（值内含空格）与 `'x=-1'` 判异——答案键由人工审核，录入时须按此规则书写；带单位/含意空白的题型应以选项题或主观题承载。
 
 主观自评为**独立来源记录**（`self_assessments`，迁移 0005）：作答行不可变（INV-03/09）；`GET .../attempts/{id}/reference` 仅对已作答的 subjective 题开放参考答案；`POST .../self-assessment` 一次自评（attempt 唯一约束 + 并发竞争按落库事实裁决 409），`scoring_origin="self_assessment"` 恒不改作答行。自评**不进客观证据**（`get_evidence` 不读 self_assessments；profile/plan/validation 语义不变）——自评进入画像须另立 ADR。评分来源审计：`GET /api/practice/attempts?subject=` 列出每条作答的 origin、kind 与自评关联。回退仅隔离开发库。验证证据见 [ST-007 验证记录](../quality/st-007-question-kinds.md)。
+
+
+## ST-EXAM-AUTOSYNC-01 试卷发现、严格匹配与本人排名
+
+迁移 `0013` 在 `school_exams` 增加仅用于匹配与核对的空身份列：`school_name`、`grade`、`exam_type`、`academic_year`、`term`、`series_title`、`external_exam_id`，以及 `source_kind`（默认 `manual`）。`(learner_id, subject, external_exam_id)` 唯一约束用于防同一平台场次重复建档；可空列在 SQLite/PostgreSQL 均允许多个 NULL，既有手工档案不受影响。已有 `title`、`exam_date`、总分与确认语义不变。
+
+新增三表：
+
+- `school_exam_papers`：本地/适配器取得试卷的哈希、真实类型、大小、私有存储键（绝不出 API）、来源相对路径、卷头字段证据、匹配状态与候选、已关联考试、导入时间。`(learner_id, sha256)` 唯一，重复扫描幂等；同名不同内容以哈希区分。
+- `school_exam_scan_runs`：扫描审计（发现/去重/无效/待核对/错误数），空扫描同样留痕；错误列表仅保留安全错误码与相对文件名。
+- `school_exam_rank_snapshots`：本人排名 append-only 快照。`(school_exam_id, subject_scope, scope, source_field, content_hash)` 唯一；保存排名值、对应人数、平台百分位、来源与人工核对状态。不进入 `get_evidence` / 学生端画像 / 错误分析草稿。缺失用 `null`，缺失范围由 API 明确列出，不以 0 补齐。
+
+匹配规则由纯函数 `school_exam_matcher.py` 执行：只有平台外部 ID 一致，或学科、学校、年级、类型、学年、学期、日期全部一致且唯一，才返回 `EXACT_MATCH`；同日期、同月、±12 天邻近日不再自动合并。非唯一匹配不写成绩，由管理端人工选择。自动采集总分默认待核对；人工锁定后不同候选只记冲突不覆盖。逐题仍强制 `ocr_draft` + `confirmed_by_user=False`。
+
+回退：`0013` 可降级 0012，但会删除新表并丢失新增身份/排名列；生产不得无备份降级。详细流程、安全边界和真实数据阻断见 [校考试卷自动发现与严格匹配](../engineering/school-exam-autosync.md)。
+
+## ST-EXAM-AutoSync R2：五项卷头模型、单一考试日期与归属校验
+
+R2 卷头只识别五项：`academic_year + grade + exam_type + subject + exam_date`。学校、学期、考试系列**不识别、不返回、不参与匹配**。年级规范为 `7/8/9/10/11/12`（兼容“九年级/初三”输入）；`unified_practice` 明确表示“统一练习”，不折叠为月考/期中；其他明确类型存为 `exam_type="other"` + `exam_type_label` 原标签。
+
+`exam_date` 是单一字段：完整日期保存 `YYYY-MM-DD`，原卷只有年月时保存 `YYYY-MM`；不拆分 `exam_month`/`date_precision`，不补 01 日或 `date.today()`。`school_exams.exam_date` 仍保持既有日精度非空约束；卷头只有年月时不自动创建考试档案，平台无完整日期时 `apply_k12100_bundle` 不创建行，返回 `AWAITING_EXAM_DATE` / `match_blocked`。这是最小兼容方案，不修改既有成绩日期语义。
+
+迁移 `0014`：
+
+- `school_exams.exam_type_label`：非标准类型原标签，避免 `other` 合并误配。
+- `school_exam_rank_snapshots.ownership_status`、`ownership_basis`：本人排名归属校验状态/依据。浏览器只从当前认证科目响应提取学生标识，一致时才标 `verified`；后端拒绝持久化/确认未验证排名，历史快照默认 `unverified`。
+
+五字段相同只形成候选资格；多候选必须由平台考试 ID 或考试全称唯一确认，否则 `AMBIGUOUS`。同日期/同月/±12 天不再作为自动证据；平台日期与卷头日期冲突不静默修正。详细规则与测试见 [校考试卷自动发现与严格匹配](../engineering/school-exam-autosync.md)。
+
+## 校考分析报告册与答题卡附件（迁移 0015–0016）
+
+- 迁移 `0015`（`school_exam_reports`）：本地多学科分析报告册扫描、解析与场次关联结果；`(learner_id, sha256)` 唯一，支持补录学科/身份与人工确认后回写关联场次待确认总分（不覆盖已人工锁定成绩），生成逐题 `ocr_draft` 仍待人工核对后方可进入能力证据。
+- 迁移 `0016`（`school_exam_report_attachments`）：从报告册拆页渲染的私有答题卡 PNG 索引；`(report_id, subject, page_number)` 唯一，`storage_key` 不进 API 响应，支持人工旋转与确认后同步至对应场次私有附件。
+- 回退：`0016` 与 `0015` 可依次降级回 `0014`，将删除报告册及答题卡页索引表；生产不得无备份降级。

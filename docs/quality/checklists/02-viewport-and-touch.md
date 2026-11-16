@@ -12,10 +12,10 @@
 
 - **前置登录状态**：已使用 `test-journey-secret` 进入学习空间
 - **模拟机竖屏操作**：
-  - 命令行方式：`uv run python scripts/run_manual_test_env.py sim`
+  - 命令行方式：`uv run python scripts/run_dev_env.py sim`
   - 浏览器方式：F12 设备仿真选择 iPad，默认竖屏 `810 × 1080`
 - **模拟机横屏操作**：
-  - 命令行方式：`uv run python scripts/run_manual_test_env.py sim-landscape`
+  - 命令行方式：`uv run python scripts/run_dev_env.py sim-landscape`
   - 浏览器方式：点击设备仿真工具栏的「旋转屏幕」按钮，进入横屏 `1080 × 810`
 
 ---

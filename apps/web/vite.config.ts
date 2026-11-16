@@ -8,7 +8,6 @@ const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8000'
 export default defineConfig(() => ({
   plugins: [vue()],
   server: { proxy: { '/api': apiTarget, '/health': apiTarget } },
-  preview: { proxy: { '/api': apiTarget, '/health': apiTarget } },
   build: {
     rollupOptions: {
       input: {

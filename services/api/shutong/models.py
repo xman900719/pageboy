@@ -100,6 +100,9 @@ class SelfAssessment(Base):
 
 class SchoolExam(Base):
     __tablename__ = "school_exams"
+    __table_args__ = (
+        UniqueConstraint("learner_id", "subject", "external_exam_id", name="uq_school_exam_external_identity"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     learner_id: Mapped[str] = mapped_column(String(40), default="owner")
     subject: Mapped[str] = mapped_column(String(20))
@@ -108,6 +111,17 @@ class SchoolExam(Base):
     earned_points: Mapped[float] = mapped_column(Float)
     max_points: Mapped[float] = mapped_column(Float)
     confirmed_by_user: Mapped[bool] = mapped_column(Boolean)
+    # 0013：考试身份元数据仅用于严格匹配与人工核对，不替换既有 title/exam_date 语义。
+    school_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    exam_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # R2：真实卷头出现的非四类标准类型保留原标签（如“阶段检测”），不得折叠为其他类型后误配。
+    exam_type_label: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    academic_year: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    term: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    series_title: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    external_exam_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_kind: Mapped[str] = mapped_column(String(24), default="manual", server_default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class Goal(Base):
@@ -193,6 +207,84 @@ class SchoolPaperAttachment(Base):
     byte_size: Mapped[int] = mapped_column(Integer)
     # 仅私有存储定位；绝不进入 HTTP 响应（AC-SEC-01）。
     storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class SchoolExamPaper(Base):
+    """本地发现/来源适配器取得的校考试卷；原件只存环境私有 blob，API 绝不返回 storage_key。"""
+    __tablename__ = "school_exam_papers"
+    __table_args__ = (UniqueConstraint("learner_id", "sha256", name="uq_school_exam_paper_owner_sha"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(128))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(32))
+    source_kind: Mapped[str] = mapped_column(String(24), default="local_scan")
+    source_name: Mapped[str] = mapped_column(String(80), default="inbox")
+    source_ref: Mapped[str] = mapped_column(String(255))
+    header_text: Mapped[str | None] = mapped_column(Text)
+    header_fields: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    header_confidence: Mapped[str | None] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(24), default="needs_review")
+    match_state: Mapped[str | None] = mapped_column(String(24))
+    match_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    school_exam_id: Mapped[str | None] = mapped_column(ForeignKey("school_exams.id"), nullable=True, index=True)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class SchoolExamScanRun(Base):
+    """一次本地扫描的可审计摘要；空扫描同样留痕，便于管理端展示最近扫描时间。"""
+    __tablename__ = "school_exam_scan_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
+    source_kind: Mapped[str] = mapped_column(String(24), default="local_scan")
+    source_label: Mapped[str] = mapped_column(String(80), default="inbox")
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    discovered_count: Mapped[int] = mapped_column(Integer, default=0)
+    imported_count: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0)
+    invalid_count: Mapped[int] = mapped_column(Integer, default=0)
+    needs_review_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    errors: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SchoolExamRankSnapshot(Base):
+    """本人排名快照（append-only）。独立于逐题能力证据，相同来源内容重复导入保持幂等。"""
+    __tablename__ = "school_exam_rank_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "school_exam_id",
+            "subject_scope",
+            "scope",
+            "source_field",
+            "content_hash",
+            name="uq_school_exam_rank_snapshot",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    school_exam_id: Mapped[str] = mapped_column(ForeignKey("school_exams.id"), index=True)
+    learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
+    subject_scope: Mapped[str] = mapped_column(String(20), default="total")
+    scope: Mapped[str] = mapped_column(String(16))
+    rank_value: Mapped[int] = mapped_column(Integer)
+    participant_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_name: Mapped[str] = mapped_column(String(64), default="k12100")
+    source_field: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    # R2：排名归属校验。只有浏览器确认来自同一本人响应的排名才进入正式快照。
+    ownership_status: Mapped[str] = mapped_column(String(20), default="unverified", server_default="unverified")
+    ownership_basis: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(20), default="pending")
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -336,4 +428,65 @@ class AiTutorTurn(Base):
     role: Mapped[str] = mapped_column(String(20))  # user / assistant
     content: Mapped[str] = mapped_column(Text)
     model_used: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class SchoolExamReport(Base):
+    """本地分析报告册解析结果；多学科报告，待人工核对，不直接进入能力画像。"""
+    __tablename__ = "school_exam_reports"
+    __table_args__ = (UniqueConstraint("learner_id", "sha256", name="uq_school_exam_report_owner_sha"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(128))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(32))
+    source_ref: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    academic_year: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    exam_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    exam_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    report_time: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    report_total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    report_total_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_class_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_grade_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    listed_subject_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    listed_subject_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scope_status: Mapped[str] = mapped_column(String(32), default="NEEDS_REVIEW")
+    pages: Mapped[int] = mapped_column(Integer, default=0)
+    confidence: Mapped[str] = mapped_column(String(16), default="low")
+    status: Mapped[str] = mapped_column(String(24), default="needs_review")
+    match_state: Mapped[str] = mapped_column(String(24), default="NEEDS_REVIEW")
+    linked_exam_ids: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    subjects: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    questions: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    answer_card_pages: Mapped[dict[str, list[int]] | None] = mapped_column(JSON, nullable=True)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    warnings: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class SchoolExamReportAttachment(Base):
+    """分析报告册答题卡页私有附件；原报告 PDF 与答题卡来源页码分别保留。"""
+    __tablename__ = "school_exam_report_attachments"
+    __table_args__ = (
+        UniqueConstraint("report_id", "subject", "page_number", name="uq_school_exam_report_card_page"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    report_id: Mapped[str] = mapped_column(ForeignKey("school_exam_reports.id"), index=True)
+    learner_id: Mapped[str] = mapped_column(String(40), default="owner")
+    subject: Mapped[str] = mapped_column(String(20))
+    page_number: Mapped[int] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(64), default="image/png")
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    rotation: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

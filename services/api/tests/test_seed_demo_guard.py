@@ -10,7 +10,7 @@ from pathlib import Path
 SEED = Path(__file__).resolve().parents[3] / "scripts" / "seed_demo.py"
 
 
-def _run_seed(env_value):
+def _run_seed(env_value, *, approved=True):
     posts = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -33,6 +33,9 @@ def _run_seed(env_value):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         env = dict(os.environ, SHUTONG_TOKEN="t", SHUTONG_API_URL=f"http://127.0.0.1:{server.server_port}")
+        if approved:
+            env["PAGEBOY_OWNER_TEST_DATA_APPROVED"] = "1"
+            env["PAGEBOY_OWNER_APPROVAL_REF"] = "test-owner-approval"
         result = subprocess.run([sys.executable, str(SEED)], env=env, capture_output=True, text=True, timeout=30)
     finally:
         server.shutdown()
@@ -48,3 +51,10 @@ def test_seed_refuses_prod_target():
 def test_seed_proceeds_on_non_prod_target():
     result, posts = _run_seed("test")
     assert posts, "非生产目标应进入写入流程（假服务返回 500 使其立即中止）"
+
+
+def test_seed_requires_owner_test_data_approval():
+    result, posts = _run_seed("test", approved=False)
+    assert result.returncode != 0
+    assert "拒绝写入开发环境虚构测试数据" in result.stderr
+    assert posts == []

@@ -295,7 +295,7 @@ DIAGRAMS = [
     subgraph Dev["开发环境 (用户: xc)"]
         D_Code["开发工作区代码<br/>/media/xc/backup_ext4/code/pageboy"]
         D_DB["开发独立数据库<br/>SQLite (shutong-dev.sqlite3) 或 内存库"]
-        D_Ports["开发/测试独立端口<br/>(18765 / 4173 / 本地无状态测试)"]
+        D_Ports["开发/测试独立端口<br/>(18765 / 5173 / 本地无状态测试)"]
         D_State["开发学习/答题/曝光历史<br/>(仅记录在本地 SQLite)"]
         D_Code --> D_DB --> D_State
         D_Code --> D_Ports
@@ -965,7 +965,7 @@ def generate_html():
                         <tr>
                             <td class="font-bold text-slate-800">4. 网络端口与外部服务</td>
                             <td>
-                                <div class="font-mono text-xs text-slate-600">18765 (API) / 4173 (Preview)</div>
+                                <div class="font-mono text-xs text-slate-600">18765 (API) / 5173 (Vite dev)</div>
                                 <div class="text-xs text-slate-500 mt-0.5">仅在需要时按需临时开启</div>
                             </td>
                             <td>
@@ -1004,9 +1004,6 @@ def generate_html():
                     </div>
                     <div class="p-2 bg-emerald-50 text-emerald-800 rounded border border-emerald-100 flex items-center">
                         <span class="mr-1.5 font-bold">✓</span> PASS: 端口 18765 隔离未泄露
-                    </div>
-                    <div class="p-2 bg-emerald-50 text-emerald-800 rounded border border-emerald-100 flex items-center">
-                        <span class="mr-1.5 font-bold">✓</span> PASS: 端口 4173 隔离未泄露
                     </div>
                     <div class="p-2 bg-emerald-50 text-emerald-800 rounded border border-emerald-100 flex items-center">
                         <span class="mr-1.5 font-bold">✓</span> PASS: 端口 5173 隔离未泄露

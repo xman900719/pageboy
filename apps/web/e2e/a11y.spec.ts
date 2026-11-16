@@ -1,6 +1,6 @@
 /* ST-009 F1：三视图 WCAG 2.0/2.1 A & AA 自动化无障碍扫描（axe-core）。
  *
- * 运行纪律：完全复用 playwright.config.ts 的既有双服务（uvicorn 18765 + vite preview 4173）
+ * 运行纪律：完全复用 playwright.config.ts 的既有双服务（uvicorn 18765 + Vite dev 5173）
  * 与 globalSetup 种子，不新增任何服务或配置。
  *
  * 状态边界（本文件按字母序先于 journeys.spec.ts 串行执行，workers=1）：

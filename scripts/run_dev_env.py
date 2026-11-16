@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import secrets
+import shutil
 import signal
 import socket
 import stat
@@ -44,6 +45,8 @@ PID_FILE = RUN_DIR / "dev_env.json"
 
 API_PORT = int(os.getenv("SHUTONG_DEV_API_PORT", "8000"))
 WEB_PORT = int(os.getenv("SHUTONG_DEV_WEB_PORT", "5173"))
+# 已删除的人工测试脚本遗留端口：仅提示，不自动杀进程，避免误伤其他服务。
+LEGACY_TEST_PORTS = (18765, 4173)
 
 
 def is_port_in_use(port: int) -> bool:
@@ -345,8 +348,30 @@ def config_ai_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _api_python() -> str:
+    """优先使用 API 自己的 venv，避免外层 VIRTUAL_ENV 与 uv 项目环境不一致。"""
+    candidate = API_DIR / ".venv" / "bin" / "python"
+    return str(candidate) if candidate.is_file() else sys.executable
+
+
+def _format_subprocess_failure(stdout: str, stderr: str) -> str:
+    """迁移/启动失败时同时保留 stdout 与 stderr，避免只显示 warning 掩盖真实错误。"""
+    parts = [part.strip() for part in (stdout, stderr) if part and part.strip()]
+    return "\n".join(parts) if parts else "(无输出)"
+
+
 def start_env() -> int:
     """启动本地日常开发环境（后端 8000 + Vite dev 5173）。"""
+    missing_tools = [name for name in ("npm",) if shutil.which(name) is None]
+    if missing_tools:
+        print(f"❌ 缺少运行工具：{', '.join(missing_tools)}；请先安装后再启动开发环境。")
+        return 1
+    for legacy_port in LEGACY_TEST_PORTS:
+        if is_port_in_use(legacy_port):
+            print(
+                f"⚠️ 旧测试端口 {legacy_port} 仍被占用；开发环境只使用 8000/5173。"
+                " 请停止遗留的测试/人工环境进程后再继续。"
+            )
     if is_port_in_use(API_PORT):
         print(f"❌ 错误：后端端口 {API_PORT} 已被占用，请先执行 `stop` 或排查残留进程。")
         return 1
@@ -354,7 +379,11 @@ def start_env() -> int:
         print(f"❌ 错误：前端端口 {WEB_PORT} 已被占用，请先执行 `stop` 或排查残留进程。")
         return 1
 
-    dev_vars = ensure_dev_env()
+    try:
+        dev_vars = ensure_dev_env()
+    except RuntimeError as exc:
+        print(f"❌ 开发环境初始化失败：{exc}")
+        return 1
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -365,14 +394,20 @@ def start_env() -> int:
 
     print("📦 正在检查并升级开发数据库迁移 (alembic upgrade head)...")
     mig = subprocess.run(
-        ["uv", "--directory", str(API_DIR), "run", "alembic", "upgrade", "head"],
-        cwd=REPO_ROOT,
+        [_api_python(), "-m", "alembic", "upgrade", "head"],
+        cwd=API_DIR,
         env=proc_env,
         capture_output=True,
         text=True,
     )
     if mig.returncode != 0:
-        print(f"❌ 数据库迁移失败：\n{mig.stderr or mig.stdout}")
+        detail = _format_subprocess_failure(mig.stdout, mig.stderr)
+        print(f"❌ 数据库迁移失败：\n{detail}")
+        if "Can't locate revision" in detail:
+            print(
+                "提示：开发库的 alembic revision 与当前 checkout 的迁移文件不一致。\n"
+                "请确认在修复后的工作树运行（而不是旧 checkout），且该 checkout 包含数据库中记录的最新迁移。"
+            )
         return 1
 
     api_log_path = LOG_DIR / "dev-api.log"
@@ -382,8 +417,8 @@ def start_env() -> int:
     with open(api_log_path, "w", encoding="utf-8") as api_log:
         api_proc = subprocess.Popen(
             [
-                "uv",
-                "run",
+                _api_python(),
+                "-m",
                 "uvicorn",
                 "shutong.main:app",
                 "--host",

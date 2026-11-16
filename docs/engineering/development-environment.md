@@ -17,7 +17,7 @@
 flowchart TB
     subgraph 开发者宿主机 ["Linux 宿主机 · 仅监听 127.0.0.1 回环"]
         subgraph 后端服务 ["services/api"]
-            FASTAPI["FastAPI 进程 (端口 8000 或 18765)"]
+            FASTAPI["FastAPI 进程 (端口 8000 或 8000)"]
             SQLITE[("本地 SQLite 开发库 (零配置)")]:::db
             DOCKER_PG[("Docker 隔离 PG 16 (迁移/并发回归)")]:::db
             FASTAPI --> SQLITE
@@ -25,14 +25,14 @@ flowchart TB
         end
 
         subgraph 前端应用 ["apps/web (Vue 3 MPA)"]
-            STUDENT["学生端: index.html (端口 5173/4173)"]
+            STUDENT["学生端: index.html (端口 5173)"]
             ADMIN["管理端: admin.html (审核台/体检)"]
         end
 
         subgraph 验证与门禁
             VERIFY["自动化门禁 (make verify)"]
             PLAYWRIGHT["Playwright (Chromium J1-J9 + WebKit iPad)"]
-            SIMULATOR["iPadOS 触控模拟机 (run_manual_test_env.py)"]
+            SIMULATOR["iPadOS 触控模拟机 (run_dev_env.py)"]
             CHECKLIST["人工核验清单 (checklists/01~06)"]
         end
     end
@@ -51,7 +51,7 @@ flowchart TB
 
 ### 开发核心红线
 
-1. **全链路回环绑定**：本地开发与测试服务（8000、18765、4173、5173）**必须且只能监听回环地址 `127.0.0.1`**，严禁绑定 `0.0.0.0` 或局域网物理 IP。真实 iPad 仅被允许通过安全隧道访问生产环境，严禁直连开发测试端口。
+1. **全链路回环绑定**：本地开发与测试服务（8000、8000、5173）**必须且只能监听回环地址 `127.0.0.1`**，严禁绑定 `0.0.0.0` 或局域网物理 IP。真实 iPad 仅被允许通过安全隧道访问生产环境，严禁直连开发测试端口。
 2. **纯粹业务计算隔离**：`services/api/shutong/learning/guidance.py` 必须保持纯函数计算，严禁依赖 HTTP、数据库 ORM、OCR 或外部模型 SDK。
 3. **真实数据禁入**：开发树（包括 `private-data/`）仅允许使用程序生成的**虚构测试数据**，绝对禁止检入真实北京中考真题原卷、真实学生试卷扫描件、学生个人信息或任何真实生产机密。
 
@@ -99,7 +99,6 @@ pageboy/
 │   ├── design/                  # 架构设计、数据模型与业务领域权威事实
 │   └── quality/                 # 验收索引与阶段质量/演练证据记录
 ├── scripts/                     # 验证门禁与开发运维工具集
-│   ├── run_manual_test_env.py   # 前端测试环境一键拉起/关闭/模拟机管理工具
 │   ├── check_env_isolation.sh   # 开发与生产环境隔离规则自动自检脚本
 │   ├── check_docs.py            # 文档 Markdown 本地链接与资源解析器
 │   ├── check_openapi.py         # 真实 API 与已提交 OpenAPI 快照一致性校验器
@@ -212,12 +211,7 @@ npm run build
   ```
   - 学生端界面：`http://127.0.0.1:5173/`
   - 审核管理端：`http://127.0.0.1:5173/admin.html`
-- **生产产物预览模式（模拟真实反代伺服，监听 127.0.0.1:4173）**：
-  
-  ```bash
-  cd apps/web
-  npm run preview -- --host 127.0.0.1 --port 4173
-  ```
+- **统一入口**：开发、Playwright 与人工测试都使用 `127.0.0.1:5173`；不再提供 Vite Preview 入口。同一时间只能有一个 5173 服务：启动人工测试环境前先停止日常 dev。
 
 ---
 
@@ -270,7 +264,7 @@ bash scripts/check_env_isolation.sh
 2. **生产机密与数据不可读**：开发用户 `xc` 绝对不可读 `production/env/prod.env`（`0600`）、`production/env/restic-password`、`production/data` 与 `production/repo`。
 3. **Docker 权限隔离**：开发用户 `xc` 绝不在系统 `docker` 组中（避免借助宿主 docker daemon 越权访问生产持久卷）。
 4. **代码仓库零运行时残留**：源码树 `/media/xc/backup_ext4/code/pageboy` 内严禁残留 `*.sqlite3`、`private-data/`、`services/api/private-data/`、`infra/.env` 或 `infra/.local/`。
-5. **服务端口锁定回环**：端口 `18765`、`4173`、`5173`、`8000` 只能在 `127.0.0.1` 监听；`:8180` 不得由开发用户进程占用。
+5. **服务端口锁定回环**：端口 `8000`、`5173`、`8000` 只能在 `127.0.0.1` 监听；`:8180` 不得由开发用户进程占用。
 
 ---
 
@@ -280,24 +274,24 @@ bash scripts/check_env_isolation.sh
 > **前端修改强制人工测试与选项确认门禁**：
 > 前端每次功能修改或新增实现，除自动化测试通过外，**必须启动宿主机回环测试服务，向测试人提供模拟机（模拟 iPadOS 环境）操作入口与核验清单。在各项判定全部获得测试人选项式确认通过前，绝对禁止执行 Git 提交！**
 
-### 8.1 一键测试环境管理脚本用法 (`scripts/run_manual_test_env.py`)
+### 8.1 开发环境管理脚本用法 (`scripts/run_dev_env.py`)
+
+开发环境唯一入口是 `scripts/run_dev_env.py`；旧的 `scripts/run_manual_test_env.py` 已删除。开发库可以是空库或既有真实库，脚本**不会自动灌入虚构题目/样卷/附件**。
 
 ```bash
-# 1. 启动全套测试环境 (自动建临时库、拉起 API:18765、灌入虚构演示种子、拉起前端预览:4173 并自检连通性)
-uv run python scripts/run_manual_test_env.py start
+# 启动开发后端 8000 + Vite dev 5173（不灌入虚构数据）
+uv run python scripts/run_dev_env.py start
 
-# 2. 查看当前测试服务运行状态与访问地址
-uv run python scripts/run_manual_test_env.py status
+# 状态/停止
+uv run python scripts/run_dev_env.py status
+uv run python scripts/run_dev_env.py stop
 
-# 3. 在宿主机桌面上直接弹出 iPad 竖屏 (810×1080) 触控模拟机窗口
-uv run python scripts/run_manual_test_env.py sim
-
-# 4. 在宿主机桌面上直接弹出 iPad 横屏 (1080×810) 触控模拟机窗口
-uv run python scripts/run_manual_test_env.py sim-landscape
-
-# 5. 人工核验完成后，彻底停止前后端后台测试进程，释放 18765 与 4173 端口
-uv run python scripts/run_manual_test_env.py stop
+# 模拟机
+uv run python scripts/run_dev_env.py sim
+uv run python scripts/run_dev_env.py sim-landscape
 ```
+
+> 如确需在开发环境使用虚构测试数据/档案，必须先获得 Owner 批准并设置 `PAGEBOY_OWNER_TEST_DATA_APPROVED=1` + `PAGEBOY_OWNER_APPROVAL_REF`；`scripts/seed_demo.py` 未批准时 fail-closed。政策见 [开发环境测试数据政策](../quality/test-data-policy.md)。
 
 ### 8.2 选项式核验清单矩阵 (`docs/quality/checklists/`)
 
@@ -329,10 +323,10 @@ npm run test:e2e                      # Chromium 完整用户旅程
 npm run test:e2e:ipad                 # WebKit iPad 响应式仿真测试
 
 # 4. 涉及前端变更时启动模拟机人工测试
-uv run python scripts/run_manual_test_env.py start
-uv run python scripts/run_manual_test_env.py sim
+uv run python scripts/run_dev_env.py start
+uv run python scripts/run_dev_env.py sim
 # 测试人在模拟机中对照 docs/quality/checklists/*.md 逐项核验并签署结果
-uv run python scripts/run_manual_test_env.py stop
+uv run python scripts/run_dev_env.py stop
 
 # 5. 提交前终验
 bash scripts/check_env_isolation.sh   # 检查环境强隔离

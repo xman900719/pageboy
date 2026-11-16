@@ -65,14 +65,35 @@ infra/rollback.sh          # 回滚到上一个可用镜像标签
    - `uv run python scripts/k12100_sync.py status --env development`
    - `uv run python scripts/run_dev_env.py status`
 3. **人工测试与日常开发环境启动**：
-   - `uv run python scripts/run_manual_test_env.py start` 与 `uv run python scripts/run_dev_env.py start` 会按权限校验顺序自动加载 `DEEPSEEK_API_KEY` / `SHUTONG_AI_API_KEY`（可用 `--no-ai-key` 显式关闭以测 `503` 降级）。
+   - `uv run python scripts/run_dev_env.py start` 会按权限校验顺序自动加载 `DEEPSEEK_API_KEY` / `SHUTONG_AI_API_KEY`；不自动灌入虚构测试数据。
 4. **可见窗口探测（首日推荐）**（打开宿主机 Chromium，登录后手动浏览 1~2 场考试，在 `$PAGEBOY_HOME/<env>/k12100/probe_snapshot/` 生成脱敏页面/XHR 快照）：
    - `uv run python scripts/k12100_sync.py probe --env development`
-5. **增量去重同步为 M2 待核对草稿**（默认对接本机回环测试端 `http://127.0.0.1:18765`，生产环境可通过 `--env production` 与 `--api-url http://127.0.0.1:8180` 指定）：
-   - `uv run python scripts/k12100_sync.py sync --env development --api-url http://127.0.0.1:18765 --max-exams 2`
+5. **增量去重同步为 M2 待核对草稿**（默认对接本机回环测试端 `http://127.0.0.1:8000`，生产环境可通过 `--env production` 与 `--api-url http://127.0.0.1:8180` 指定）：
+   - `uv run python scripts/k12100_sync.py sync --env development --api-url http://127.0.0.1:8000 --max-exams 2`
    - 若遇验证码、滑块或 HTTP `401/403/429`，脚本会立即熔断停止并发出提示，绝不自动重试或绕过校验；同步后仍需家长在管理端 **「草稿校对台」** 人工核对确认。
 6. **管理端「从 k12100 补全各科」与全科离线采集包导入**：
    - 在管理端 **「学校考试」** 顶栏点击 **「从 k12100 补全各科」**，系统自动识别运行环境：宿主机就绪时可直接一键启动单任务后台全科补全；容器化或隔离环境自动切换为通用离线采集包导入（支持上传 `15 MiB` 内脱敏 JSON，服务端强制执行 PII 递归清洗、JPEG 答题卡校验、已有原卷 PDF 提干，并严格将全部逐题草稿标为 `ocr_draft` 待人工确认）。
    - 宿主机配套命令行导出与一站式导入命令：
      - 导出 `0600` 脱敏采集包：`uv run python scripts/k12100_sync.py collect --env development`
      - 一站式或离线包导入：`uv run python scripts/k12100_sync.py backfill --env development`（支持 `--input-json` 离线包与 `--dry-run` 预演）
+
+## 校考试卷自动发现与四步同步中心（ST-EXAM-AUTOSYNC-01）
+
+管理端 **「学校考试」→「全科校考同步」** 现在是四个步骤，而不是一组并列参数：
+
+1. **发现试卷**：顶栏显示当前环境与 `$PAGEBOY_HOME/<env>/school-exams/inbox` 私有目录。把合法取得的 PDF / DOCX / PNG / JPG 放入该目录后点 **「扫描私有收件箱」**；也可在宿主机用 `python scripts/school_exam_pipeline.py scan --source-dir <已授权目录>` 把文件复制进私有 inbox 后扫描。**未配置真实授权卷源时会明确显示 `SOURCE_NOT_CONFIGURED`，不会伪造远程下载。**
+2. **匹配考试**：R2 只以五项核心字段筛选：**学年度、年级、考试类型、学科、考试日期**。学校、学期、考试系列不识别，也不参与匹配。卷头 OCR 会检查前两页完整区域，包括右下方小字日期；完整日期保存为 `2026-10-12`，原卷只有 `2026.10` 时保存 `2026-10`，不补 01 日。多个同月“统一练习”候选会返回歧义，需用平台考试 ID/全称或人工确认。类型“统一练习”不会被改写成月考/期中。
+3. **获取信息**：匹配并导入原卷后，启动单场低频采集。单账号、单会话、串行，默认只采集 1 场；出现验证码、401/403/429 或账号异常立即停止。**平台总分默认待核对**；答题卡、逐题得分和排名分别记录覆盖状态，缺字段会单独列出。平台没有可验证日期时不会以当天日期建档案。平台没有列出可采集场次会显示 `K12100_NO_EXAMS`，有场次但没有科目会显示 `K12100_NO_SUBJECTS`，不会误报“采集包非法”。
+4. **核对入档**：先查看总分、逐题草稿、私有附件与本人排名。勾选人工核对后才能锁定总分；排名只有通过本人归属校验后才能入档，并单独确认来源，不进入能力画像。逐题草稿仍需到「原卷与草稿校对」逐题确认，未确认的草稿不会进入错误分析。错误分析入口保留在该场考试原有 Tab。
+
+CLI 的 `--dry-run` 严格只读；`run` 只对唯一精确匹配的原卷自动做私有入档，不自动确认总分。真实学校卷源、真实 k12100 连接及真实排名可用性目前为 `BLOCKED / NOT_VERIFIED`：请把合法取得的文件放入 inbox，或使用平台导出的离线采集包；不要把北京市中考真题库当作学校月考/期中/期末卷源。
+
+详细技术边界见 [校考试卷自动发现与严格匹配](../engineering/school-exam-autosync.md)。
+
+## 校考分析报告册导入与核对（报告导入与核对 Tab）
+
+管理端 **「学校考试」→「报告导入与核对」** 与「全科校考同步」并存，面向多学科分析报告册 PDF：
+
+1. **扫描与识别**：从当前环境私有收件箱识别分析报告册（单科扫描入口会自动跳过分析报告册，避免误当单科试卷建档）；可人工补录缺失学年度/年级/类型或补录缺失学科成绩。
+2. **场次关联与核对**：按场次匹配同届校考档案，人工确认后可把未锁定的各科总分回写台账，并生成逐题 `ocr_draft` 草稿及本地/AI 知识点候选（须到「原卷与草稿校对」人工确认后才进能力画像）。
+3. **答题卡切片**：可按报告页码渲染私有答题卡 PNG、调整旋转方向并同步至关联场次附件，仅经管理员私有鉴权接口查看。

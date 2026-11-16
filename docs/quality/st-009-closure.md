@@ -23,7 +23,7 @@
 
 ## 限制与未验证（如实）
 
-- **远端 CI 首次验证（2026-10-23 补记）**：用户授权推送 `codex/st-003-private-ingestion` 后经三轮运行稳定——前两轮 `web-e2e` 失败（①webServer 写死本地 venv 路径与 /tmp/opencode 目录不存在 → 参数化 PY_CMD/E2E_TMP_DIR；②作业内缺 `npm run build`，vite preview 无 dist 可服务 → 作业内补构建），第三轮 **[run 39898363746](https://github.com/xman900719/pageboy/actions/runs/39898363746) 四作业全绿**（api-and-docs 1m6s、pg-migration 40s、web-build 15s、web-e2e 1m24s；含 110 项 API 测试、契约/文档/OpenAPI、zensical 严格构建、全新 PG 迁移往返、Playwright 7/7）。既有 Node 20 弃用告警仍在（非失败，未顺手升级）。
+- **远端 CI 首次验证（2026-10-23 补记）**：用户授权推送 `codex/st-003-private-ingestion` 后经三轮运行稳定——前两轮 `web-e2e` 失败（①webServer 写死本地 venv 路径与 /tmp/opencode 目录不存在 → 参数化 PY_CMD/E2E_TMP_DIR；②前端服务启动方式不匹配（当时未构建产物）→ 修正 harness；现统一 Vite dev:5173），第三轮 **[run 39898363746](https://github.com/xman900719/pageboy/actions/runs/39898363746) 四作业全绿**（api-and-docs 1m6s、pg-migration 40s、web-build 15s、web-e2e 1m24s；含 110 项 API 测试、契约/文档/OpenAPI、zensical 严格构建、全新 PG 迁移往返、Playwright 7/7）。既有 Node 20 弃用告警仍在（非失败，未顺手升级）。
 - a11y 为 axe 自动扫描（chromium、静息态）：径向渐变页底/半透明 toast 由人工复核（tagline 4.80、footer 4.98、toast 文本 11.21 全部 ≥4.5:1）；未做多浏览器/屏幕阅读器实测。
 - ST-OPS-01/02（AC-OPS-01/02）仍为**未演练**：需要 VPS/备份仓库/监控等外部环境与明确授权，本地无阻塞项可推进，按契约如实记录边界，不假造完成。
 

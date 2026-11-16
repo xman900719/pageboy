@@ -60,7 +60,7 @@ ST-001 已完成本地基线与远端 CI 验证，AC-DOC-01/02/03 均通过。�
 
 ## ST-008 本地验证（2026-10-22）
 
-学习首页/复练/阶段诊断/缺证据解释已实现并通过 Playwright 用户旅程（J1–J4 全绿，chromium，10.9s）：三视图 UI（designer 交付）、题型渲染（题组区块/听力音频授权加载/主观自评链终态）、诚实文案红线零违规（grep 实证）、令牌仅内存、PWA 仍只缓存静态壳。纯前端任务零后端改动（后端 110 项护栏不变）。双 webServer harness（uvicorn:18765 临时 SQLite + vite preview:4173 同源代理；宿主 8000 被无关服务占用，不停外部服务改用 18765）；种子全部虚构测试数据经管理 API 现场注入。oracle 门禁 APPROVE（无 MATERIAL）。远端 CI 未运行；单浏览器无性能断言。详见 [ST-008 验证记录](docs/quality/st-008-user-journeys.md)。下一项 ST-009。
+学习首页/复练/阶段诊断/缺证据解释已实现并通过 Playwright 用户旅程（J1–J4 全绿，chromium，10.9s）：三视图 UI（designer 交付）、题型渲染（题组区块/听力音频授权加载/主观自评链终态）、诚实文案红线零违规（grep 实证）、令牌仅内存、PWA 仍只缓存静态壳。纯前端任务零后端改动（后端 110 项护栏不变）。双 webServer harness（uvicorn:18765 临时 SQLite + Vite dev:5173 同源代理；宿主 8000 被无关服务占用，不停外部服务改用 18765）；种子全部虚构测试数据经管理 API 现场注入。oracle 门禁 APPROVE（无 MATERIAL）。远端 CI 未运行；单浏览器无性能断言。详见 [ST-008 验证记录](docs/quality/st-008-user-journeys.md)。下一项 ST-009。
 
 ## ST-009 收口验证（2026-10-22；远端 CI 于 2026-10-23 补验通过，见该记录）
 
