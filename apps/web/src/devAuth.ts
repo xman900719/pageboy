@@ -17,6 +17,7 @@ export interface StorageLike {
 
 export interface DevAuthOptions {
   isDev?: boolean
+  disabled?: boolean
   storage?: StorageLike | null
 }
 
@@ -70,7 +71,8 @@ export function resolveDevAutoToken(
   options: DevAuthOptions = {}
 ): string | null {
   const isDev = options.isDev ?? import.meta.env.DEV
-  if (!isDev) return null
+  const disabled = options.disabled ?? import.meta.env.VITE_DISABLE_DEV_AUTH === '1'
+  if (!isDev || disabled) return null
 
   const storage = resolveStorage(options.storage)
   const { tokenKey, logoutKey } = getKeys(role)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
-from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, model_validator
+from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, field_validator, model_validator
 
 # 核心四科（课标、题库、练习与诊断）
 Subject = Literal["math", "chinese", "english", "physics"]
@@ -10,7 +10,18 @@ SchoolExamSubject = Literal["math", "chinese", "english", "physics", "ethics"]
 # 校考失分题标准错因分类
 SchoolErrorCategory = Literal["concept", "calculation", "reading", "method", "norm", "other"]
 # 校考逐题 OCR / 同步草稿可信度标记
-SchoolDraftConfidence = Literal["high", "medium", "low", "skeleton_only", "external_sync"]
+SchoolDraftConfidence = Literal["high", "medium", "low", "skeleton_only", "external_sync", "auto_matched", "ai_matched"]
+
+def _normalize_exam_date_input(value: Any) -> Any:
+    """考试日期输入只到月：YYYY-MM 规范为当月 1 日内部锚点；完整日期保持兼容。"""
+    if isinstance(value, str):
+        text = value.strip()
+        if len(text) == 7 and text[4] == "-" and text[:4].isdigit() and text[5:].isdigit():
+            month = int(text[5:])
+            if 1 <= month <= 12:
+                return date(int(text[:4]), month, 1)
+    return value
+
 
 class SourceIn(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -153,10 +164,54 @@ class SchoolExamIn(BaseModel):
     earned_points: float = Field(ge=0)
     max_points: float = Field(gt=0)
     confirmed_by_user: bool = False
+    # 可选考试身份元数据：用于严格匹配与卷头核对，不参与总分/能力证据计算。
+    school_name: str | None = Field(default=None, max_length=160)
+    grade: str | None = Field(default=None, max_length=20)
+    exam_type: Literal["monthly", "midterm", "final", "unified_practice", "other"] | None = None
+    exam_type_label: str | None = Field(default=None, max_length=40)
+    academic_year: str | None = Field(default=None, max_length=20, pattern=r"^20\d{2}-20\d{2}$")
+    term: Literal["first", "second"] | None = None
+    series_title: str | None = Field(default=None, max_length=160)
+    external_exam_id: str | None = Field(default=None, max_length=80)
+
+    @field_validator("exam_date", mode="before")
+    @classmethod
+    def _exam_date_month_input(cls, value: Any) -> Any:
+        return _normalize_exam_date_input(value)
+
     @model_validator(mode="after")
     def check_points(self):
         if self.earned_points > self.max_points:
             raise ValueError("earned_points exceeds max_points")
+        return self
+
+
+class SchoolPaperScanIn(BaseModel):
+    """扫描当前环境私有收件箱；只有 CLI run 才允许自动归档精确匹配原件。"""
+    apply_imports: bool = False
+
+
+class SchoolPaperCollectIn(BaseModel):
+    """从已匹配试卷启动单场 k12100 采集；总分始终待人工核对。"""
+    use_ai: bool = True
+    extract_existing_pdfs: bool = True
+    upload_missing_cards: bool = True
+    replace_unconfirmed_drafts: bool = True
+    headless: bool = False
+
+
+class SchoolPaperMatchIn(BaseModel):
+    """手工选择考试候选时必须显式携带人工确认标志。"""
+    exam_id: str | None = Field(default=None, max_length=64)
+    confirmed_by_human: bool = False
+
+
+class SchoolExamRankConfirmIn(BaseModel):
+    confirmed_by_human: bool = Field(strict=True)
+    @model_validator(mode="after")
+    def require_confirmation(self):
+        if not self.confirmed_by_human:
+            raise ValueError("human confirmation required")
         return self
 
 class SchoolExamConfirmIn(BaseModel):
@@ -610,7 +665,12 @@ class K12100SyncJobStartIn(BaseModel):
     target_exam_date: date | None = None
     series_title_prefix: str | None = Field(default=None, max_length=120)
     max_exams: int = Field(default=1, ge=1, le=3)
-    confirm_total_scores: bool = True
+
+    @field_validator("target_exam_date", mode="before")
+    @classmethod
+    def _target_exam_date_month_input(cls, value: Any) -> Any:
+        return _normalize_exam_date_input(value)
+    confirm_total_scores: bool = False
     extract_existing_pdfs: bool = True
     upload_missing_cards: bool = True
     replace_unconfirmed_drafts: bool = True
@@ -626,8 +686,41 @@ class K12100ImportBundleIn(BaseModel):
     target_exam_date: date | None = None
     series_title_prefix: str | None = Field(default=None, max_length=120)
     max_exams: int = Field(default=1, ge=1, le=3)
-    confirm_total_scores: bool = True
+
+    @field_validator("target_exam_date", mode="before")
+    @classmethod
+    def _target_exam_date_month_input(cls, value: Any) -> Any:
+        return _normalize_exam_date_input(value)
+    confirm_total_scores: bool = False
     extract_existing_pdfs: bool = True
     upload_missing_cards: bool = True
     replace_unconfirmed_drafts: bool = True
     use_ai: bool = True
+
+
+class SchoolExamReportConfirmIn(BaseModel):
+    confirmed: bool = False
+
+
+class SchoolExamReportPatchIn(BaseModel):
+    """报告身份字段人工补录；只改报告，不自动改关联考试或成绩。"""
+
+    title: str | None = Field(default=None, max_length=200)
+    academic_year: str | None = Field(default=None, max_length=20, pattern=r"^20\d{2}-20\d{2}$")
+    grade: str | None = Field(default=None, max_length=20)
+    exam_type: str | None = Field(default=None, max_length=40)
+    exam_sequence: int | None = Field(default=None, ge=1, le=9)
+    report_time: str | None = Field(default=None, max_length=80)
+
+
+class SchoolExamReportSubjectIn(BaseModel):
+    """为报告补录缺失学科的统计信息（不伪造原卷）。"""
+
+    subject: SchoolExamSubject
+    score: float = Field(ge=0)
+    max_score: float = Field(gt=0)
+    class_rank: int | None = Field(default=None, ge=1)
+    grade_rank: int | None = Field(default=None, ge=1)
+    participants: int | None = Field(default=None, ge=1)
+    class_highest: float | None = Field(default=None, ge=0)
+    grade_highest: float | None = Field(default=None, ge=0)

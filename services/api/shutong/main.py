@@ -1,9 +1,10 @@
 """Private API foundation. Read CODEX_START_HERE.md before extending."""
 from __future__ import annotations
 import os
+import re
 from datetime import datetime, timezone
 from hashlib import sha256
-from fastapi import FastAPI, Depends, HTTPException, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import delete, select, func, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -18,11 +19,14 @@ from .fourcorpus import router as corpus_router
 from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence
 from .research import official_reject_reason
 from .database import get_db
+from .home import HomeIdentityError
 from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
 from . import k12100_backfill
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, GoalIn, Subject, SchoolExamSubject
+from . import school_exam_pipeline as exam_pipeline
+from . import school_report_pipeline as report_pipeline
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -298,7 +302,10 @@ def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_admin), 
 @app.get("/api/school-exams")
 def get_school_exams(subject: SchoolExamSubject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     exams = db.execute(select(m.SchoolExam).where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject).order_by(m.SchoolExam.exam_date.desc())).scalars().all()
-    return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user} for e in exams]
+    return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user,
+             "school_name": e.school_name, "grade": e.grade, "exam_type": e.exam_type, "exam_type_label": e.exam_type_label,
+             "academic_year": e.academic_year, "term": e.term, "series_title": e.series_title,
+             "external_exam_id": e.external_exam_id, "source_kind": e.source_kind} for e in exams]
 
 @app.post("/api/school-exams/{exam_id}/confirm")
 def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
@@ -793,6 +800,439 @@ def get_k12100_sync_job_endpoint(job_id: str, owner: str = Depends(require_admin
     return job
 
 
+def _get_owned_paper(db: Session, paper_id: str, owner: str) -> m.SchoolExamPaper:
+    paper = db.get(m.SchoolExamPaper, paper_id)
+    if paper is None or paper.learner_id != owner:
+        raise HTTPException(404, detail="SCHOOL_EXAM_PAPER_NOT_FOUND")
+    return paper
+
+
+def _raise_pipeline_error(exc: exam_pipeline.PaperPipelineError):
+    status_code = 409 if exc.code in {
+        exam_pipeline.SOURCE_NOT_CONFIGURED,
+        "INBOX_PERMISSIONS_TOO_WIDE",
+        "SOURCE_SYMLINK_REJECTED",
+        "INBOX_SYMLINK_REJECTED",
+    } else 422
+    raise HTTPException(status_code=status_code, detail=exc.code)
+
+
+@app.get("/api/school-exams/sync-center")
+def get_school_exam_sync_center(owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """返回四步同步中心的真实后端状态：卷源、扫描、试卷与严格匹配候选。"""
+    try:
+        return exam_pipeline.get_sync_center(db, owner=owner)
+    except exam_pipeline.PaperPipelineError as exc:
+        _raise_pipeline_error(exc)
+    except HomeIdentityError as exc:
+        raise HTTPException(409, detail="ENVIRONMENT_IDENTITY_INVALID") from exc
+
+
+@app.post("/api/school-exams/reports/scan")
+def scan_school_exam_reports(
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """扫描当前环境 inbox 中的分析报告册；报告不会当作单科试卷导入。"""
+    return report_pipeline.scan_reports(db, owner=owner)
+
+
+@app.post("/api/school-exams/reports/{report_id}/match")
+def match_school_exam_report(report_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    result = report_pipeline.match_report(db, report=report)
+    db.commit()
+    db.refresh(report)
+    return {"report": report_pipeline.serialize_report(report), "match": result}
+
+
+@app.get("/api/school-exams/reports")
+def list_school_exam_reports(owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner).order_by(m.SchoolExamReport.created_at.desc())
+    ).scalars().all()
+    return [report_pipeline.serialize_report(item) for item in rows]
+
+
+def _auto_map_report_items(db: Session, report: m.SchoolExamReport) -> int:
+    """用已归档原卷文字层做本地知识点匹配，只填候选，不确认。"""
+    links = {str(link.get("subject")): str(link.get("exam_id")) for link in (report.linked_exam_ids or [])}
+    applied = 0
+    for subject, exam_id in links.items():
+        has_taxonomy, nodes, _names, _aliases = _resolve_school_knowledge_meta(db, subject, set())
+        if not has_taxonomy or not nodes:
+            continue
+        attachments = db.execute(
+            select(m.SchoolPaperAttachment).where(
+                m.SchoolPaperAttachment.school_exam_id == exam_id,
+                m.SchoolPaperAttachment.owner_id == report.learner_id,
+            )
+        ).scalars().all()
+        original = next((a for a in attachments if "答题卡" not in a.filename), None)
+        if original is None:
+            continue
+        try:
+            data = files.blob_path(original.storage_key).read_bytes()
+            text, _version = files.parse_text(data, original.media_type)
+        except Exception:
+            continue
+        skeleton = paper_parser.parse_paper_skeleton_from_text(text, subject, nodes)
+        by_number: dict[str, dict] = {}
+        for item in skeleton:
+            match = re.search(r"(\d+)", str(item.get("question_label") or ""))
+            if match:
+                by_number[match.group(1)] = item
+        rows = db.execute(
+            select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)
+        ).scalars().all()
+        for row in rows:
+            if row.confirmed_by_user or row.knowledge_id != "unmapped":
+                continue
+            match = re.search(r"(\d+)", row.question_label)
+            candidate = by_number.get(match.group(1)) if match else None
+            if not candidate:
+                continue
+            children = candidate.get("draft_knowledge_candidates") or []
+            knowledge_id = str(candidate.get("knowledge_id") or "")
+            if not children or knowledge_id in {"", "unmapped"}:
+                continue
+            if all("未命中明确关键词" in str(child.get("reason") or "") for child in children):
+                continue
+            row.knowledge_id = knowledge_id
+            row.draft_knowledge_candidates = children
+            row.draft_confidence = "auto_matched"
+            applied += 1
+    return applied
+
+
+@app.post("/api/school-exams/reports/{report_id}/items/drafts")
+def generate_school_exam_report_item_drafts(
+    report_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """把报告逐题表生成为台账 ocr_draft；知识点待人工映射，不自动确认。"""
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    result = report_pipeline.generate_item_drafts(db, report=report)
+    result["auto_mapped"] = _auto_map_report_items(db, report)
+    db.commit()
+    return result
+
+
+@app.post("/api/school-exams/reports/{report_id}/items/ai-map")
+def ai_map_school_exam_report_items(
+    report_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """DeepSeek 文本知识点匹配；只传题干和编码清单，只写未确认候选。"""
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    return report_pipeline.ai_map_report_items(db, report=report)
+
+
+@app.post("/api/school-exams/reports/{report_id}/subjects")
+def supplement_school_exam_report_subject(
+    report_id: str,
+    payload: SchoolExamReportSubjectIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """为报告补录缺失学科统计；只改报告草稿，不创建原卷/不写能力画像。"""
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    subjects = [dict(item) for item in (report.subjects or [])]
+    if any(str(item.get("subject")) == payload.subject for item in subjects):
+        raise HTTPException(409, detail="REPORT_SUBJECT_ALREADY_PRESENT")
+    subjects.append(
+        {
+            "subject": payload.subject,
+            "name": {"chinese": "语文", "math": "数学", "english": "英语", "physics": "物理", "ethics": "道德与法治"}.get(payload.subject, payload.subject),
+            "score": payload.score,
+            "max_score": payload.max_score,
+            "class_rank": payload.class_rank,
+            "grade_rank": payload.grade_rank,
+            "participants": payload.participants,
+            "class_highest": payload.class_highest,
+            "grade_highest": payload.grade_highest,
+            "page": None,
+            "source": "manual_supplement",
+        }
+    )
+    report.subjects = subjects
+    report.listed_subject_score = round(sum(float(item.get("score") or 0) for item in subjects), 2)
+    report.listed_subject_max = round(sum(float(item.get("max_score") or 0) for item in subjects), 2)
+    if report.report_total_score is None or report.report_total_max is None:
+        report.scope_status = "NEEDS_REVIEW"
+    elif abs(report.report_total_score - report.listed_subject_score) < 0.01 and abs(report.report_total_max - report.listed_subject_max) < 0.01:
+        report.scope_status = "CONSISTENT"
+    elif abs(report.report_total_score - report.listed_subject_score) < 0.01:
+        report.scope_status = "DIFFERENT_SCOPE_POSSIBLE"
+    else:
+        report.scope_status = "UNEXPLAINED"
+    report.status = "needs_review"
+    report.match_state = "NEEDS_REVIEW"
+    report.updated_at = m.now()
+    db.commit()
+    db.refresh(report)
+    return report_pipeline.serialize_report(report)
+
+
+@app.post("/api/school-exams/reports/{report_id}/confirm")
+def confirm_school_exam_report(
+    report_id: str,
+    payload: SchoolExamReportConfirmIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """人工确认报告；必须先完成唯一关联，只改变报告状态，不改写成绩或画像。"""
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    if not payload.confirmed:
+        raise HTTPException(422, detail="REPORT_CONFIRMATION_REQUIRED")
+    if report.match_state not in {"EXACT_MATCH", "PARTIAL_MATCH"}:
+        raise HTTPException(409, detail="REPORT_MATCH_REQUIRED")
+    ledger = report_pipeline.apply_report_to_ledger(db, report=report)
+    ledger["answer_cards_synced"] = report_pipeline.sync_answer_cards_to_ledger(db, report=report)
+    report.status = "confirmed"
+    report.updated_at = m.now()
+    db.commit()
+    db.refresh(report)
+    return {**report_pipeline.serialize_report(report), "ledger": ledger}
+
+
+@app.patch("/api/school-exams/reports/{report_id}")
+def patch_school_exam_report(
+    report_id: str,
+    payload: SchoolExamReportPatchIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """人工补录报告身份字段（如 OCR 缺失的年级）；不写关联考试、成绩或画像。"""
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    updates = payload.model_dump(exclude_unset=True)
+    for name, value in updates.items():
+        setattr(report, name, value)
+    report.status = "needs_review" if report.status == "confirmed" else report.status
+    report.updated_at = m.now()
+    db.commit()
+    db.refresh(report)
+    return report_pipeline.serialize_report(report)
+
+
+@app.post("/api/school-exams/reports/{report_id}/answer-cards")
+def build_report_answer_cards(
+    report_id: str,
+    rotation: int = Query(0),
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    return report_pipeline.build_answer_card_attachments(db, report=report, rotation=rotation)
+
+
+@app.get("/api/school-exams/reports/{report_id}/answer-cards")
+def list_report_answer_cards(report_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    return report_pipeline.list_answer_card_attachments(db, report=report)
+
+
+@app.get("/api/school-exams/reports/{report_id}/answer-cards/{attachment_id}/image")
+def get_report_answer_card_image(
+    report_id: str,
+    attachment_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    attachment = db.get(m.SchoolExamReportAttachment, attachment_id)
+    if attachment is None or attachment.report_id != report_id or attachment.learner_id != owner:
+        raise HTTPException(404, detail="attachment not found")
+    try:
+        data = files.blob_path(attachment.storage_key).read_bytes()
+    except FileNotFoundError as exc:
+        raise HTTPException(409, detail="ATTACHMENT_FILE_MISSING") from exc
+    if attachment.rotation:
+        from io import BytesIO
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(data)) as image:
+                rotated = image.convert("RGB").rotate(-int(attachment.rotation), expand=True)
+                output = BytesIO()
+                rotated.save(output, format="PNG")
+                data = output.getvalue()
+        except Exception as exc:
+            raise HTTPException(409, detail="ANSWER_CARD_ROTATION_FAILED") from exc
+    return Response(content=data, media_type=attachment.media_type)
+
+
+@app.get("/api/school-exams/reports/{report_id}")
+def get_school_exam_report(report_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    report = db.get(m.SchoolExamReport, report_id)
+    if report is None or report.learner_id != owner:
+        raise HTTPException(404, detail="report not found")
+    return report_pipeline.serialize_report(report)
+
+
+@app.post("/api/school-exams/pipeline/scan")
+def scan_school_exam_papers(
+    payload: SchoolPaperScanIn | None = None,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """扫描当前环境 0700 私有收件箱；所有论文先待核对，逐题仍走既有 ocr_draft 门禁。"""
+    try:
+        return exam_pipeline.scan_local_papers(
+            db,
+            owner=owner,
+            apply_imports=bool(payload and payload.apply_imports),
+        )
+    except exam_pipeline.PaperPipelineError as exc:
+        _raise_pipeline_error(exc)
+    except HomeIdentityError as exc:
+        raise HTTPException(409, detail="ENVIRONMENT_IDENTITY_INVALID") from exc
+
+
+@app.post("/api/school-exams/pipeline/acquire")
+def acquire_school_exam_papers(owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """通过已登记授权适配器获取并扫描试卷；未配置真实来源时明确返回 SOURCE_NOT_CONFIGURED。"""
+    try:
+        acquired = exam_pipeline.acquire_from_configured_source()
+        scanned = exam_pipeline.scan_local_papers(db, owner=owner, apply_imports=False, source_kind="acquired")
+        return {**acquired, "scan": scanned["run"], "papers": scanned["papers"]}
+    except exam_pipeline.PaperPipelineError as exc:
+        _raise_pipeline_error(exc)
+
+
+@app.post("/api/school-exams/pipeline/papers/{paper_id}/match")
+def match_school_exam_paper(
+    paper_id: str,
+    payload: SchoolPaperMatchIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """重跑严格匹配，或由管理员显式选择候选考试并确认。"""
+    paper = _get_owned_paper(db, paper_id, owner)
+    try:
+        if payload.exam_id:
+            return exam_pipeline.manual_match_paper(
+                db,
+                paper=paper,
+                owner=owner,
+                exam_id=payload.exam_id,
+                confirmed_by_human=payload.confirmed_by_human,
+            )
+        return exam_pipeline.rematch_paper(db, paper=paper)
+    except exam_pipeline.PaperPipelineError as exc:
+        _raise_pipeline_error(exc)
+
+
+@app.post("/api/school-exams/pipeline/papers/{paper_id}/import")
+def import_school_exam_paper(
+    paper_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """把唯一精确匹配/人工确认的试卷复制为私有校卷附件；不修改总分或已确认历史。"""
+    paper = _get_owned_paper(db, paper_id, owner)
+    try:
+        return exam_pipeline.import_matched_paper(db, paper=paper, owner=owner)
+    except exam_pipeline.PaperPipelineError as exc:
+        _raise_pipeline_error(exc)
+
+
+@app.post("/api/school-exams/pipeline/papers/{paper_id}/collect", status_code=202)
+def collect_school_exam_paper(
+    paper_id: str,
+    payload: SchoolPaperCollectIn | None = None,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """从唯一匹配/人工确认的试卷启动单场 k12100 采集，闭合本地匹配到待核对入库的流程。"""
+    paper = _get_owned_paper(db, paper_id, owner)
+    if paper.status not in {"matched", "imported"} or not paper.school_exam_id:
+        raise HTTPException(409, detail="SCHOOL_EXAM_MATCH_REQUIRED")
+    exam = db.get(m.SchoolExam, paper.school_exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    # 本地档案标题不是平台可信关键词；不要用它筛空真实场次。
+    # 采集最近单场后由五字段严格匹配决定是否入账，匹配不到即阻断。
+    options = payload or SchoolPaperCollectIn()
+    return k12100_backfill.start_k12100_sync_job(
+        db,
+        owner=owner,
+        resolve_knowledge_fn=_resolve_school_knowledge_meta,
+        persist_drafts_fn=_persist_draft_items,
+        save_paper_fn=save_school_paper,
+        exam_keyword=None,
+        target_exam_date=None,
+        series_title_prefix=None,
+        max_exams=1,
+        confirm_total_scores=False,
+        extract_existing_pdfs=options.extract_existing_pdfs,
+        upload_missing_cards=options.upload_missing_cards,
+        replace_unconfirmed_drafts=options.replace_unconfirmed_drafts,
+        use_ai=options.use_ai,
+        headless=options.headless,
+    )
+
+
+@app.post("/api/school-exams/pipeline/papers/{paper_id}/reject")
+def reject_school_exam_paper(
+    paper_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """人工忽略无法确认身份的试卷；只改本索引状态，绝不删除原始文件。"""
+    paper = _get_owned_paper(db, paper_id, owner)
+    if paper.status == "imported":
+        raise HTTPException(409, detail="PAPER_ALREADY_IMPORTED")
+    paper.status = "rejected"
+    paper.match_state = "REJECTED"
+    paper.updated_at = m.now()
+    db.commit()
+    db.refresh(paper)
+    return {"paper": exam_pipeline.serialize_paper(paper)}
+
+
+@app.get("/api/school-exams/{exam_id}/ranks")
+def get_school_exam_ranks(exam_id: str, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """本人排名独立查询（仅管理端）；不进入学生端响应或能力画像。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    return exam_pipeline.rank_payload(db, exam=exam, owner=owner)
+
+
+@app.post("/api/school-exams/{exam_id}/ranks/{rank_id}/confirm")
+def confirm_school_exam_rank(
+    exam_id: str,
+    rank_id: str,
+    payload: SchoolExamRankConfirmIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """人工确认平台本人排名事实；只更新核对状态，不修改排名值或能力证据。"""
+    _ = payload
+    return exam_pipeline.confirm_rank(db, rank_id=rank_id, owner=owner, exam_id=exam_id)
+
+
 @app.post(
     "/api/school-exams/k12100-sync/import-bundle",
     openapi_extra={
@@ -863,6 +1303,61 @@ def update_school_exam_item_analysis(
     db.commit()
     db.refresh(item)
     return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
+
+@app.delete("/api/school-exams/{exam_id}")
+def delete_school_exam(
+    exam_id: str,
+    confirm: bool = Query(False),
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """删除单场校考及其逐题得分、原卷附件、排名快照；关联扫描试卷解除关联。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    if not confirm:
+        raise HTTPException(400, detail="SCHOOL_EXAM_DELETE_CONFIRMATION_REQUIRED")
+
+    attachments = db.execute(
+        select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam_id)
+    ).scalars().all()
+    # 先删私有原件；文件删除失败则中止，避免留下数据库孤儿。
+    for attachment in attachments:
+        try:
+            files.blob_path(attachment.storage_key).unlink(missing_ok=True)
+        except OSError as exc:
+            raise HTTPException(409, detail="SCHOOL_EXAM_ATTACHMENT_DELETE_FAILED") from exc
+
+    items = db.execute(
+        select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)
+    ).scalars().all()
+    ranks = db.execute(
+        select(m.SchoolExamRankSnapshot).where(m.SchoolExamRankSnapshot.school_exam_id == exam_id)
+    ).scalars().all()
+    papers = db.execute(
+        select(m.SchoolExamPaper).where(m.SchoolExamPaper.school_exam_id == exam_id)
+    ).scalars().all()
+    for paper in papers:
+        paper.school_exam_id = None
+        paper.status = "needs_review"
+        paper.match_state = "NEEDS_REVIEW"
+        paper.match_candidates = []
+        paper.imported_at = None
+        paper.error_code = None
+        paper.updated_at = m.now()
+    for row in [*items, *attachments, *ranks]:
+        db.delete(row)
+    db.delete(exam)
+    db.commit()
+    return {
+        "deleted": True,
+        "id": exam_id,
+        "items_deleted": len(items),
+        "attachments_deleted": len(attachments),
+        "rank_snapshots_deleted": len(ranks),
+        "papers_unlinked": len(papers),
+    }
+
 
 @app.get("/api/school-exams/{exam_id}/error-analysis", response_model=SchoolExamErrorAnalysisOut)
 def get_school_exam_error_analysis(
@@ -957,6 +1452,10 @@ def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db
     attachments = db.execute(select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam.id, m.SchoolPaperAttachment.owner_id == owner).order_by(m.SchoolPaperAttachment.created_at, m.SchoolPaperAttachment.id)).scalars().all()
     return {"id": exam.id, "subject": exam.subject, "title": exam.title, "exam_date": str(exam.exam_date),
             "earned_points": exam.earned_points, "max_points": exam.max_points, "confirmed_by_user": exam.confirmed_by_user,
+            "school_name": exam.school_name, "grade": exam.grade, "exam_type": exam.exam_type,
+            "exam_type_label": exam.exam_type_label,
+            "academic_year": exam.academic_year, "term": exam.term, "series_title": exam.series_title,
+            "external_exam_id": exam.external_exam_id, "source_kind": exam.source_kind,
             "items": _serialize_school_exam_items_with_names(db, exam.subject, items),
             "attachments": [{"id": a.id, "filename": a.filename, "media_type": a.media_type, "sha256": a.sha256,
                              "byte_size": a.byte_size, "created_at": a.created_at} for a in attachments]}

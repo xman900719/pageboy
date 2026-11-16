@@ -279,9 +279,8 @@ def test_config_deepseek_from_shell_clear_and_fail_closed(tmp_path, monkeypatch,
     assert "SHUTONG_AI_API_KEY" not in creds_cleared
 
 
-def test_run_dev_env_and_manual_env_ai_cli_helpers(tmp_path, monkeypatch, capsys):
+def test_run_dev_env_ai_cli_helpers(tmp_path, monkeypatch, capsys):
     import run_dev_env as rde
-    import run_manual_test_env as rmte
 
     pb_home = tmp_path / "pb-home"
     dev_home = pb_home / "development"
@@ -318,15 +317,14 @@ def test_run_dev_env_and_manual_env_ai_cli_helpers(tmp_path, monkeypatch, capsys
     assert after_clear["SHUTONG_STUDENT_TOKEN"] == stu_tok
     assert "DEEPSEEK_API_KEY" not in after_clear
 
-    # 测试人工测试环境注入逻辑：仅接受合规权限文件，并支持 --no-ai-key 隔离
+    # 开发环境 k12100.env 仅在权限严格合规时透传 AI 配置
     k12_dir = tmp_path / "k12-home"
     ks.ensure_secure_dir(k12_dir)
     ks.merge_secure_env_file(k12_dir / "k12100.env", {"DEEPSEEK_API_KEY": "sk-k12-src-445566"})
     monkeypatch.setenv("SHUTONG_K12100_CONFIG_DIR", str(k12_dir))
-    monkeypatch.setattr(rmte, "_PAGEBOY_DEV_HOME", dev_home)
 
     env_clean: dict[str, str] = {}
-    src_label = rmte._inject_ai_env(env_clean, no_ai_key=False)
+    src_label = rde._propagate_ai_env(env_clean, {})
     assert "k12100.env" in src_label
     assert "sk-k12-src-445566" not in src_label
     assert env_clean["SHUTONG_AI_API_KEY"] == "sk-k12-src-445566"
@@ -335,15 +333,8 @@ def test_run_dev_env_and_manual_env_ai_cli_helpers(tmp_path, monkeypatch, capsys
     # 权限放宽为 0644 后必须拒绝加载
     os.chmod(k12_dir / "k12100.env", 0o644)
     env_loose: dict[str, str] = {}
-    assert "未配置" in rmte._inject_ai_env(env_loose, no_ai_key=False)
+    assert "未配置" in rde._propagate_ai_env(env_loose, {})
     assert "SHUTONG_AI_API_KEY" not in env_loose
-
-    # --no-ai-key 清空 Shell 中既有密钥以验证 503 fail-closed
-    env_disabled = {"DEEPSEEK_API_KEY": "sk-shell-present", "SHUTONG_AI_API_KEY": "sk-shell-present"}
-    disabled_label = rmte._inject_ai_env(env_disabled, no_ai_key=True)
-    assert "--no-ai-key" in disabled_label
-    assert "DEEPSEEK_API_KEY" not in env_disabled
-    assert "SHUTONG_AI_API_KEY" not in env_disabled
 
 
 def test_k12100_default_paths_isolated_by_environment_and_reject_legacy(tmp_path, monkeypatch):
@@ -420,6 +411,17 @@ def test_cli_collect_writes_0600_sanitized_bundle_and_zero_pii(tmp_path, monkeyp
                             "subjectName": "数学",
                             "score": 95,
                             "fullScore": 100,
+                            "classRank": "5/320",
+                            "classStudentNum": 320,
+                            "rank_ownership": "verified",
+                            "rank_ownership_basis": "single_student_ref_authenticated_subject_response",
+                            "schoolName": "虚构测试数据实验学校",
+                            "gradeName": "九年级",
+                            "examTypeName": "期中",
+                            "academicYear": "2026-2027",
+                            "termName": "第一学期",
+                            "seriesTitle": "虚构测试数据 期中考试",
+                            "examId": "offline-exam-1",
                             "smallQuestions": [{"questionName": "1", "score": 2, "fullScore": 2}],
                             "card_images": [],
                         }
@@ -448,8 +450,35 @@ def test_cli_collect_writes_0600_sanitized_bundle_and_zero_pii(tmp_path, monkeyp
     assert stat.S_IMODE(out_file.stat().st_mode) == 0o600
 
     disk_text = out_file.read_text(encoding="utf-8")
-    for forbidden in ("李四", "S-PII-001", "schoolRank", "studName", "13900001111", "Secret-K12-Pwd"):
+    for forbidden in ("李四", "S-PII-001", "schoolRank", "classRank", "studName", "13900001111", "Secret-K12-Pwd"):
         assert forbidden not in disk_text
+    stored = json.loads(disk_text)
+    stored_subject = stored["exams"][0]["subjects"][0]
+    assert stored_subject["rank_ownership"] == "verified"
+    assert stored_subject["own_ranks"] == [
+        {
+            "scope": "class",
+            "rank_value": 5,
+            "participant_count": 320,
+            "percentile": None,
+            "source_field": "classrank",
+        }
+    ]
+    assert stored_subject["identity"] == {
+        "school_name": "虚构测试数据实验学校",
+        "grade": "九年级",
+        "exam_type": "midterm",
+        "exam_type_label": "期中",
+        "academic_year": "2026-2027",
+        "exam_date": "2026-10-18",
+        "term": "first",
+        "series_title": "虚构测试数据 期中考试",
+        "external_exam_id": "offline-exam-1",
+    }
+    from shutong.k12100_backfill import normalize_k12100_bundle
+    normalized = normalize_k12100_bundle(stored)
+    assert normalized[0]["subjects"][0]["identity"]["external_exam_id"] == "offline-exam-1"
+    assert normalized[0]["subjects"][0]["identity"]["school_name"] == "虚构测试数据实验学校"
 
     captured = capsys.readouterr()
     combined = captured.out + captured.err
@@ -564,3 +593,99 @@ def test_backfill_cli_dry_run_and_real_import_bundle_creates_0600_ledger(tmp_pat
     cli_out = json.loads(capsys.readouterr().out)
     assert cli_out["dry_run"] is True
     assert cli_out["exam_count"] == 1
+
+
+def test_k12100_rank_allowlist_extracts_self_only_before_pii_strip():
+    module_url = (SCRIPTS_DIR / "k12100_rank_fields.mjs").as_uri()
+    code = f"""
+import {{ extractExamIdentityFields, extractOwnRankFields, withoutIdentityConflicts, withoutRankConflicts }} from {json.dumps(module_url)};
+const sample = extractOwnRankFields({{
+  students: [{{ studentName: '其他学生', classRank: 1 }}],
+  data: {{ classRank: '5/320', schoolRank: 18, examNum: 320, schoolName: '不应进入排名白名单' }}
+}});
+const conflict = withoutRankConflicts(extractOwnRankFields({{
+  data: {{ schoolRank: 18 }},
+  extra: {{ schoolRank: 19 }}
+}}));
+const identity = withoutIdentityConflicts(extractExamIdentityFields({{
+  data: {{ schoolName: '虚构测试数据实验学校', gradeName: '九年级', examTypeName: '月考', academicYear: '2025-2026', termName: '第一学期', examId: 'platform-1' }},
+  students: [{{ studentName: '其他学生', schoolName: '其他学校' }}]
+}}));
+console.log(JSON.stringify({{ sample: withoutRankConflicts(sample), conflict, identity }}));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["sample"] == {"classRank": "5/320", "schoolRank": 18, "examNum": 320}
+    assert payload["conflict"] == {}
+    assert payload["identity"] == {
+        "schoolName": "虚构测试数据实验学校",
+        "gradeName": "九年级",
+        "examTypeName": "月考",
+        "academicYear": "2025-2026",
+        "termName": "第一学期",
+        "examId": "platform-1",
+    }
+
+
+def test_k12100_browser_student_refs_ignore_student_arrays():
+    module_url = (SCRIPTS_DIR / "k12100_rank_fields.mjs").as_uri()
+    code = f"""
+import {{ extractStudentIdentityRefs }} from {json.dumps(module_url)};
+const refs = [...extractStudentIdentityRefs({{
+  data: {{ studentId: 'SELF-HASHABLE', classRank: 5 }},
+  students: [{{ studentId: 'OTHER-STUDENT', classRank: 1 }}]
+}})];
+console.log(JSON.stringify(refs));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == ["SELF-HASHABLE"]
+
+
+def test_legacy_sync_blocks_missing_exam_date_without_api_write(tmp_path):
+    def _must_not_call(*args, **kwargs):
+        raise AssertionError("missing-date exam must not reach the API")
+
+    summary = ks.sync_sanitized_exams_to_pageboy(
+        [
+            {
+                "title": "虚构测试数据：无日期统一练习",
+                "subject_hint": "道德与法治",
+                "earned_points": 80,
+                "max_points": 100,
+                "items": [],
+            }
+        ],
+        api_url="http://127.0.0.1:18765",
+        admin_token="test-admin-secret",
+        ledger_path=tmp_path / "ledger.json",
+        use_ai=False,
+        request_fn=_must_not_call,
+    )
+    assert summary["processed"] == 0
+    assert summary["skipped_missing_date"] == 1
+    assert summary["exams"][0]["status"] == "skipped_missing_date"
+
+
+def test_run_dev_env_reports_both_stdout_and_stderr():
+    import run_dev_env as rde
+
+    detail = rde._format_subprocess_failure(
+        "FAILED: Can't locate revision identified by '0014'",
+        "warning: VIRTUAL_ENV does not match",
+    )
+    assert "FAILED: Can't locate revision" in detail
+    assert "warning: VIRTUAL_ENV" in detail

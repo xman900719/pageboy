@@ -7,7 +7,14 @@ export type Kind = 'single_choice' | 'short_answer' | 'subjective'
 export type Purpose = 'training' | 'evaluation'
 export type GapType = 'INSUFFICIENT_EVIDENCE' | 'KNOWLEDGE_GAP' | 'NO_CONFIRMED_GAP'
 export type SchoolErrorCategory = 'concept' | 'calculation' | 'reading' | 'method' | 'norm' | 'other'
-export type SchoolDraftConfidence = 'high' | 'medium' | 'low' | 'skeleton_only' | 'external_sync'
+export type SchoolDraftConfidence =
+  | 'high'
+  | 'medium'
+  | 'low'
+  | 'skeleton_only'
+  | 'external_sync'
+  | 'auto_matched'
+  | 'ai_matched'
 
 export interface DraftKnowledgeCandidate {
   knowledge_id: string
@@ -294,6 +301,15 @@ export interface SchoolExam {
   earned_points: number
   max_points: number
   confirmed_by_user: boolean
+  school_name?: string | null
+  grade?: string | null
+  exam_type?: 'monthly' | 'midterm' | 'final' | 'unified_practice' | 'other' | null
+  exam_type_label?: string | null
+  academic_year?: string | null
+  term?: 'first' | 'second' | null
+  series_title?: string | null
+  external_exam_id?: string | null
+  source_kind?: string
 }
 
 export interface SchoolPaperAttachment {
@@ -459,6 +475,163 @@ export interface SchoolExamDetail extends SchoolExam {
   attachments: SchoolPaperAttachment[]
 }
 
+export type SchoolExamMatchState =
+  | 'EXACT_MATCH'
+  | 'AMBIGUOUS'
+  | 'CONFLICT'
+  | 'NOT_FOUND'
+  | 'NEEDS_REVIEW'
+  | 'AWAITING_EXAM_DATE'
+  | 'MANUAL_CONFIRMED'
+  | 'REJECTED'
+
+export interface SchoolPaperHeaderField {
+  status: 'found' | 'missing' | 'ambiguous'
+  value: string | null
+  evidence: string | null
+}
+
+export interface SchoolPaperHeader {
+  subject: SchoolSubject | null
+  academic_year: string | null
+  grade: string | null
+  exam_type: 'monthly' | 'midterm' | 'final' | 'unified_practice' | 'other' | null
+  exam_type_label: string | null
+  exam_date: string | null
+  confidence: 'high' | 'medium' | 'low' | string | null
+  complete: boolean
+  fields: Record<string, SchoolPaperHeaderField>
+  text_excerpt: string
+  text_sha256?: string
+  warnings: string[]
+}
+
+export interface SchoolPaperFieldComparison {
+  field: string
+  label: string
+  expected: string | null
+  actual: string | null
+  state: 'match' | 'conflict' | 'different' | 'missing'
+}
+
+export interface SchoolPaperMatchCandidate {
+  exam_id: string
+  title: string
+  exam_date: string | null
+  score?: number
+  exact?: boolean
+  comparisons?: SchoolPaperFieldComparison[]
+  conflicts?: string[]
+  missing?: string[]
+  manual?: boolean
+  confirmed_by_human?: boolean
+}
+
+export interface SchoolExamPaper {
+  id: string
+  filename: string
+  sha256: string
+  media_type: string
+  byte_size: number
+  source_kind: string
+  source_name: string
+  source_ref: string
+  status: 'needs_review' | 'matched' | 'imported' | 'rejected' | string
+  match_state: SchoolExamMatchState | null
+  header: SchoolPaperHeader
+  candidates: SchoolPaperMatchCandidate[]
+  school_exam_id: string | null
+  exam: {
+    id: string
+    title: string
+    subject: SchoolSubject
+    exam_date: string
+    confirmed_by_user: boolean
+  } | null
+  error_code: string | null
+  imported_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SchoolExamScanRun {
+  id: string
+  status: string
+  discovered_count: number
+  imported_count: number
+  duplicate_count: number
+  invalid_count: number
+  needs_review_count: number
+  error_count: number
+  errors: { path?: string; code: string }[]
+  started_at: string
+  finished_at: string | null
+}
+
+export interface SchoolExamSyncSource {
+  environment: string
+  directory: string
+  directory_display: string
+  real_source_configured: boolean
+  source_kind: string
+  ready: boolean
+  source_code: string | null
+  message: string
+  supported_formats: string[]
+  max_file_bytes: number
+}
+
+export interface SchoolExamSyncCenter {
+  source: SchoolExamSyncSource
+  latest_scan: SchoolExamScanRun | null
+  counts: {
+    total: number
+    needs_review: number
+    matched: number
+    imported: number
+    rejected: number
+  }
+  papers: SchoolExamPaper[]
+}
+
+export interface SchoolExamScanResult {
+  run: SchoolExamScanRun
+  papers: SchoolExamPaper[]
+  source: SchoolExamSyncSource
+}
+
+export interface SchoolExamMatchResult {
+  state: SchoolExamMatchState
+  confidence: string
+  best_exam_id: string | null
+  candidates: SchoolPaperMatchCandidate[]
+  reasons: string[]
+  missing_fields: string[]
+}
+
+export interface SchoolExamRank {
+  id: string
+  subject_scope: string
+  scope: 'class' | 'grade' | 'school' | 'region'
+  rank_value: number
+  participant_count: number | null
+  percentile: number | null
+  source_name: string
+  source_field: string
+  ownership_status: 'verified' | 'unverified' | 'conflict' | string
+  ownership_basis: string | null
+  review_status: 'pending' | 'confirmed' | string
+  captured_at: string
+  history_count: number
+}
+
+export interface SchoolExamRanksPayload {
+  exam_id: string
+  ranks: SchoolExamRank[]
+  missing_scopes: string[]
+  disclaimer: string
+}
+
 export interface K12100CredentialsSummary {
   status: string
   username_masked: string | null
@@ -483,6 +656,14 @@ export interface K12100SubjectResult {
   drafts_created: number
   skipped_labels: string[]
   warning: string | null
+  match_state?: SchoolExamMatchState | null
+  rank_ownership?: string | null
+  rank_ownership_basis?: string | null
+  match_confidence?: string | null
+  match_reasons?: string[]
+  match_candidates?: SchoolPaperMatchCandidate[]
+  ranks_created?: number
+  rank_issues?: { scope: string; code: string; field?: string }[]
 }
 
 export interface K12100BackfillResult {
@@ -491,11 +672,13 @@ export interface K12100BackfillResult {
   subjects: K12100SubjectResult[]
   totals: {
     subjects_processed: number
+    subjects_blocked?: number
     created_exams: number
     confirmed_now: number
     locked_conflicts: number
     attachments_uploaded: number
     drafts_created: number
+    ranks_created?: number
   }
   knowledge_evidence_created: number
 }
@@ -547,6 +730,80 @@ export interface GoalResult {
   id: string
   version: number
   status: string
+}
+
+export interface SchoolExamReportSubject {
+  subject: string
+  name: string
+  score: number | null
+  max_score: number | null
+  class_rank: number | null
+  grade_rank: number | null
+  participants: number | null
+  class_highest: number | null
+  grade_highest: number | null
+  page: number | null
+}
+
+export interface SchoolExamReportQuestion {
+  subject: string
+  number: string
+  question_type: string | null
+  difficulty: string | null
+  max_score: number | null
+  score: number | null
+  score_rate: number | null
+  page: number
+}
+
+export interface SchoolExamReport {
+  id: string
+  sha256: string
+  filename: string
+  byte_size: number
+  source_ref: string
+  title: string | null
+  academic_year: string | null
+  grade: string | null
+  exam_type: string | null
+  exam_sequence: number | null
+  report_time: string | null
+  report_total_score: number | null
+  report_total_max: number | null
+  total_class_rank: number | null
+  total_grade_rank: number | null
+  total_participants: number | null
+  listed_subject_score: number | null
+  listed_subject_max: number | null
+  scope_status: string
+  pages: number
+  confidence: string
+  status: string
+  match_state: string
+  linked_exam_ids: Array<{ subject: string; exam_id: string; title: string; exam_date: string; match: string }>
+  subjects: SchoolExamReportSubject[]
+  questions: SchoolExamReportQuestion[]
+  answer_card_pages: Record<string, number[]>
+  warnings: string[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SchoolExamReportAttachment {
+  id: string
+  subject: string
+  page_number: number
+  filename: string
+  media_type: string
+  byte_size: number
+  rotation: number
+  created_at: string | null
+}
+
+export interface SchoolExamReportScanResult {
+  discovered: number
+  skipped: number
+  reports: SchoolExamReport[]
 }
 
 export interface SchoolExamResult {
@@ -666,6 +923,7 @@ export interface Client {
   setGoal(input: { subject: Subject; targetPoints: number; maxPoints: number; minutesPerDay: number }): Promise<GoalResult>
   schoolExams(subject: SchoolSubject): Promise<SchoolExam[]>
   schoolExamDetail(examId: string): Promise<SchoolExamDetail>
+  deleteSchoolExam(examId: string): Promise<{ deleted: boolean; id: string; items_deleted: number; attachments_deleted: number; rank_snapshots_deleted: number; papers_unlinked: number }>
   addSchoolExam(input: {
     subject: SchoolSubject
     title: string
@@ -705,8 +963,46 @@ export interface Client {
     input: { errorCategory: SchoolErrorCategory | null; errorNote: string | null },
   ): Promise<SchoolExamItem>
   schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
+  schoolExamReports(): Promise<SchoolExamReport[]>
+  scanSchoolExamReports(): Promise<SchoolExamReportScanResult>
+  matchSchoolExamReport(reportId: string): Promise<{ report: SchoolExamReport; match: { match_state: string; unresolved_subjects: string[]; ambiguous_subjects: string[] } }>
+  confirmSchoolExamReport(reportId: string): Promise<SchoolExamReport & { ledger?: { applied_subjects: string[]; conflict_subjects: string[]; skipped_subjects: string[] } }>
+  updateSchoolExamReport(reportId: string, patch: Partial<Pick<SchoolExamReport, 'title' | 'academic_year' | 'grade' | 'exam_type' | 'exam_sequence' | 'report_time'>>): Promise<SchoolExamReport>
+  supplementSchoolExamReportSubject(reportId: string, payload: { subject: string; score: number; max_score: number; class_rank?: number | null; grade_rank?: number | null; participants?: number | null }): Promise<SchoolExamReport>
+  generateSchoolExamReportItemDrafts(reportId: string): Promise<{ created: number; skipped: number; unmapped_subjects: string[]; auto_mapped: number }>
+  aiMapSchoolExamReportItems(reportId: string): Promise<{ mapped: number; failed_subjects: string[] }>
+  listSchoolExamReportAnswerCards(reportId: string): Promise<SchoolExamReportAttachment[]>
+  buildSchoolExamReportAnswerCards(reportId: string, rotation: number): Promise<{ created: number; attachments: SchoolExamReportAttachment[] }>
+  fetchSchoolExamReportAnswerCardImage(reportId: string, attachmentId: string): Promise<Blob>
   k12100SyncStatus(): Promise<K12100RuntimeStatus>
+  schoolExamSyncCenter(): Promise<SchoolExamSyncCenter>
+  scanSchoolExamPapers(): Promise<SchoolExamScanResult>
+  acquireSchoolExamPapers(): Promise<{ source_adapter: string[]; acquired_count: number; files: string[] }>
+  matchSchoolExamPaper(
+    paperId: string,
+    input?: { examId?: string; confirmedByHuman?: boolean },
+  ): Promise<{ paper: SchoolExamPaper; match?: SchoolExamMatchResult }>
+  importSchoolExamPaper(paperId: string): Promise<{
+    already_imported: boolean
+    paper: SchoolExamPaper
+    attachment_created: boolean
+    attachment?: SchoolPaperAttachment
+    metadata_updates?: string[]
+  }>
+  rejectSchoolExamPaper(paperId: string): Promise<{ paper: SchoolExamPaper }>
+  schoolExamRanks(examId: string): Promise<SchoolExamRanksPayload>
+  confirmSchoolExamRank(examId: string, rankId: string): Promise<SchoolExamRank>
   startK12100SyncJob(options?: K12100BackfillOptions): Promise<K12100SyncJob>
+  collectSchoolExamPaper(
+    paperId: string,
+    options?: {
+      useAi?: boolean
+      extractExistingPdfs?: boolean
+      uploadMissingCards?: boolean
+      replaceUnconfirmedDrafts?: boolean
+      headless?: boolean
+    },
+  ): Promise<K12100SyncJob>
   k12100SyncJob(jobId: string): Promise<K12100SyncJob>
   importK12100Bundle(
     bundle: Record<string, unknown>,
@@ -883,6 +1179,11 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       call<GoalResult>('/api/goals', 'POST', { subject, target_points: targetPoints, max_points: maxPoints, minutes_per_day: minutesPerDay }),
     schoolExams: subject => call<SchoolExam[]>(`/api/school-exams?subject=${subject}`),
     schoolExamDetail: examId => call<SchoolExamDetail>(`/api/school-exams/${encodeURIComponent(examId)}`),
+    deleteSchoolExam: examId =>
+      call<{ deleted: boolean; id: string; items_deleted: number; attachments_deleted: number; rank_snapshots_deleted: number; papers_unlinked: number }>(
+        `/api/school-exams/${encodeURIComponent(examId)}?confirm=true`,
+        'DELETE',
+      ),
     addSchoolExam: ({ subject, title, examDate, earnedPoints, maxPoints, confirmedByUser }) =>
       call<SchoolExamResult>('/api/school-exams', 'POST', {
         subject,
@@ -958,14 +1259,110 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       ),
     schoolExamErrorAnalysis: examId =>
       call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
+    schoolExamReports: () => call<SchoolExamReport[]>('/api/school-exams/reports'),
+    scanSchoolExamReports: () => call<SchoolExamReportScanResult>('/api/school-exams/reports/scan', 'POST', {}),
+    matchSchoolExamReport: reportId =>
+      call<{ report: SchoolExamReport; match: { match_state: string; unresolved_subjects: string[]; ambiguous_subjects: string[] } }>(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/match`,
+        'POST',
+        {},
+      ),
+    confirmSchoolExamReport: reportId =>
+      call<SchoolExamReport & { ledger?: { applied_subjects: string[]; conflict_subjects: string[]; skipped_subjects: string[] } }>(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/confirm`,
+        'POST',
+        { confirmed: true },
+      ),
+    updateSchoolExamReport: (reportId, patch) =>
+      call<SchoolExamReport>(`/api/school-exams/reports/${encodeURIComponent(reportId)}`, 'PATCH', patch),
+    supplementSchoolExamReportSubject: (reportId, payload) =>
+      call<SchoolExamReport>(`/api/school-exams/reports/${encodeURIComponent(reportId)}/subjects`, 'POST', payload),
+    generateSchoolExamReportItemDrafts: reportId =>
+      call<{ created: number; skipped: number; unmapped_subjects: string[]; auto_mapped: number }>(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/items/drafts`,
+        'POST',
+        {},
+      ),
+    aiMapSchoolExamReportItems: reportId =>
+      call<{ mapped: number; failed_subjects: string[] }>(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/items/ai-map`,
+        'POST',
+        {},
+      ),
+    listSchoolExamReportAnswerCards: reportId =>
+      call<SchoolExamReportAttachment[]>(`/api/school-exams/reports/${encodeURIComponent(reportId)}/answer-cards`),
+    buildSchoolExamReportAnswerCards: (reportId, rotation) =>
+      call<{ created: number; attachments: SchoolExamReportAttachment[] }>(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/answer-cards?rotation=${rotation}`,
+        'POST',
+        {},
+      ),
+    fetchSchoolExamReportAnswerCardImage: async (reportId, attachmentId) => {
+      const res = await fetch(
+        `/api/school-exams/reports/${encodeURIComponent(reportId)}/answer-cards/${encodeURIComponent(attachmentId)}/image`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      )
+      if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+      return res.blob()
+    },
     k12100SyncStatus: () => call<K12100RuntimeStatus>('/api/school-exams/k12100-sync/status'),
+    schoolExamSyncCenter: () => call<SchoolExamSyncCenter>('/api/school-exams/sync-center'),
+    scanSchoolExamPapers: () => call<SchoolExamScanResult>('/api/school-exams/pipeline/scan', 'POST', { apply_imports: false }),
+    acquireSchoolExamPapers: () =>
+      call<{ source_adapter: string[]; acquired_count: number; files: string[] }>(
+        '/api/school-exams/pipeline/acquire',
+        'POST',
+        {},
+      ),
+    matchSchoolExamPaper: (paperId, input = {}) =>
+      call<{ paper: SchoolExamPaper; match?: SchoolExamMatchResult }>(
+        `/api/school-exams/pipeline/papers/${encodeURIComponent(paperId)}/match`,
+        'POST',
+        {
+          ...(input.examId ? { exam_id: input.examId } : {}),
+          confirmed_by_human: input.confirmedByHuman ?? false,
+        },
+      ),
+    importSchoolExamPaper: paperId =>
+      call<{
+        already_imported: boolean
+        paper: SchoolExamPaper
+        attachment_created: boolean
+        attachment?: SchoolPaperAttachment
+        metadata_updates?: string[]
+      }>(`/api/school-exams/pipeline/papers/${encodeURIComponent(paperId)}/import`, 'POST'),
+    rejectSchoolExamPaper: paperId =>
+      call<{ paper: SchoolExamPaper }>(
+        `/api/school-exams/pipeline/papers/${encodeURIComponent(paperId)}/reject`,
+        'POST',
+      ),
+    schoolExamRanks: examId =>
+      call<SchoolExamRanksPayload>(`/api/school-exams/${encodeURIComponent(examId)}/ranks`),
+    confirmSchoolExamRank: (examId, rankId) =>
+      call<SchoolExamRank>(
+        `/api/school-exams/${encodeURIComponent(examId)}/ranks/${encodeURIComponent(rankId)}/confirm`,
+        'POST',
+        { confirmed_by_human: true },
+      ),
+    collectSchoolExamPaper: (paperId, options = {}) =>
+      call<K12100SyncJob>(
+        `/api/school-exams/pipeline/papers/${encodeURIComponent(paperId)}/collect`,
+        'POST',
+        {
+          use_ai: options.useAi ?? true,
+          extract_existing_pdfs: options.extractExistingPdfs ?? true,
+          upload_missing_cards: options.uploadMissingCards ?? true,
+          replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
+          headless: options.headless ?? false,
+        },
+      ),
     startK12100SyncJob: (options = {}) =>
       call<K12100SyncJob>('/api/school-exams/k12100-sync/jobs', 'POST', {
         ...(options.examKeyword ? { exam_keyword: options.examKeyword } : {}),
         ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
         ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
         max_exams: options.maxExams ?? 1,
-        confirm_total_scores: options.confirmTotalScores ?? true,
+        confirm_total_scores: options.confirmTotalScores ?? false,
         extract_existing_pdfs: options.extractExistingPdfs ?? true,
         upload_missing_cards: options.uploadMissingCards ?? true,
         replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
@@ -980,7 +1377,7 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         ...(options.targetExamDate ? { target_exam_date: options.targetExamDate } : {}),
         ...(options.seriesTitlePrefix ? { series_title_prefix: options.seriesTitlePrefix } : {}),
         max_exams: options.maxExams ?? 1,
-        confirm_total_scores: options.confirmTotalScores ?? true,
+        confirm_total_scores: options.confirmTotalScores ?? false,
         extract_existing_pdfs: options.extractExistingPdfs ?? true,
         upload_missing_cards: options.uploadMissingCards ?? true,
         replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
@@ -1093,9 +1490,23 @@ const API_CODE_TEXT: Record<string, string> = {
   K12100_SYNC_ALREADY_RUNNING: '已有全科校考同步任务正在运行中，请等待当前任务完成，避免触发平台限流。',
   K12100_SYNC_JOB_NOT_FOUND: '未找到对应的同步任务记录（服务可能已重启），请重新查看状态或再次启动。',
   K12100_BUNDLE_TOO_LARGE: '上传的采集包体积超过 15 兆字节上限，请减少单次采集场次或剔除大图后重试。',
-  K12100_INVALID_BUNDLE: '采集数据包结构无效或与所填关键词不匹配，请使用本地命令行采集脚本生成的最新脱敏文件。',
+  K12100_NO_EXAMS: '平台未列出可采集考试，可能关键词不匹配、页面无考试或账号无可见成绩；未写入任何数据。',
+  K12100_NO_SUBJECTS: '已找到考试但没有取得任何科目数据；未写入任何数据，请检查平台页面或改用手动采集包。',
+  K12100_INVALID_BUNDLE: '采集数据包结构无效，请使用本地命令行采集脚本生成的最新脱敏文件。',
   K12100_UNSAFE_CARD_URL: '检测到不安全的答题卡图片链接（仅允许官方安全加密域名且拒绝内网地址），已安全拦截。',
   K12100_CARD_DOWNLOAD_FAILED: '答题卡图片下载失败（签名链接可能已过期），请重新采集含内嵌图片的数据包后导入。',
+  SOURCE_NOT_CONFIGURED: '未配置真实授权学校试卷来源；本地扫描仍可用，系统不会伪造远程下载。',
+  INBOX_PERMISSIONS_TOO_WIDE: '私有收件箱权限过宽，必须收紧为 0700 后才可扫描。',
+  INBOX_SYMLINK_REJECTED: '私有收件箱本身是符号链接，已拒绝读取。',
+  SOURCE_SYMLINK_REJECTED: '来源目录是符号链接，已拒绝读取。',
+  SCHOOL_EXAM_MATCH_REQUIRED: '该试卷尚未完成唯一匹配或人工确认，不能导入考试档案。',
+  SCHOOL_EXAM_SUBJECT_MISMATCH: '候选考试的学科与卷头不一致，不能人工绑定。',
+  HUMAN_CONFIRMATION_REQUIRED: '该操作必须由人工显式确认。',
+  PAPER_ALREADY_IMPORTED: '该试卷已入档，不能重新匹配或忽略。',
+  PAPER_FILE_MISSING: '私有原件不存在，请重新扫描原文件。',
+  PAPER_HASH_MISMATCH: '私有原件哈希与登记不一致，已拒绝继续处理。',
+  RANK_OWNERSHIP_UNVERIFIED: '该排名未通过本人归属校验，不能确认或入档。',
+  AWAITING_EXAM_DATE: '平台未提供可验证考试日期，已停止自动建档，不能用当前日期替代。',
 }
 
 export function describeError(error: unknown): string {

@@ -1,7 +1,7 @@
 flowchart TB
     subgraph 开发者宿主机 ["Linux 宿主机 · 仅监听 127.0.0.1 回环"]
         subgraph 后端服务 ["services/api"]
-            FASTAPI["FastAPI 进程 (端口 8000 或 18765)"]
+            FASTAPI["FastAPI 进程 (端口 8000)"]
             SQLITE[("本地 SQLite 开发库 (零配置)")]:::db
             DOCKER_PG[("Docker 隔离 PG 16 (迁移/并发回归)")]:::db
             FASTAPI --> SQLITE
@@ -9,14 +9,14 @@ flowchart TB
         end
 
         subgraph 前端应用 ["apps/web (Vue 3 MPA)"]
-            STUDENT["学生端: index.html (端口 5173/4173)"]
+            STUDENT["学生端: index.html (端口 5173)"]
             ADMIN["管理端: admin.html (审核台/体检)"]
         end
 
         subgraph 验证与门禁
             VERIFY["自动化门禁 (make verify)"]
             PLAYWRIGHT["Playwright (Chromium J1-J9 + WebKit iPad)"]
-            SIMULATOR["iPadOS 触控模拟机 (run_manual_test_env.py)"]
+            SIMULATOR["iPadOS 触控模拟机 (scripts/run_dev_env.py sim)"]
             CHECKLIST["人工核验清单 (checklists/01~06)"]
         end
     end

@@ -16,8 +16,8 @@ flowchart LR
     subgraph Host["宿主机 (Host: 127.0.0.1)"]
         direction TB
         Build["1. 自动化门禁<br/>(pytest / vitest / playwright)"]
-        Backend["2. 临时后端 API<br/>(uvicorn :18765<br/>127.0.0.1 + 双凭据隔离)"]
-        Frontend["3. 前端生产预览<br/>(vite preview :4173<br/>127.0.0.1 + 同源代理)"]
+        Backend["2. 开发后端 API<br/>(uvicorn :8000<br/>127.0.0.1 + 双凭据隔离)"]
+        Frontend["3. 前端 Vite dev<br/>(Vite dev :5173<br/>127.0.0.1 + 同源代理)"]
         Build --> Backend
         Build --> Frontend
     end
@@ -29,32 +29,36 @@ flowchart LR
         Tester -->|触控点击/滑动/作答| Browser
     end
 
-    Browser -->|"http://127.0.0.1:4173"| Frontend
+    Browser -->|"http://127.0.0.1:5173"| Frontend
     Frontend -->|"反向代理 /api/*"| Backend
 ```
 
-### 1. 宿主机一键启动测试服务（推荐）
+### 1. 宿主机一键启动开发服务（推荐）
 
-项目提供了集环境自检、建表、种子数据注入与双服务拉起于一体的管理脚本：
+开发环境统一使用 `scripts/run_dev_env.py`（`run_manual_test_env.py` 已删除）：
 
 ```bash
-# 一键启动测试后端、注入种子数据并拉起前端预览（绑定 127.0.0.1 回环安全地址）
-uv run python scripts/run_manual_test_env.py start
+# 启动开发后端 8000 + Vite dev 5173；不自动灌入虚构测试数据
+uv run python scripts/run_dev_env.py start
 
-# 检查测试服务健康状态
-uv run python scripts/run_manual_test_env.py status
+# 检查服务健康状态
+uv run python scripts/run_dev_env.py status
 
-# 测试完成后一键停止服务与释放端口
-uv run python scripts/run_manual_test_env.py stop
+# 测试完成后停止服务
+uv run python scripts/run_dev_env.py stop
+
+# 模拟机竖屏/横屏
+uv run python scripts/run_dev_env.py sim
+uv run python scripts/run_dev_env.py sim-landscape
 ```
+
+> 开发库默认保留真实中考真题/真实学校试卷；如需注入**虚构测试题目、样卷或附件**，必须先获得 Owner 批准并设置 `PAGEBOY_OWNER_TEST_DATA_APPROVED=1` + `PAGEBOY_OWNER_APPROVAL_REF`。`run_dev_env.py start` 本身不灌入虚构数据。详见 [开发环境测试数据政策](test-data-policy.md)。
 
 #### 手动分步启动备选方式
 如需独立调试各服务：
-- **终端 1（后端，双凭据隔离）**：`SHUTONG_STUDENT_TOKEN=test-student-secret SHUTONG_ADMIN_TOKEN=test-admin-secret uv run python -m uvicorn shutong.main:app --host 127.0.0.1 --port 18765`
-- **终端 2（前端，生产预览）**：`cd apps/web && API_PROXY_TARGET=http://127.0.0.1:18765 npm run preview -- --host 127.0.0.1 --port 4173`
-- **探针自检**：`curl -I http://127.0.0.1:4173/` 与 `curl -H "Authorization: Bearer test-student-secret" http://127.0.0.1:4173/api/student/verify`
-
----
+- **终端 1（后端，双凭据隔离）**：`SHUTONG_STUDENT_TOKEN=test-student-secret SHUTONG_ADMIN_TOKEN=test-admin-secret uv run python -m uvicorn shutong.main:app --host 127.0.0.1 --port 8000`
+- **终端 2（前端，Vite dev）**：`cd apps/web && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`
+- **探针自检**：`curl -I http://127.0.0.1:5173/` 与 `curl -H "Authorization: Bearer test-student-secret" http://127.0.0.1:5173/api/student/verify`
 
 ### 2. iPadOS 模拟机具体使用与操作方式
 
@@ -64,20 +68,20 @@ uv run python scripts/run_manual_test_env.py stop
 无需任何复杂配置，在宿主机桌面终端直接运行：
 ```bash
 # 1. 弹出 iPad (gen 7) 竖屏窗口 (810 × 1080)
-uv run python scripts/run_manual_test_env.py sim
+uv run python scripts/run_dev_env.py sim
 
 # 2. 弹出 iPad (gen 7) 横屏窗口 (1080 × 810)
-uv run python scripts/run_manual_test_env.py sim-landscape
+uv run python scripts/run_dev_env.py sim-landscape
 ```
 - **窗口特性**：
   - 分别对应 `iPad (gen 7)`（竖屏 `810×1080`）与 `iPad (gen 7) landscape`（横屏 `1080×810`）；
   - 鼠标光标自动转换为手指触摸圆点（Touch Simulation）；
-  - 窗口内已自动加载 `http://127.0.0.1:4173` 并直连测试后端，测试人可直接在窗口中进行横竖屏布局对比与交互作答；
+  - 窗口内已自动加载 `http://127.0.0.1:5173` 并直连测试后端，测试人可直接在窗口中进行横竖屏布局对比与交互作答；
   - 测试完毕关闭窗口即可。
 
 #### 方式 B：【浏览器仿真】在现有浏览器 DevTools 中一键翻转屏幕
 测试人打开宿主机桌面浏览器（Chrome / Edge / Chromium）：
-1. 访问测试入口：`http://127.0.0.1:4173`；
+1. 访问测试入口：`http://127.0.0.1:5173`；
 2. 按 `F12` 打开开发者工具，按快捷键 `Ctrl + Shift + M`（进入移动设备仿真工具栏）；
 3. 在顶部设备下拉菜单中选择 **「iPad」**（或 **iPad Air / iPad Mini**）；
 4. **一键横竖屏切换**：

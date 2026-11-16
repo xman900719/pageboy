@@ -416,6 +416,7 @@ def parse_paper_skeleton_from_text(
                 "draft_confidence": "skeleton_only",
                 "draft_reason": f"从原卷文字层提取题号与分值（满分 {max_pts:g} 分），暂未读取作答得分，请人工填写实得分后确认。",
                 "draft_knowledge_candidates": candidates,
+                "stem": snippet[:500],
             }
         )
     return items

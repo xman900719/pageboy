@@ -46,11 +46,12 @@ from shutong.k12100_backfill import (  # noqa: E402
     clamp_max_exams,
     map_subject_code as _shared_map_subject_code,
     resolve_k12100_config_dir,
+    sanitize_k12100_bundle_for_storage,
     strip_pii_fields,
 )
 
 BROWSER_SCRIPT = REPO_ROOT / "scripts" / "k12100_browser.mjs"
-DEFAULT_API_URL = "http://127.0.0.1:18765"
+DEFAULT_API_URL = "http://127.0.0.1:8000"
 DEFAULT_PROD_API_URL = "http://127.0.0.1:8180"
 
 
@@ -348,7 +349,13 @@ def sync_sanitized_exams_to_pageboy(
     synced_map: dict[str, Any] = ledger.setdefault("synced", {})
     existing_cache: dict[str, list[dict[str, Any]]] = {}
 
-    summary = {"processed": 0, "skipped_dedup": 0, "drafts_created": 0, "exams": []}
+    summary = {
+        "processed": 0,
+        "skipped_dedup": 0,
+        "skipped_missing_date": 0,
+        "drafts_created": 0,
+        "exams": [],
+    }
 
     for raw_exam in raw_exams:
         if summary["processed"] >= capped:
@@ -362,7 +369,10 @@ def sync_sanitized_exams_to_pageboy(
         subject = map_subject_code(str(clean_exam.get("subject_hint") or clean_exam.get("subject") or "math"))
         exam_date = str(clean_exam.get("exam_date") or "")[:10]
         if len(exam_date) != 10:
-            exam_date = "2026-10-15"
+            # R2：平台缺失可验证日期时阻断，绝不以固定日期/当前日期伪造。
+            summary["skipped_missing_date"] += 1
+            summary["exams"].append({"title": title, "subject": subject, "status": "skipped_missing_date"})
+            continue
         fp = exam_fingerprint(clean_exam)
 
         if not force_resync and fp in synced_map:
@@ -418,7 +428,8 @@ def sync_sanitized_exams_to_pageboy(
                     "exam_date": exam_date,
                     "earned_points": round(earned_pts, 2),
                     "max_points": round(max_pts, 2),
-                    "confirmed_by_user": earned_pts > 0,
+                    # 外部平台总分默认待人工核对；不得因抓到分数就视为已确认。
+                    "confirmed_by_user": False,
                 },
             )
             exam_id = str(created_exam["id"])
@@ -794,7 +805,7 @@ def backfill_sanitized_bundle_to_pageboy(
     request_fn=_api_request,
 ) -> dict[str, Any]:
     """将已脱敏 k12100 采集包通过统一 import-bundle 接口完成全科建档、提干与草稿入库。"""
-    clean_bundle = strip_pii_fields(raw_bundle)
+    clean_bundle = sanitize_k12100_bundle_for_storage(raw_bundle)
     if dry_run:
         exams = clean_bundle.get("exams") if isinstance(clean_bundle.get("exams"), list) else [clean_bundle]
         return {
@@ -870,7 +881,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
         print(json.dumps(strip_pii_fields(raw_res), ensure_ascii=False, indent=2), file=sys.stderr)
         return 2 if raw_res.get("status") == "login_required" else 3
 
-    clean_res = strip_pii_fields(raw_res)
+    clean_res = sanitize_k12100_bundle_for_storage(raw_res)
     if args.output:
         out_path = Path(args.output).expanduser().resolve()
     else:
@@ -1037,8 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_backfill.add_argument(
         "--confirm-total-scores",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="以 k12100 官方总分直接确认锁定未锁科目总分（默认开启）",
+        default=False,
+        help="仅在人工已核对时把平台总分直接标记为确认（默认待核对）",
     )
     p_backfill.add_argument("--no-extract-pdfs", action="store_true", help="跳过从已有原卷 PDF 抽提真实题干")
     p_backfill.add_argument("--no-upload-cards", action="store_true", help="跳过为无附件科目补传答题卡 JPEG")

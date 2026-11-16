@@ -12,8 +12,8 @@
 
 - **宿主机服务状态**：已绑定 `0.0.0.0` 运行
 - **测试访问地址**：
-  - 模拟机访问入口：`http://192.168.3.102:4173`（局域网）或 `http://127.0.0.1:4173`（本地）
-  - 独立模拟机窗口：`uv run python scripts/run_manual_test_env.py sim`
+  - 模拟机访问入口：`http://127.0.0.1:5173`（仅回环）
+  - 独立模拟机窗口：`uv run python scripts/run_dev_env.py sim`
 - **有效访问令牌**：`test-journey-secret`
 - **错误测试令牌**：`wrong-token`
 

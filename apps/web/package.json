@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0",
     "test:unit": "vitest run --dir src",
     "test:e2e": "playwright test",
     "test:e2e:ipad": "E2E_DEVICE=ipad playwright test"

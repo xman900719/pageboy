@@ -31,6 +31,13 @@ describe('devAuth', () => {
     expect(storage.getItem('shutong.dev_token_admin')).toBeNull()
   })
 
+  it('显式禁用自动登录时忽略环境令牌与会话令牌', () => {
+    const storage = makeMemoryStorage({ 'shutong.dev_token_admin': 'cached-adm' })
+    expect(
+      resolveDevAutoToken('admin', 'env-adm', { isDev: true, disabled: true, storage })
+    ).toBeNull()
+  })
+
   it('开发模式优先使用环境变量配置令牌（学生端与管理端严格按角色隔离）', () => {
     const storage = makeMemoryStorage({
       'shutong.dev_token_student': 'old-stu',

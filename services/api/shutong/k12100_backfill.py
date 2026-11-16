@@ -37,6 +37,8 @@ from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
 from .home import HomeIdentityError, assert_no_cross_environment_path, get_env_home, normalize_environment, resolve_repo_root
+from .school_exam_matcher import ExamIdentity, match_exam_identity, normalize_academic_year
+from .school_exam_pipeline import persist_rank_entries
 
 # 单张答题卡 JPEG 与单次上传采集包 JSON 的体积安全上限
 MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
@@ -167,6 +169,70 @@ def strip_pii_fields(value: Any, *, _depth: int = 0) -> Any:
     if isinstance(value, list):
         return [strip_pii_fields(item, _depth=_depth + 1) for item in value]
     return value
+
+
+def sanitize_k12100_bundle_for_storage(raw_bundle: dict[str, Any]) -> dict[str, Any]:
+    """导出/转交前清洗 PII，同时把已识别的本人排名白名单转为结构化字段保留。
+
+    原始 schoolRank/classRank 等键名与值不会写入文件；只保留经过范围、来源字段、
+    数值合法性校验后的 ``own_ranks`` 数组，供后续独立快照入库。
+    """
+    if not isinstance(raw_bundle, dict):
+        return {}
+    from .school_exam_pipeline import extract_own_rank_entries
+
+    student_collection_keys = {"students", "studentlist", "examstudents", "classstudents", "ranklist"}
+
+    def sanitize_packet(packet: dict[str, Any]) -> dict[str, Any]:
+        clean_packet = strip_pii_fields(packet)
+        for key in list(clean_packet):
+            if str(key).lower() in student_collection_keys:
+                clean_packet.pop(key, None)
+        raw_subjects = packet.get("subjects")
+        clean_subjects = clean_packet.get("subjects")
+        if not isinstance(raw_subjects, list) or not isinstance(clean_subjects, list):
+            return clean_packet
+        sanitized_subjects: list[Any] = []
+        for raw_subj, clean_subj in zip(raw_subjects, clean_subjects):
+            if not isinstance(raw_subj, dict) or not isinstance(clean_subj, dict):
+                sanitized_subjects.append(clean_subj)
+                continue
+            if isinstance(raw_subj.get("own_ranks"), list):
+                own_ranks = raw_subj.get("own_ranks")
+                rank_issues = raw_subj.get("rank_issues") if isinstance(raw_subj.get("rank_issues"), list) else []
+            else:
+                own_ranks, rank_issues = extract_own_rank_entries(raw_subj)
+            rank_ownership = str(raw_subj.get("rank_ownership") or "unverified").strip().lower()
+            if rank_ownership != "verified":
+                if own_ranks:
+                    rank_issues = [
+                        *rank_issues,
+                        {"scope": "rank", "code": "RANK_OWNERSHIP_UNVERIFIED"},
+                    ]
+                own_ranks = []
+            structured_identity = extract_platform_exam_identity(packet, raw_subj)
+            for key in list(clean_subj):
+                if str(key).lower() in student_collection_keys:
+                    clean_subj.pop(key, None)
+            clean_subj["own_ranks"] = own_ranks
+            clean_subj["rank_issues"] = rank_issues
+            clean_subj["rank_ownership"] = rank_ownership
+            clean_subj["rank_ownership_basis"] = str(
+                raw_subj.get("rank_ownership_basis") or "structured_export_verified"
+            )[:64]
+            clean_subj["identity"] = structured_identity
+            sanitized_subjects.append(clean_subj)
+        clean_packet["subjects"] = sanitized_subjects
+        return clean_packet
+
+    if isinstance(raw_bundle.get("exams"), list):
+        return {
+            **{key: value for key, value in strip_pii_fields(raw_bundle).items() if key != "exams"},
+            "exams": [sanitize_packet(item) for item in raw_bundle["exams"] if isinstance(item, dict)],
+        }
+    if isinstance(raw_bundle.get("subjects"), list):
+        return sanitize_packet(raw_bundle)
+    return strip_pii_fields(raw_bundle)
 
 
 def mask_secret(raw: str | None) -> str | None:
@@ -717,26 +783,157 @@ def _normalize_subject_entry(raw_subj: dict[str, Any], *, fallback_title: str, f
     }
 
 
+_PLATFORM_EXAM_TYPE = {
+    "月考": "monthly",
+    "月度考试": "monthly",
+    "月度检测": "monthly",
+    "monthly": "monthly",
+    "期中": "midterm",
+    "期中考试": "midterm",
+    "midterm": "midterm",
+    "期末": "final",
+    "期末考试": "final",
+    "final": "final",
+    "统一练习": "unified_practice",
+    "统一训练": "unified_practice",
+    "unified_practice": "unified_practice",
+}
+_PLATFORM_TERM = {
+    "第一学期": "first",
+    "上学期": "first",
+    "秋季学期": "first",
+    "first": "first",
+    "第二学期": "second",
+    "下学期": "second",
+    "春季学期": "second",
+    "second": "second",
+}
+
+
+def _first_scalar(source: dict[str, Any], names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = source.get(name)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def extract_platform_exam_identity(packet: dict[str, Any], subject: dict[str, Any]) -> dict[str, Any]:
+    """从原始平台响应中仅取本人所在考试身份字段，随后再清洗其余载荷。"""
+    school = _first_scalar(subject, ("schoolName", "school_name")) or _first_scalar(
+        packet, ("schoolName", "school_name", "organizationName")
+    )
+    grade = _first_scalar(subject, ("gradeName", "grade")) or _first_scalar(packet, ("gradeName", "grade"))
+    raw_type = _first_scalar(subject, ("examTypeName", "examType")) or _first_scalar(
+        packet, ("examTypeName", "examType")
+    )
+    raw_term = _first_scalar(subject, ("termName", "term")) or _first_scalar(packet, ("termName", "term"))
+    academic_year = _first_scalar(subject, ("academicYear", "academic_year")) or _first_scalar(
+        packet, ("academicYear", "academic_year")
+    )
+    series = _first_scalar(subject, ("seriesTitle", "seriesName")) or _first_scalar(
+        packet, ("seriesTitle", "seriesName")
+    )
+    external_id = _first_scalar(subject, ("examId", "platformExamId", "externalExamId")) or _first_scalar(
+        packet, ("examId", "platformExamId", "externalExamId")
+    )
+    raw_type_label = str(raw_type or "").strip()
+    exam_type = _PLATFORM_EXAM_TYPE.get(raw_type_label.lower()) or _PLATFORM_EXAM_TYPE.get(raw_type_label)
+    if exam_type is None and raw_type_label:
+        exam_type = "other"
+    term = _PLATFORM_TERM.get(str(raw_term or "").strip().lower()) or _PLATFORM_TERM.get(str(raw_term or "").strip())
+    raw_date = _first_scalar(subject, ("examDate", "exam_date")) or _first_scalar(
+        packet, ("examDate", "exam_date")
+    )
+    return {
+        "school_name": school[:160] if school else None,
+        "grade": grade[:20] if grade else None,
+        "exam_type": exam_type,
+        "exam_type_label": raw_type_label[:40] if raw_type_label else None,
+        "academic_year": normalize_academic_year(academic_year),
+        "exam_date": raw_date[:10] if raw_date else None,
+        "term": term,
+        "series_title": series[:160] if series else None,
+        "external_exam_id": external_id[:80] if external_id else None,
+    }
+
+
+def _normalize_structured_rank_entries(items: list[Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """校验 CLI 已结构化导出的 own_ranks，防止跨类型/越界值进入独立排名快照。"""
+    entries: list[dict[str, Any]] = []
+    issues: list[dict[str, str]] = []
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            continue
+        scope = str(item.get("scope") or "")
+        if scope not in {"class", "grade", "school", "region"}:
+            issues.append({"scope": scope or "unknown", "code": "RANK_SCOPE_INVALID"})
+            continue
+        try:
+            rank_value = int(item.get("rank_value"))
+        except (TypeError, ValueError):
+            issues.append({"scope": scope, "code": "RANK_VALUE_INVALID"})
+            continue
+        if isinstance(item.get("rank_value"), bool) or rank_value <= 0:
+            issues.append({"scope": scope, "code": "RANK_VALUE_INVALID"})
+            continue
+        count = item.get("participant_count")
+        if count is not None:
+            try:
+                count = int(count)
+            except (TypeError, ValueError):
+                count = None
+            if isinstance(item.get("participant_count"), bool) or (count is not None and count < rank_value):
+                issues.append({"scope": scope, "code": "RANK_EXCEEDS_PARTICIPANT_COUNT"})
+                continue
+        percentile = item.get("percentile")
+        if percentile is not None:
+            try:
+                percentile = float(percentile)
+            except (TypeError, ValueError):
+                percentile = None
+            if percentile is not None and not 0 < percentile <= 1:
+                percentile = None
+        entries.append(
+            {
+                "scope": scope,
+                "rank_value": rank_value,
+                "participant_count": count,
+                "percentile": percentile,
+                "source_field": str(item.get("source_field") or "own_rank")[:64],
+            }
+        )
+    return entries, issues
+
+
 def normalize_k12100_bundle(
     raw_bundle: dict[str, Any],
     *,
     exam_keyword: str | None = None,
     max_exams: int | None = None,
 ) -> list[dict[str, Any]]:
-    """清洗并归一化任意格式 k12100 采集包为标准场次-科目列表。"""
+    """清洗并归一化采集包；本人排名白名单在递归 PII 清洗前抽取并结构化保留。"""
     if not isinstance(raw_bundle, dict):
         raise HTTPException(422, detail="K12100_INVALID_BUNDLE")
-    clean = strip_pii_fields(raw_bundle)
 
     raw_packets: list[dict[str, Any]]
-    if isinstance(clean.get("exams"), list):
-        raw_packets = [p for p in clean["exams"] if isinstance(p, dict)]
-    elif isinstance(clean.get("subjects"), list):
-        raw_packets = [clean]
-    elif clean.get("smallQuestions") is not None or clean.get("items") is not None:
-        raw_packets = [{"examName": clean.get("title") or clean.get("examName"), "examDate": clean.get("exam_date") or clean.get("examDate"), "subjects": [clean]}]
+    if isinstance(raw_bundle.get("exams"), list):
+        raw_packets = [p for p in raw_bundle["exams"] if isinstance(p, dict)]
+    elif isinstance(raw_bundle.get("subjects"), list):
+        raw_packets = [raw_bundle]
+    elif raw_bundle.get("smallQuestions") is not None or raw_bundle.get("items") is not None:
+        raw_packets = [
+            {
+                "examName": raw_bundle.get("title") or raw_bundle.get("examName"),
+                "examDate": raw_bundle.get("exam_date") or raw_bundle.get("examDate"),
+                "subjects": [raw_bundle],
+            }
+        ]
     else:
         raise HTTPException(422, detail="K12100_INVALID_BUNDLE")
+
+    # 延迟导入避免模块初始化循环，同时复用同一份排名白名单实现。
+    from .school_exam_pipeline import extract_own_rank_entries
 
     keyword = (exam_keyword or "").strip()
     packets_out: list[dict[str, Any]] = []
@@ -758,9 +955,55 @@ def normalize_k12100_bundle(
         for raw_subj in pkt.get("subjects") or []:
             if not isinstance(raw_subj, dict):
                 continue
-            norm = _normalize_subject_entry(raw_subj, fallback_title=exam_title, fallback_date=exam_date_str)
+            # 排名在清洗前抽取；导出包可能已携带经过结构化的 own_ranks（CLI collect）。
+            if isinstance(raw_subj.get("own_ranks"), list):
+                own_ranks, pre_issues = _normalize_structured_rank_entries(raw_subj["own_ranks"])
+                raw_issues = raw_subj.get("rank_issues") if isinstance(raw_subj.get("rank_issues"), list) else []
+                rank_issues = [
+                    {
+                        "scope": str(issue.get("scope") or "unknown")[:20],
+                        "code": str(issue.get("code") or "RANK_SOURCE_INVALID")[:64],
+                    }
+                    for issue in raw_issues[:20]
+                    if isinstance(issue, dict)
+                ] + pre_issues
+            else:
+                own_ranks, rank_issues = extract_own_rank_entries(raw_subj)
+            rank_ownership = str(raw_subj.get("rank_ownership") or "unverified").strip().lower()
+            if rank_ownership != "verified":
+                if own_ranks:
+                    rank_issues = [*rank_issues, {"scope": "rank", "code": "RANK_OWNERSHIP_UNVERIFIED"}]
+                own_ranks = []
+            clean_subj = strip_pii_fields(raw_subj)
+            norm = _normalize_subject_entry(clean_subj, fallback_title=exam_title, fallback_date=exam_date_str)
             if norm is None or norm["subject"] in seen_subjs:
                 continue
+            norm["own_ranks"] = own_ranks
+            norm["rank_issues"] = rank_issues
+            norm["rank_ownership"] = rank_ownership
+            norm["rank_ownership_basis"] = str(
+                raw_subj.get("rank_ownership_basis") or "structured_export_verified"
+            )[:64]
+            identity = extract_platform_exam_identity(pkt, raw_subj)
+            structured_identity = raw_subj.get("identity") if isinstance(raw_subj.get("identity"), dict) else {}
+            identity_fields = {
+                "school_name": "school_name",
+                "grade": "grade",
+                "exam_type": "exam_type",
+                "exam_type_label": "exam_type_label",
+                "academic_year": "academic_year",
+                "exam_date": "exam_date",
+                "term": "term",
+                "series_title": "series_title",
+                "external_exam_id": "external_exam_id",
+            }
+            for target, source in identity_fields.items():
+                if identity.get(target):
+                    continue
+                value = structured_identity.get(source)
+                if isinstance(value, (str, int)) and str(value).strip():
+                    identity[target] = str(value).strip()
+            norm["identity"] = identity
             seen_subjs.add(norm["subject"])
             normalized_subjects.append(norm)
 
@@ -779,117 +1022,6 @@ def normalize_k12100_bundle(
     if max_exams is not None:
         packets_out = packets_out[: clamp_max_exams(max_exams)]
     return packets_out
-
-
-def _infer_series_context(
-    db: Session,
-    *,
-    owner: str,
-    packet_title: str,
-    packet_date: date | None,
-    target_exam_date: date | None,
-    series_title_prefix: str | None,
-    exam_keyword: str | None,
-) -> tuple[date, str]:
-    """根据已有校考档案推算同一场次的标准日期与统一命名系列前缀（容忍平台发榜日期跨天偏差）。"""
-    ref_date = target_exam_date or packet_date
-    candidates = db.execute(
-        select(m.SchoolExam).where(m.SchoolExam.learner_id == owner).order_by(m.SchoolExam.exam_date.desc())
-    ).scalars().all()
-
-    matched_siblings: list[m.SchoolExam] = []
-    if ref_date is not None:
-        near_window = [
-            ex for ex in candidates
-            if abs((ex.exam_date - ref_date).days) <= 12
-        ]
-        same_month_kw = (
-            [
-                ex for ex in candidates
-                if ex.exam_date.year == ref_date.year
-                and ex.exam_date.month == ref_date.month
-                and exam_keyword in ex.title
-            ]
-            if exam_keyword
-            else []
-        )
-        if target_exam_date is not None:
-            exact = [ex for ex in candidates if ex.exam_date == target_exam_date]
-            matched_siblings = exact or near_window
-        elif exam_keyword:
-            kw_near = [ex for ex in near_window if exam_keyword in ex.title]
-            matched_siblings = kw_near or same_month_kw or near_window
-        else:
-            matched_siblings = near_window
-
-    canonical_date = target_exam_date
-    if canonical_date is None and matched_siblings:
-        date_counts: dict[date, int] = {}
-        for ex in matched_siblings:
-            date_counts[ex.exam_date] = date_counts.get(ex.exam_date, 0) + 1
-        canonical_date = max(date_counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
-    if canonical_date is None:
-        canonical_date = packet_date or date.today()
-
-    canonical_prefix = (series_title_prefix or "").strip()
-    if not canonical_prefix and matched_siblings:
-        for ex in matched_siblings:
-            if ex.exam_date == canonical_date:
-                pref = _extract_series_prefix(ex.title)
-                if pref:
-                    canonical_prefix = pref
-                    break
-    if not canonical_prefix:
-        canonical_prefix = _extract_series_prefix(packet_title) or "k12100 校考同步"
-
-    return canonical_date, canonical_prefix
-
-
-def _find_matching_school_exam(
-    db: Session,
-    *,
-    owner: str,
-    subject: str,
-    desired_title: str,
-    canonical_date: date,
-    packet_date: date | None,
-    exam_keyword: str | None,
-) -> m.SchoolExam | None:
-    """按标题、指定/推算日期及同月关键词匹配既有同科场次，未命中则返回 None 以自动补建。"""
-    candidates = db.execute(
-        select(m.SchoolExam)
-        .where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject)
-        .order_by(m.SchoolExam.exam_date.desc(), m.SchoolExam.created_at.desc())
-    ).scalars().all()
-    if not candidates:
-        return None
-
-    for ex in candidates:
-        if ex.title.strip() == desired_title:
-            return ex
-    for ex in candidates:
-        if ex.exam_date == canonical_date:
-            return ex
-
-    ref_date = packet_date or canonical_date
-    near_window = [ex for ex in candidates if abs((ex.exam_date - ref_date).days) <= 12]
-    if exam_keyword:
-        kw_near = [ex for ex in near_window if exam_keyword in ex.title]
-        if kw_near:
-            return kw_near[0]
-        kw_month = [
-            ex for ex in candidates
-            if ex.exam_date.year == ref_date.year
-            and ex.exam_date.month == ref_date.month
-            and exam_keyword in ex.title
-        ]
-        if kw_month:
-            return kw_month[0]
-    if len(near_window) == 1:
-        return near_window[0]
-    if near_window:
-        return min(near_window, key=lambda ex: abs((ex.exam_date - ref_date).days))
-    return None
 
 
 def _build_sync_items_for_subject(
@@ -982,13 +1114,13 @@ def apply_k12100_bundle(
     target_exam_date: date | None = None,
     series_title_prefix: str | None = None,
     max_exams: int | None = None,
-    confirm_total_scores: bool = True,
+    confirm_total_scores: bool = False,
     extract_existing_pdfs: bool = True,
     upload_missing_cards: bool = True,
     replace_unconfirmed_drafts: bool = True,
     use_ai: bool = True,
 ) -> dict[str, Any]:
-    """执行 k12100 全科补全闭环：匹配/补建考次、处理总分、补传答题卡、提取原卷题干并入库 ocr_draft。"""
+    """执行严格身份匹配后的全科补全；未唯一匹配时不合并，仅返回待人工处理结果。"""
     packets = normalize_k12100_bundle(raw_bundle, exam_keyword=exam_keyword, max_exams=max_exams)
 
     all_subject_results: list[dict[str, Any]] = []
@@ -997,44 +1129,96 @@ def apply_k12100_bundle(
     locked_conflicts_count = 0
     attachments_uploaded_total = 0
     drafts_created_total = 0
+    blocked_subjects_count = 0
+    ranks_created_total = 0
 
     for pkt in packets:
         pkt_date = _parse_date_safe(pkt.get("exam_date"))
-        canonical_date, canonical_prefix = _infer_series_context(
-            db,
-            owner=owner,
-            packet_title=pkt["exam_title"],
-            packet_date=pkt_date,
-            target_exam_date=target_exam_date,
-            series_title_prefix=series_title_prefix,
-            exam_keyword=exam_keyword,
-        )
+        # R2 红线：平台未提供可验证日期时绝不补 today()；只允许显式 target 或真实平台日期。
+        canonical_date = target_exam_date or pkt_date
 
         for subj_pkt in pkt["subjects"]:
             subject = subj_pkt["subject"]
             suffix = SUBJECT_TITLE_SUFFIX.get(subject, subj_pkt["subject_cn"])
+            identity_data = subj_pkt.get("identity") or {}
+            canonical_prefix = (
+                (series_title_prefix or "").strip()
+                or str(identity_data.get("series_title") or "").strip()
+                or _extract_series_prefix(pkt["exam_title"])
+                or pkt["exam_title"]
+            )
             subj_specific_title = subj_pkt.get("title") or ""
-            # 若输入单科记录本身已附带清晰带科目标题（且仅单科导入测试），保留其原意或使用系列前缀拼接
             if subj_specific_title and subj_specific_title != pkt["exam_title"]:
                 desired_title = subj_specific_title
             else:
                 desired_title = f"{canonical_prefix} · {suffix}"
 
-            exam = _find_matching_school_exam(
-                db,
-                owner=owner,
+            platform_date = str(canonical_date) if canonical_date is not None else identity_data.get("exam_date")
+            header_identity = ExamIdentity(
+                exam_id=None,
                 subject=subject,
-                desired_title=desired_title,
-                canonical_date=canonical_date,
-                packet_date=pkt_date,
-                exam_keyword=exam_keyword,
+                title=pkt["exam_title"],
+                exam_date=platform_date,
+                school_name=identity_data.get("school_name"),
+                grade=identity_data.get("grade"),
+                exam_type=identity_data.get("exam_type"),
+                exam_type_label=identity_data.get("exam_type_label"),
+                academic_year=identity_data.get("academic_year"),
+                term=identity_data.get("term"),
+                series_title=canonical_prefix,
+                external_exam_id=identity_data.get("external_exam_id"),
             )
+            candidates = db.execute(
+                select(m.SchoolExam).where(m.SchoolExam.learner_id == owner)
+            ).scalars().all()
+            candidate_identities = [
+                ExamIdentity(
+                    exam_id=item.id,
+                    subject=item.subject,
+                    title=item.title,
+                    exam_date=str(item.exam_date),
+                    school_name=item.school_name,
+                    grade=item.grade,
+                    exam_type=item.exam_type,
+                    exam_type_label=item.exam_type_label,
+                    academic_year=item.academic_year,
+                    term=item.term,
+                    series_title=item.series_title,
+                    external_exam_id=item.external_exam_id,
+                )
+                for item in candidates
+            ]
+            match_result = match_exam_identity(header_identity, candidate_identities)
 
             real_score = round(float(subj_pkt["earned_points"]), 2)
             real_full = round(float(subj_pkt["max_points"]), 2)
-            warning_msg: str | None = None
+            created_new = False
+            exam = None
 
-            if exam is None:
+            if match_result.state == "EXACT_MATCH" and match_result.best_exam_id:
+                exam = db.get(m.SchoolExam, match_result.best_exam_id)
+                if exam is None or exam.learner_id != owner:
+                    exam = None
+                    match_result.state = "NEEDS_REVIEW"
+                    match_result.best_exam_id = None
+                    match_result.reasons.append("唯一匹配行在写入前消失或不属于当前 owner，已阻断")
+                else:
+                    for identity_field in (
+                        "school_name",
+                        "grade",
+                        "exam_type",
+                        "exam_type_label",
+                        "academic_year",
+                        "term",
+                        "series_title",
+                        "external_exam_id",
+                    ):
+                        if not getattr(exam, identity_field):
+                            setattr(exam, identity_field, getattr(header_identity, identity_field))
+
+            if match_result.state == "EXACT_MATCH" and exam is not None:
+                pass
+            elif match_result.state == "NOT_FOUND" and canonical_date is not None:
                 exam = m.SchoolExam(
                     learner_id=owner,
                     subject=subject,
@@ -1043,17 +1227,74 @@ def apply_k12100_bundle(
                     earned_points=real_score,
                     max_points=real_full,
                     confirmed_by_user=bool(confirm_total_scores),
+                    school_name=header_identity.school_name,
+                    grade=header_identity.grade,
+                    exam_type=header_identity.exam_type,
+                    exam_type_label=header_identity.exam_type_label,
+                    academic_year=header_identity.academic_year,
+                    term=header_identity.term,
+                    series_title=canonical_prefix[:160],
+                    external_exam_id=header_identity.external_exam_id,
+                    source_kind="k12100",
                 )
                 db.add(exam)
                 db.commit()
                 db.refresh(exam)
                 created_exams_count += 1
+                created_new = True
+            else:
+                blocked_subjects_count += 1
+                no_verified_date = match_result.state == "NOT_FOUND" and canonical_date is None
+                blocked_warning = (
+                    "平台未提供可验证的考试日期，已停止自动建档；不得以当前日期或月初日期伪造。"
+                    if no_verified_date
+                    else "考试身份未能唯一匹配，已停止该科入账并保留候选供人工确认。"
+                )
+                all_subject_results.append(
+                    {
+                        "subject": subject,
+                        "subject_label": SUBJECT_CANONICAL_CN.get(subject, subject),
+                        "exam_id": "",
+                        "exam_title": "",
+                        "exam_date": str(canonical_date) if canonical_date is not None else "",
+                        "earned_points": real_score,
+                        "max_points": real_full,
+                        "confirmed_by_user": False,
+                        "score_status": "match_blocked",
+                        "stem_mode": "skipped",
+                        "parser_mode_used": "none",
+                        "attachments_uploaded": 0,
+                        "drafts_created": 0,
+                        "skipped_labels": [],
+                        "warning": blocked_warning,
+                        "match_state": "AWAITING_EXAM_DATE" if no_verified_date else match_result.state,
+                        "match_confidence": match_result.confidence,
+                        "match_reasons": match_result.reasons,
+                        "match_candidates": [item.as_dict() for item in match_result.candidates],
+                        "ranks_created": 0,
+                        "rank_issues": subj_pkt.get("rank_issues") or [],
+                        "rank_ownership": subj_pkt.get("rank_ownership") or "unverified",
+                        "rank_ownership_basis": subj_pkt.get("rank_ownership_basis") or "structured_export_verified",
+                    }
+                )
+                continue
+
+            warning_msg: str | None = None
+            if created_new:
+                score_status = "created_confirmed" if confirm_total_scores else "created_unconfirmed"
                 if confirm_total_scores:
                     confirmed_now_count += 1
-                    score_status = "created_confirmed"
+            elif exam.confirmed_by_user:
+                if abs(exam.earned_points - real_score) <= 1e-4:
+                    score_status = "already_confirmed_match"
                 else:
-                    score_status = "created_unconfirmed"
-            elif not exam.confirmed_by_user:
+                    score_status = "locked_conflict"
+                    locked_conflicts_count += 1
+                    warning_msg = (
+                        f"库中已人工锁定总分 {exam.earned_points:g}/{exam.max_points:g} 分，"
+                        f"与 k12100 成绩 {real_score:g}/{real_full:g} 分不同；按锁分红线保留原值未覆写。"
+                    )
+            else:
                 if abs(exam.max_points - real_full) > 1e-4 and real_score <= real_full:
                     exam.max_points = real_full
                 exam.earned_points = min(real_score, exam.max_points)
@@ -1065,16 +1306,21 @@ def apply_k12100_bundle(
                     score_status = "updated_unconfirmed"
                 db.commit()
                 db.refresh(exam)
-            else:
-                if abs(exam.earned_points - real_score) <= 1e-4:
-                    score_status = "already_confirmed_match"
-                else:
-                    score_status = "locked_conflict"
-                    locked_conflicts_count += 1
-                    warning_msg = (
-                        f"库中已人工锁定总分 {exam.earned_points:g}/{exam.max_points:g} 分，"
-                        f"与 k12100 成绩 {real_score:g}/{real_full:g} 分不同；按锁分红线保留原值未覆写。"
-                    )
+
+            # 本人排名独立快照；不受总分锁定/科目划线影响，也绝不进入能力证据。
+            rank_created = persist_rank_entries(
+                db,
+                exam=exam,
+                owner=owner,
+                subject_scope=subject,
+                entries=subj_pkt.get("own_ranks") or [],
+                source_name="k12100",
+                ownership_status=str(subj_pkt.get("rank_ownership") or "unverified"),
+                ownership_basis=str(subj_pkt.get("rank_ownership_basis") or "structured_export_verified"),
+            )
+            ranks_created_total += len(rank_created)
+            if rank_created:
+                db.commit()
 
             # 若该科当前没有任何附件且开启补全开关，写入已校验的答题卡 JPEG（带 SHA-256 去重）
             existing_atts = db.execute(
@@ -1153,6 +1399,14 @@ def apply_k12100_bundle(
                     "drafts_created": len(created),
                     "skipped_labels": skipped_labels,
                     "warning": warning_msg,
+                    "match_state": match_result.state,
+                    "match_confidence": match_result.confidence,
+                    "match_reasons": match_result.reasons,
+                    "match_candidates": [item.as_dict() for item in match_result.candidates],
+                    "ranks_created": len(rank_created),
+                    "rank_issues": subj_pkt.get("rank_issues") or [],
+                    "rank_ownership": subj_pkt.get("rank_ownership") or "unverified",
+                    "rank_ownership_basis": subj_pkt.get("rank_ownership_basis") or "structured_export_verified",
                 }
             )
 
@@ -1162,14 +1416,41 @@ def apply_k12100_bundle(
         "subjects": all_subject_results,
         "totals": {
             "subjects_processed": len(all_subject_results),
+            "subjects_blocked": blocked_subjects_count,
             "created_exams": created_exams_count,
             "confirmed_now": confirmed_now_count,
             "locked_conflicts": locked_conflicts_count,
             "attachments_uploaded": attachments_uploaded_total,
             "drafts_created": drafts_created_total,
+            "ranks_created": ranks_created_total,
         },
         "knowledge_evidence_created": 0,
     }
+
+
+def validate_collected_bundle(bundle: Any) -> dict[str, Any]:
+    """把浏览器“空采集/无科目/未登录”等结果转成可操作错误，不用 INVALID_BUNDLE 混淆。"""
+    if not isinstance(bundle, dict):
+        raise RuntimeError("K12100_INVALID_BUNDLE: 浏览器返回的采集结果不是 JSON 对象")
+    status = str(bundle.get("status") or "").strip()
+    if status in {"login_incomplete", "login_required"}:
+        raise RuntimeError("K12100_LOGIN_REQUIRED: 会话已失效或自动登录未完成，请勾选可见窗口重新登录后再试。")
+    if status == "circuit_breaker":
+        raise RuntimeError("K12100_CIRCUIT_BREAKER: 检测到验证码或频控（401/403/429），已立即熔断并停止采集。")
+    exams = bundle.get("exams")
+    if not isinstance(exams, list) or not exams:
+        raise RuntimeError(
+            "K12100_NO_EXAMS: 平台未列出可采集考试（可能关键词不匹配、页面无考试或账号无可见成绩）；未写入任何数据。"
+        )
+    has_subject = any(
+        isinstance(subject, dict)
+        for exam in exams
+        if isinstance(exam, dict)
+        for subject in (exam.get("subjects") or [])
+    )
+    if not has_subject:
+        raise RuntimeError("K12100_NO_SUBJECTS: 已找到考试但未取得任何科目数据；未写入任何数据。")
+    return bundle
 
 
 def _collect_with_browser(
@@ -1229,8 +1510,9 @@ def _collect_with_browser(
             raise RuntimeError("K12100_CIRCUIT_BREAKER: 检测到验证码或频控（401/403/429），已立即熔断并停止采集。")
         if res.returncode != 0 or not out_path.is_file():
             raise RuntimeError("K12100_BROWSER_FAILED: 浏览器采集未能产出有效数据包，请检查网络或改用手动 CLI 导出包。")
-        raw_data = json.loads(out_path.read_text(encoding="utf-8"))
-        return strip_pii_fields(raw_data)
+        # 原始载荷仅在本进程内存中交给 apply 的排名白名单适配层，绝不持久化；
+        # apply/normalize 会在抽取本人排名后再执行递归 PII 清洗。
+        return validate_collected_bundle(json.loads(out_path.read_text(encoding="utf-8")))
 
 
 def _snapshot_job(job: dict[str, Any]) -> dict[str, Any]:

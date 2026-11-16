@@ -7,7 +7,7 @@
 - **三视图 UI**（designer lane 交付，视觉系统为既定设计意图）：精简首页（目标表单/摘要、计划知识点状态、阶段对比摘要、数字解释卡）；练习/复练（轮换取题、按知识点筛选、作答溯源表、题型渲染——选项行/短答输入/主观 textarea、题组「阅读材料」区块、听力音频经 Authorization fetch→blob→objectURL）；阶段诊断（独立验证纪律声明、未见题领取、提交后计划自动刷新含差距状态变化、validation 判决面板、校卷总分录入）。
 - **主观自评链**：作答 → 「暂未评分，等待自评」→ 参考答案面板 → 0–满分自评 → 「自评已记录」终态（409 视为已记录，重复提交禁用）。
 - **诚实文案红线**（copy.ts 集中管理）：证据不足显示后端 reason 原文；CANNOT_COMPARE 一律「证据不足，无法比较」；improved 一律「可观察对比」+ 双免责（后端 disclaimer 原文 + 「小样本可观察对比，不是涨分结论」）；全站无肯定式 预测/提分/涨分/能力值 表述（grep 实证零命中，否定式免责除外）。
-- **Playwright harness**：@playwright/test 1.64.1（chromium）；双 webServer——uvicorn API（127.0.0.1:18765，临时 SQLite，启动命令内联清库+按当前模型 create_all）+ vite preview:4173（同源代理，`API_PROXY_TARGET` 覆盖代理目标）；globalSetup 种子：math.gap 10 道客观单选（基线 3+复测 3+轮换/余量）、math.ok、短答题、主观题、共享 group_context 阅读题、听力题（合成 mp3 经 上传→parse→confirm-import→来源复审→发布 全流程）；workers=1 串行保证 J1 全新库断言。
+- **Playwright harness**：@playwright/test 1.64.1（chromium）；双 webServer——uvicorn API（127.0.0.1:18765，临时 SQLite，启动命令内联清库+按当前模型 create_all）+ Vite dev:5173（同源代理，`API_PROXY_TARGET` 覆盖代理目标）；globalSetup 种子：math.gap 10 道客观单选（基线 3+复测 3+轮换/余量）、math.ok、短答题、主观题、共享 group_context 阅读题、听力题（合成 mp3 经 上传→parse→confirm-import→来源复审→发布 全流程）；workers=1 串行保证 J1 全新库断言。
 
 ## 实际命令与结果
 

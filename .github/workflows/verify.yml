@@ -78,7 +78,7 @@ jobs:
           python -m alembic upgrade head
           python -m alembic check
   web-e2e:
-    # 用户旅程（Playwright chromium）：双 webServer 自管端口 18765/4173，无需外部服务。
+    # 用户旅程（Playwright chromium）：双 webServer 自管端口 18765/5173，无需外部服务。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,9 +96,6 @@ jobs:
         run: cd apps/web && npm ci --no-audit --no-fund
       - name: Install Playwright chromium
         run: cd apps/web && npx playwright install chromium --with-deps
-      - name: Build front-end
-        # vite preview 服务 dist/；CI 各作业文件系统隔离，必须在本作业内构建。
-        run: cd apps/web && npm run build
       - name: Run front-end unit tests (ST-013 rich-text/math renderer)
         run: cd apps/web && npm run test:unit
       - name: Run user journeys
@@ -108,7 +105,7 @@ jobs:
           PY_CMD: python
   web-e2e-webkit:
     # ST-010 iPad（WebKit 仿真）通道：devices['iPad (gen 7)'] 全套 J1–J4/a11y/R1–R3。
-    # 与 web-e2e 相同的双 webServer 自管端口；--with-deps 由 Runner 免密 sudo 装系统库。
+    # 与 web-e2e 相同的双 webServer 自管端口（18765/5173）；--with-deps 由 Runner 免密 sudo 装系统库。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,9 +123,6 @@ jobs:
         run: cd apps/web && npm ci --no-audit --no-fund
       - name: Install Playwright webkit
         run: cd apps/web && npx playwright install webkit --with-deps
-      - name: Build front-end
-        # vite preview 服务 dist/；CI 各作业文件系统隔离，必须在本作业内构建。
-        run: cd apps/web && npm run build
       - name: Run iPad (WebKit) lane
         run: cd apps/web && npm run test:e2e:ipad
         env:

@@ -38,11 +38,11 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-打开 `http://127.0.0.1:5173`（学生端）或 `http://127.0.0.1:5173/admin.html`（审核端）并输入相同的 `SHUTONG_TOKEN`。**仓库没有预置任何真实试卷**；可以使用后述虚构样例脚本导入测试题。
+打开 `http://127.0.0.1:5173`（学生端）或 `http://127.0.0.1:5173/admin.html`（审核端）并输入对应的学生/管理令牌（使用 `scripts/run_dev_env.py start` 启动时，Vite dev 会自动从已隔离配置加载开发令牌）。**仓库没有预置任何真实试卷**；开发环境默认保持空库或既有真实档案，如需在开发库写入虚构测试题，须经 Owner 明确批准并设置审批变量（未批准时 fail-closed，详见 [开发环境测试数据政策](docs/quality/test-data-policy.md)）：
 
 ```bash
 export SHUTONG_TOKEN='replace-with-a-long-private-token'
-uv run python scripts/seed_demo.py
+PAGEBOY_OWNER_TEST_DATA_APPROVED=1 PAGEBOY_OWNER_APPROVAL_REF='<owner-ref>' uv run python scripts/seed_demo.py
 ```
 
 开发时 `api` 的 `DATABASE_URL` 不设置则使用项目运行目录下的 SQLite 文件。**SQLite 仅是本地开发回退方案，生产使用 PostgreSQL。**
@@ -56,7 +56,7 @@ make docs   # 自动编译 Mermaid 图表并校验 Markdown 资产
 uv run python scripts/check_openapi.py
 cd apps/web && npm run test:unit
 cd apps/web && npm run build
-cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + preview:4173）
+cd apps/web && npx playwright test   # 用户旅程（自动起临时 API:18765 + dev:5173）
 cd apps/web && npm run test:e2e:ipad   # iPad（WebKit 仿真）通道：旅程+可访问性+720–980px 响应式断言
 ```
 

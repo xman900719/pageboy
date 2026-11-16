@@ -87,7 +87,11 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expectNoHorizontalOverflow(page)
 
   await page.getByRole('tab', { name: /全科校考同步/ }).click()
-  await expect(page.getByRole('region', { name: '从全科校考平台补全各科校考信息' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('tab', { name: /报告导入与核对/ }).click()
+  await expect(page.getByRole('region', { name: '校考报告导入与核对' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

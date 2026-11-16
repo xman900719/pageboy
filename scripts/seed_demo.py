@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Seed synthetic (never actual exam) practice items via reviewed-source API."""
 import os, json, urllib.request
+from test_data_policy import require_owner_test_data_approval
+require_owner_test_data_approval('seed_demo.py（开发环境虚构演示题目）')
 BASE=os.getenv('SHUTONG_API_URL','http://127.0.0.1:8000')
 TOKEN=os.environ.get('SHUTONG_TOKEN')
 if not TOKEN: raise SystemExit('Set SHUTONG_TOKEN to the same secret used by your local API')

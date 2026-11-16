@@ -416,7 +416,7 @@ components:
       description: 手动发起宿主机 k12100.com 全科采集补全任务的请求参数。
       properties:
         confirm_total_scores:
-          default: true
+          default: false
           title: Confirm Total Scores
           type: boolean
         exam_keyword:
@@ -1507,6 +1507,13 @@ components:
       type: object
     SchoolExamIn:
       properties:
+        academic_year:
+          anyOf:
+          - maxLength: 20
+            pattern: ^20\d{2}-20\d{2}$
+            type: string
+          - type: 'null'
+          title: Academic Year
         confirmed_by_user:
           default: false
           title: Confirmed By User
@@ -1519,10 +1526,51 @@ components:
           format: date
           title: Exam Date
           type: string
+        exam_type:
+          anyOf:
+          - enum:
+            - monthly
+            - midterm
+            - final
+            - unified_practice
+            - other
+            type: string
+          - type: 'null'
+          title: Exam Type
+        exam_type_label:
+          anyOf:
+          - maxLength: 40
+            type: string
+          - type: 'null'
+          title: Exam Type Label
+        external_exam_id:
+          anyOf:
+          - maxLength: 80
+            type: string
+          - type: 'null'
+          title: External Exam Id
+        grade:
+          anyOf:
+          - maxLength: 20
+            type: string
+          - type: 'null'
+          title: Grade
         max_points:
           exclusiveMinimum: 0.0
           title: Max Points
           type: number
+        school_name:
+          anyOf:
+          - maxLength: 160
+            type: string
+          - type: 'null'
+          title: School Name
+        series_title:
+          anyOf:
+          - maxLength: 160
+            type: string
+          - type: 'null'
+          title: Series Title
         subject:
           enum:
           - math
@@ -1532,6 +1580,14 @@ components:
           - ethics
           title: Subject
           type: string
+        term:
+          anyOf:
+          - enum:
+            - first
+            - second
+            type: string
+          - type: 'null'
+          title: Term
         title:
           minLength: 1
           title: Title
@@ -1577,6 +1633,8 @@ components:
             - low
             - skeleton_only
             - external_sync
+            - auto_matched
+            - ai_matched
             type: string
           - type: 'null'
           title: Draft Confidence
@@ -1693,6 +1751,15 @@ components:
       - attachment_ids
       title: SchoolExamParseDraftsIn
       type: object
+    SchoolExamRankConfirmIn:
+      properties:
+        confirmed_by_human:
+          title: Confirmed By Human
+          type: boolean
+      required:
+      - confirmed_by_human
+      title: SchoolExamRankConfirmIn
+      type: object
     SchoolExamRecurringHitOut:
       properties:
         exam_date:
@@ -1758,6 +1825,113 @@ components:
       - categories
       - exams
       title: SchoolExamRecurringKnowledgeOut
+      type: object
+    SchoolExamReportConfirmIn:
+      properties:
+        confirmed:
+          default: false
+          title: Confirmed
+          type: boolean
+      title: SchoolExamReportConfirmIn
+      type: object
+    SchoolExamReportPatchIn:
+      description: 报告身份字段人工补录；只改报告，不自动改关联考试或成绩。
+      properties:
+        academic_year:
+          anyOf:
+          - maxLength: 20
+            pattern: ^20\d{2}-20\d{2}$
+            type: string
+          - type: 'null'
+          title: Academic Year
+        exam_sequence:
+          anyOf:
+          - maximum: 9.0
+            minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Exam Sequence
+        exam_type:
+          anyOf:
+          - maxLength: 40
+            type: string
+          - type: 'null'
+          title: Exam Type
+        grade:
+          anyOf:
+          - maxLength: 20
+            type: string
+          - type: 'null'
+          title: Grade
+        report_time:
+          anyOf:
+          - maxLength: 80
+            type: string
+          - type: 'null'
+          title: Report Time
+        title:
+          anyOf:
+          - maxLength: 200
+            type: string
+          - type: 'null'
+          title: Title
+      title: SchoolExamReportPatchIn
+      type: object
+    SchoolExamReportSubjectIn:
+      description: 为报告补录缺失学科的统计信息（不伪造原卷）。
+      properties:
+        class_highest:
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Class Highest
+        class_rank:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Class Rank
+        grade_highest:
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Grade Highest
+        grade_rank:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Grade Rank
+        max_score:
+          exclusiveMinimum: 0.0
+          title: Max Score
+          type: number
+        participants:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Participants
+        score:
+          minimum: 0.0
+          title: Score
+          type: number
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          - ethics
+          title: Subject
+          type: string
+      required:
+      - subject
+      - score
+      - max_score
+      title: SchoolExamReportSubjectIn
       type: object
     SchoolExamSyncDraftsIn:
       description: 从校考平台同步待核对逐题草稿的请求载荷。
@@ -1902,6 +2076,55 @@ components:
       - confirmed_by_human
       - earned_points
       title: SchoolItemConfirmIn
+      type: object
+    SchoolPaperCollectIn:
+      description: 从已匹配试卷启动单场 k12100 采集；总分始终待人工核对。
+      properties:
+        extract_existing_pdfs:
+          default: true
+          title: Extract Existing Pdfs
+          type: boolean
+        headless:
+          default: false
+          title: Headless
+          type: boolean
+        replace_unconfirmed_drafts:
+          default: true
+          title: Replace Unconfirmed Drafts
+          type: boolean
+        upload_missing_cards:
+          default: true
+          title: Upload Missing Cards
+          type: boolean
+        use_ai:
+          default: true
+          title: Use Ai
+          type: boolean
+      title: SchoolPaperCollectIn
+      type: object
+    SchoolPaperMatchIn:
+      description: 手工选择考试候选时必须显式携带人工确认标志。
+      properties:
+        confirmed_by_human:
+          default: false
+          title: Confirmed By Human
+          type: boolean
+        exam_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Exam Id
+      title: SchoolPaperMatchIn
+      type: object
+    SchoolPaperScanIn:
+      description: 扫描当前环境私有收件箱；只有 CLI run 才允许自动归档精确匹配原件。
+      properties:
+        apply_imports:
+          default: false
+          title: Apply Imports
+          type: boolean
+      title: SchoolPaperScanIn
       type: object
     SelfAssessmentIn:
       properties:
@@ -4453,7 +4676,7 @@ paths:
                   title: Bundle
                   type: object
                 confirm_total_scores:
-                  default: true
+                  default: false
                   title: Confirm Total Scores
                   type: boolean
                 exam_keyword:
@@ -4604,7 +4827,668 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get K12100 Sync Status
+  /api/school-exams/pipeline/acquire:
+    post:
+      description: 通过已登记授权适配器获取并扫描试卷；未配置真实来源时明确返回 SOURCE_NOT_CONFIGURED。
+      operationId: acquire_school_exam_papers_api_school_exams_pipeline_acquire_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Acquire School Exam Papers
+  /api/school-exams/pipeline/papers/{paper_id}/collect:
+    post:
+      description: 从唯一匹配/人工确认的试卷启动单场 k12100 采集，闭合本地匹配到待核对入库的流程。
+      operationId: collect_school_exam_paper_api_school_exams_pipeline_papers__paper_id__collect_post
+      parameters:
+      - in: path
+        name: paper_id
+        required: true
+        schema:
+          title: Paper Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SchoolPaperCollectIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '202':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Collect School Exam Paper
+  /api/school-exams/pipeline/papers/{paper_id}/import:
+    post:
+      description: 把唯一精确匹配/人工确认的试卷复制为私有校卷附件；不修改总分或已确认历史。
+      operationId: import_school_exam_paper_api_school_exams_pipeline_papers__paper_id__import_post
+      parameters:
+      - in: path
+        name: paper_id
+        required: true
+        schema:
+          title: Paper Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Import School Exam Paper
+  /api/school-exams/pipeline/papers/{paper_id}/match:
+    post:
+      description: 重跑严格匹配，或由管理员显式选择候选考试并确认。
+      operationId: match_school_exam_paper_api_school_exams_pipeline_papers__paper_id__match_post
+      parameters:
+      - in: path
+        name: paper_id
+        required: true
+        schema:
+          title: Paper Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolPaperMatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Match School Exam Paper
+  /api/school-exams/pipeline/papers/{paper_id}/reject:
+    post:
+      description: 人工忽略无法确认身份的试卷；只改本索引状态，绝不删除原始文件。
+      operationId: reject_school_exam_paper_api_school_exams_pipeline_papers__paper_id__reject_post
+      parameters:
+      - in: path
+        name: paper_id
+        required: true
+        schema:
+          title: Paper Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Reject School Exam Paper
+  /api/school-exams/pipeline/scan:
+    post:
+      description: 扫描当前环境 0700 私有收件箱；所有论文先待核对，逐题仍走既有 ocr_draft 门禁。
+      operationId: scan_school_exam_papers_api_school_exams_pipeline_scan_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SchoolPaperScanIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Scan School Exam Papers
+  /api/school-exams/reports:
+    get:
+      operationId: list_school_exam_reports_api_school_exams_reports_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List School Exam Reports
+  /api/school-exams/reports/scan:
+    post:
+      description: 扫描当前环境 inbox 中的分析报告册；报告不会当作单科试卷导入。
+      operationId: scan_school_exam_reports_api_school_exams_reports_scan_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Scan School Exam Reports
+  /api/school-exams/reports/{report_id}:
+    get:
+      operationId: get_school_exam_report_api_school_exams_reports__report_id__get
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get School Exam Report
+    patch:
+      description: 人工补录报告身份字段（如 OCR 缺失的年级）；不写关联考试、成绩或画像。
+      operationId: patch_school_exam_report_api_school_exams_reports__report_id__patch
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamReportPatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Patch School Exam Report
+  /api/school-exams/reports/{report_id}/answer-cards:
+    get:
+      operationId: list_report_answer_cards_api_school_exams_reports__report_id__answer_cards_get
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Report Answer Cards
+    post:
+      operationId: build_report_answer_cards_api_school_exams_reports__report_id__answer_cards_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: query
+        name: rotation
+        required: false
+        schema:
+          default: 0
+          title: Rotation
+          type: integer
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Build Report Answer Cards
+  /api/school-exams/reports/{report_id}/answer-cards/{attachment_id}/image:
+    get:
+      operationId: get_report_answer_card_image_api_school_exams_reports__report_id__answer_cards__attachment_id__image_get
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: path
+        name: attachment_id
+        required: true
+        schema:
+          title: Attachment Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Report Answer Card Image
+  /api/school-exams/reports/{report_id}/confirm:
+    post:
+      description: 人工确认报告；必须先完成唯一关联，只改变报告状态，不改写成绩或画像。
+      operationId: confirm_school_exam_report_api_school_exams_reports__report_id__confirm_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamReportConfirmIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam Report
+  /api/school-exams/reports/{report_id}/items/ai-map:
+    post:
+      description: DeepSeek 文本知识点匹配；只传题干和编码清单，只写未确认候选。
+      operationId: ai_map_school_exam_report_items_api_school_exams_reports__report_id__items_ai_map_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Ai Map School Exam Report Items
+  /api/school-exams/reports/{report_id}/items/drafts:
+    post:
+      description: 把报告逐题表生成为台账 ocr_draft；知识点待人工映射，不自动确认。
+      operationId: generate_school_exam_report_item_drafts_api_school_exams_reports__report_id__items_drafts_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Generate School Exam Report Item Drafts
+  /api/school-exams/reports/{report_id}/match:
+    post:
+      operationId: match_school_exam_report_api_school_exams_reports__report_id__match_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Match School Exam Report
+  /api/school-exams/reports/{report_id}/subjects:
+    post:
+      description: 为报告补录缺失学科统计；只改报告草稿，不创建原卷/不写能力画像。
+      operationId: supplement_school_exam_report_subject_api_school_exams_reports__report_id__subjects_post
+      parameters:
+      - in: path
+        name: report_id
+        required: true
+        schema:
+          title: Report Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamReportSubjectIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Supplement School Exam Report Subject
+  /api/school-exams/sync-center:
+    get:
+      description: 返回四步同步中心的真实后端状态：卷源、扫描、试卷与严格匹配候选。
+      operationId: get_school_exam_sync_center_api_school_exams_sync_center_get
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get School Exam Sync Center
   /api/school-exams/{exam_id}:
+    delete:
+      description: 删除单场校考及其逐题得分、原卷附件、排名快照；关联扫描试卷解除关联。
+      operationId: delete_school_exam_api_school_exams__exam_id__delete
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: query
+        name: confirm
+        required: false
+        schema:
+          default: false
+          title: Confirm
+          type: boolean
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete School Exam
     get:
       description: 考试详情 + 逐题得分（含确认状态与错因备注）+ 附件元数据；存储键绝不进响应（AC-SEC-01）。
       operationId: get_school_exam_detail_api_school_exams__exam_id__get
@@ -5024,6 +5908,82 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Parse School Exam Drafts
+  /api/school-exams/{exam_id}/ranks:
+    get:
+      description: 本人排名独立查询（仅管理端）；不进入学生端响应或能力画像。
+      operationId: get_school_exam_ranks_api_school_exams__exam_id__ranks_get
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get School Exam Ranks
+  /api/school-exams/{exam_id}/ranks/{rank_id}/confirm:
+    post:
+      description: 人工确认平台本人排名事实；只更新核对状态，不修改排名值或能力证据。
+      operationId: confirm_school_exam_rank_api_school_exams__exam_id__ranks__rank_id__confirm_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: rank_id
+        required: true
+        schema:
+          title: Rank Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolExamRankConfirmIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam Rank
   /api/school-exams/{exam_id}/sync-drafts:
     post:
       description: 接收外部校考平台（如 k12100.com）安全抓取的逐题得分并生成待人工确认草稿。

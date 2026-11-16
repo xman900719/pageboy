@@ -109,12 +109,17 @@ for f in \
 done
 
 # 5. 开发/测试服务端口只能监听回环地址；生产入口 8180 不可由开发用户进程占用
-for port in 18765 4173 5173 8000; do
+for port in 18765 5173 8000; do
   listen="$(ss -ltnH "sport = :$port" 2>/dev/null | awk '{print $4}')"
   if [[ -z "$listen" ]]; then ok "端口 $port 未监听"
   elif grep -qvE '^(127\.0\.0\.1|\[::1\]):' <<<"$listen"; then bad "端口 $port 监听非回环地址：$listen"
   else ok "端口 $port 仅回环"; fi
 done
+
+# 旧人工测试 Preview 端口已废弃；存在监听即视为遗留服务。
+legacy_4173="$(ss -ltnH "sport = :4173" 2>/dev/null | awk '{print $4}')"
+if [[ -n "$legacy_4173" ]]; then bad "端口 4173 已废弃但仍被占用：$legacy_4173"
+else ok "端口 4173 已禁用"; fi
 
 if pgrep -u "$(id -un)" -x caddy >/dev/null 2>&1; then
   bad "发现开发用户下残留 Caddy 进程"

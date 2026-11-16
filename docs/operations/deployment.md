@@ -48,6 +48,6 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 - 运行环境由 `SHUTONG_ENV`（`dev`/`test`/`prod`，缺省 `dev`）标识并经 `/health/live` 的 `env` 字段自报；生产 compose 固定为 `prod`，手工测试环境为 `test`。
 - `scripts/seed_demo.py` 探测到目标 `env=prod` 即拒绝写入虚构演示数据。
 - `infra/deploy.sh` 在工作区有未提交改动时拒绝部署（退出码 3），需显式 `--allow-dirty`；冒烟另校验 `env=prod`。
-- 真实 iPad 只访问生产（Cloudflare 隧道入口）；`scripts/run_manual_test_env.py` 的开发/测试服务仅监听 `127.0.0.1`，由宿主机桌面模拟机访问。
+- 真实 iPad 只访问生产（Cloudflare 隧道入口）；`scripts/run_dev_env.py` 的开发服务仅监听 `127.0.0.1`，由宿主机桌面模拟机访问。
 - 沿用现有密钥，暂不轮换；项目暂不对外发布。
 - 同机分离的目录/用户/Docker/发布流程与切换命令见 [prod-separation-runbook.md](prod-separation-runbook.md)（**脚本与手册已就绪，切换需 owner 以 sudo 执行，未执行前现网仍是旧布局**）；云迁移准备见 [cloud-migration.md](cloud-migration.md)；自检脚本 `scripts/check_env_isolation.sh`。

@@ -13,6 +13,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  extractExamIdentityFields,
+  extractOwnRankFields,
+  extractStudentIdentityRefs,
+  withoutIdentityConflicts,
+  withoutRankConflicts,
+} from './k12100_rank_fields.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -279,7 +286,7 @@ function normalizeScrapedExams(xhrPayloads, domSnapshot, maxExams) {
           external_id: String(raw.examId || raw.id || raw.paperId || title),
           title,
           subject_hint: String(raw.subjectName || raw.subject || raw.courseName || 'math'),
-          exam_date: String(raw.examDate || raw.examTime || raw.createTime || new Date().toISOString().slice(0, 10)).slice(0, 10),
+          exam_date: String(raw.examDate || raw.examTime || raw.createTime || '').slice(0, 10),
           earned_points: Number(raw.studentScore ?? raw.score ?? raw.totalScore ?? 0),
           max_points: Number(raw.fullScore ?? raw.paperScore ?? raw.maxPoints ?? 100),
           items,
@@ -389,7 +396,8 @@ async function collectExamPackets(page, state, args) {
     const examName = String(matchedMeta.examName || fallbackTitle).trim()
     const dateMatch = cardText.match(/\b(20\d{2}[-/.]\d{1,2}[-/.]\d{1,2})\b/)
     const examDateRaw = String(matchedMeta.examDate || matchedMeta.examTime || (dateMatch ? dateMatch[1] : '')).slice(0, 10)
-    const examDate = examDateRaw.replace(/[/.]/g, '-') || new Date().toISOString().slice(0, 10)
+    // 不得用抓取当天伪造平台考试日期；缺失时留空，由后端阻断自动建档。
+    const examDate = examDateRaw.replace(/[/.]/g, '-') || ''
 
     const totalCourses = await card.locator('.course_img').count()
     const subjectsCollected = []
@@ -428,10 +436,55 @@ async function collectExamPackets(page, state, args) {
       }
 
       const byName = {}
+      const ownRankFields = {}
+      const studentIdentityRefs = new Set()
       for (const rec of state.collectBucket) {
         byName[rec.endpoint] = rec.data?.data ?? rec.data
+        for (const ref of rec.studentIdentityRefs || []) studentIdentityRefs.add(ref)
+        if (rec.ownRankFields) {
+          for (const [key, value] of Object.entries(rec.ownRankFields)) {
+            if (String(key).endsWith('__conflict')) {
+              ownRankFields[key] = true
+              delete ownRankFields[key.slice(0, -'__conflict'.length)]
+              continue
+            }
+            const conflictKey = `${key}__conflict`
+            if (ownRankFields[conflictKey]) continue
+            if (ownRankFields[key] !== undefined && String(ownRankFields[key]) !== String(value)) {
+              ownRankFields[conflictKey] = true
+              delete ownRankFields[key]
+              continue
+            }
+            ownRankFields[key] = value
+          }
+        }
       }
-      const subjInfo = byName.queryOneSubjectData || {}
+      const ownIdentityFields = {}
+      for (const rec of state.collectBucket) {
+        if (!rec.examIdentityFields) continue
+        for (const [key, value] of Object.entries(rec.examIdentityFields)) {
+          if (key.endsWith('__conflict')) {
+            ownIdentityFields[key] = true
+            delete ownIdentityFields[key.slice(0, -'__conflict'.length)]
+            continue
+          }
+          const conflictKey = `${key}__conflict`
+          if (ownIdentityFields[conflictKey]) continue
+          if (ownIdentityFields[key] !== undefined && String(ownIdentityFields[key]) !== String(value)) {
+            ownIdentityFields[conflictKey] = true
+            delete ownIdentityFields[key]
+            continue
+          }
+          ownIdentityFields[key] = value
+        }
+      }
+      const rankOwnership = studentIdentityRefs.size === 1 ? 'verified' : studentIdentityRefs.size > 1 ? 'conflict' : 'unverified'
+      const rankOwnershipBasis = studentIdentityRefs.size === 1
+        ? 'single_student_ref_authenticated_subject_response'
+        : studentIdentityRefs.size > 1
+          ? 'conflicting_student_refs'
+          : 'missing_student_ref'
+      const subjInfo = { ...(byName.queryOneSubjectData || {}), ...withoutRankConflicts(ownRankFields) }
       const smallInfo = byName.queryOneSubjectSmallQuestionData || {}
       const cardInfo = byName.findStudentCard || {}
       const smallQuestions = Array.isArray(smallInfo.tableData) ? smallInfo.tableData : []
@@ -446,6 +499,10 @@ async function collectExamPackets(page, state, args) {
         : []
 
       subjectsCollected.push({
+        ...withoutRankConflicts(ownRankFields),
+        ...withoutIdentityConflicts(ownIdentityFields),
+        rank_ownership: rankOwnership,
+        rank_ownership_basis: rankOwnershipBasis,
         course_index: idx,
         subjectName: subjInfo.subjectName,
         subjectCode: subjInfo.subjectCode ?? null,
@@ -517,6 +574,9 @@ async function main() {
       if (!ctype.includes('json')) return
       try {
         const json = await resp.json()
+        const ownRankFields = extractOwnRankFields(json)
+        const examIdentityFields = extractExamIdentityFields(json)
+        const studentIdentityRefs = [...extractStudentIdentityRefs(json)]
         const cleanJson = sanitizeValue(json)
         const baseUrl = url.split('?')[0]
         state.xhrRecords.push({
@@ -530,6 +590,9 @@ async function main() {
             endpoint: baseUrl.split('/').pop(),
             url: baseUrl,
             data: cleanJson,
+            ownRankFields,
+            examIdentityFields,
+            studentIdentityRefs,
           })
         }
       } catch {
