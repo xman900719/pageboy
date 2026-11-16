@@ -767,7 +767,16 @@ test('J8 管理端知识点审核：同步候选→按课标生成审核依据�
   // 默认隐藏英文技术编码与 MOE 标准代码
   await expect(page.locator('.knowledge-workbench')).not.toContainText('MOE-2022-')
 
+  // 等首屏候选与课标条款加载均完成后再触发同步，避免与 mount 期的 loadCandidates 竞态。
+  await expect(page.locator('.status-banner')).toContainText('待审核: 48')
+  await expect(page.locator('.status-banner')).toContainText('课标条款:')
+  const seedDone = page.waitForResponse(
+    res => res.url().includes('/api/admin/knowledge/candidates/seed') && res.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: '同步候选入库 (待审)' }).click()
+  expect((await seedDone).status()).toBe(201)
+  // 按钮恢复为「同步候选入库 (待审)」且可用，表示 seed 后的 await loadCandidates() 已落库更新 id。
+  await expect(page.getByRole('button', { name: '同步候选入库 (待审)' })).toBeEnabled({ timeout: 15_000 })
   await expect(page.locator('.status-banner')).toContainText('待审核: 48')
 
   await page.getByLabel('审核人实名标识 (必填):').fill('owner_e2e_reviewer')
