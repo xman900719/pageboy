@@ -963,7 +963,8 @@ def test_school_exam_accepts_month_only_date(client):
     assert created["exam_date"].startswith("2026-10")
 
 
-def test_delete_single_school_exam_requires_confirmation_and_cascades(client):
+def test_delete_single_school_exam_requires_confirmation_and_cascades(tmp_path, client, monkeypatch):
+    _prepare_home(tmp_path, monkeypatch)
     exam = _create_exam(client)
 
     from shutong.database import get_db
