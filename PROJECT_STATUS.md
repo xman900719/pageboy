@@ -140,3 +140,10 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
     2. 完成 `contracts/math_legacy_taxonomy_mapping.json` 中 `math.geo.comprehensive`（`split`）与 `math.adv.new_definition`（`retained`）两项历史映射的北京市中考专家终审裁决，`pending_human_review_count` 归零；
     3. 管理端 `KnowledgeReviewCard.vue` 增加「当前学科专家审核档案」面板并在切换节点时同步回显已保存的专家审核意见；
     4. 清理前端生产/管理界面中的“演示数据均为虚构测试数据”与虚拟占位符文案，清理开发库中残留的 `Owner`/`test` 测试审核、2018 数学真题源下误传的 6 份非真题测试 PDF 附件及孤儿文件、测试练习曝光与目标记录，并清理临时测试目录与未跟踪打包脚本。
+- **2026-11-16 开发基准线收口（PR #10–#13 演进 + Worktree 整合，Alembic `0016`）**：
+  - **实施内容**：
+    1. 完成管理端矩阵 Tab 重构、中文本地化、`k12100` 配置按环境隔离迁入 `$PAGEBOY_HOME/<env>/k12100`（PR #10–#13）；
+    2. 整合 `ST-EXAM-AUTOSYNC` R1/R2（五字段卷头模型、排名归属校验 `ownership_status`、单场删除、月精度日期、`AGENTS.md` 第 14 条与 `test-data-policy` fail-closed 护栏）与多学科分析报告册解析导入（`SchoolExamReport`、`SchoolExamReportAttachment`、管理端 6-Tab 并存）；
+    3. 解决双 worktree `0014` 迁移号冲突，重排线性链 `0013 → 0014(R2) → 0015(reports) → 0016(report_cards)`，将共享开发库无损升级至 `0016`，安全清理两个旧 worktree 并留存冷备份；
+    4. 生成开发基准线记录 [2026-11-16 开发基准线](docs/quality/dev-baseline-2026-11-16.md) 并通过特性分支提交 PR 触发远端五作业 CI 验证。
+  - **本地验收与边界**：`make verify`（346 passed, 25 skipped）、`zensical build --strict`、Vitest（26 passed）、`npm run build`、Chromium E2E（26 passed, 5 skipped）、iPad WebKit E2E（29 passed, 2 skipped）、`check_env_isolation.sh` 及 Owner 模拟机 16 项人工确认均已通过；PostgreSQL 16 迁移往返由远端 CI `pg-migration` 作业验证；真实 `k12100` 采集保持 `BLOCKED`；生产栈保持 `v1.6.1` 未触碰。
