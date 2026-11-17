@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 const pyCmd = process.env.PY_CMD ?? '../../.venv/bin/python'
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../services/api')
 const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
+const webPort = process.env.E2E_WEB_PORT ?? '5173'
 const dbFile = `${tmpRoot}/st008-e2e.sqlite3`
 const attachmentsDir = `${tmpRoot}/st008-e2e-attachments`
 const standardsDir = process.env.SHUTONG_STANDARDS_DIR ?? `${tmpRoot}/st008-e2e-standards`
@@ -32,7 +33,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: `http://127.0.0.1:${webPort}`,
     serviceWorkers: 'block',
     ...(ipad ? { ...devices['iPad (gen 7)'], browserName: 'webkit' as const } : {}),
   },
@@ -74,8 +75,8 @@ export default defineConfig({
       stdout: 'ignore',
     },
     {
-      command: 'npm run dev -- --port 5173 --strictPort',
-      url: 'http://127.0.0.1:5173',
+      command: `npm run dev -- --port ${webPort} --strictPort`,
+      url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: false,
       timeout: 60_000,
       // Vite dev 代理跟随 E2E API 端口（vite.config.ts 的 API_PROXY_TARGET 钩子）。

@@ -29,6 +29,8 @@ import {
 } from '../../examSync'
 import HelpBubble from '../HelpBubble.vue'
 import type { NoticeTone } from '../Notice.vue'
+import StepFlowWorkspace from './StepFlowWorkspace.vue'
+import type { StepDefinition, StepFlowContext } from './stepFlow'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 type OpenTab = 'scores' | 'papers' | 'items' | 'analysis'
@@ -93,12 +95,6 @@ const COMPARISON_LABELS: Record<string, string> = {
   different: '名称不同',
   missing: '缺失',
 }
-const STEP_META = [
-  { id: 1 as SyncStep, title: '发现试卷', hint: '扫描收件箱，确认真实文件与卷头' },
-  { id: 2 as SyncStep, title: '匹配考试', hint: '联合身份字段，不靠日期猜测' },
-  { id: 3 as SyncStep, title: '获取信息', hint: '单场低频采集，部分缺失如实呈现' },
-  { id: 4 as SyncStep, title: '核对入档', hint: '人工锁定总分，逐题草稿另审' },
-]
 
 const center = ref<SchoolExamSyncCenter | null>(null)
 const loading = ref(false)
@@ -146,7 +142,7 @@ const bundleError = ref('')
 
 const papers = computed(() => center.value?.papers ?? [])
 const selectedPaper = computed(
-  () => papers.value.find(paper => paper.id === selectedPaperId.value) ?? null
+  () => papers.value.find(paper => paper.id === selectedPaperId.value) ?? null,
 )
 const matchedPaperCount = computed(
   () => papers.value.filter(paper => paper.status === 'matched' || paper.status === 'imported').length,
@@ -164,15 +160,71 @@ const currentResultRow = computed(() => {
   return result.subjects.find(row => row.exam_id === currentExamId.value) ?? result.subjects[0] ?? null
 })
 const selectedCandidates = computed<SchoolPaperMatchCandidate[]>(() => selectedPaper.value?.candidates ?? [])
-
 const reviewCoverage = computed(() => deriveReviewCoverage(reviewDetail.value, reviewRanks.value))
 
-const stepBadges = computed<Record<SyncStep, string>>(() => ({
-  1: center.value ? `${papers.value.length} 份` : '待加载',
-  2: center.value ? `${matchedPaperCount.value} 场已匹配` : '待加载',
-  3: job.value ? getJobStateLabel(job.value.state) : '未开始',
-  4: reviewDetail.value ? (reviewDetail.value.confirmed_by_user ? '总分已核对' : '待核对') : '待入档',
-}))
+const activeStepStr = computed({
+  get: () => String(activeStep.value),
+  set: (val: string) => {
+    const num = Number(val) as SyncStep
+    if (num >= 1 && num <= 4) {
+      goStep(num)
+    }
+  },
+})
+
+const syncContext = computed<StepFlowContext | null>(() => {
+  if (!selectedPaper.value) return null
+  const meta = getPaperStatusMeta(selectedPaper.value.status)
+  return {
+    eyebrow: '当前试卷',
+    title: selectedPaper.value.filename,
+    statusText: `${formatPaperSubject(selectedPaper.value)} · ${meta.label}`,
+    statusTone: meta.tone === 'good' ? 'good' : meta.tone === 'mid' ? 'mid' : 'wait',
+  }
+})
+
+const syncSteps = computed<StepDefinition[]>(() => {
+  const paper = selectedPaper.value
+  const matchReady = Boolean((paper && ['matched', 'imported'].includes(paper.status)) || currentExamId.value)
+  return [
+    {
+      id: '1',
+      title: '发现试卷',
+      subtitle: '扫描收件箱并选定试卷',
+      badge: center.value ? `${papers.value.length} 份` : '待加载',
+      done: paper !== null,
+      prereqMet: true,
+    },
+    {
+      id: '2',
+      title: '匹配考试',
+      subtitle: '联合身份字段，人工消歧',
+      badge: center.value ? `${matchedPaperCount.value} 已匹配` : '待加载',
+      done: Boolean(paper && ['matched', 'imported'].includes(paper.status)),
+      prereqMet: paper !== null,
+      lockReason: '请先在第 1 步扫描私有收件箱并选定一份试卷。',
+    },
+    {
+      id: '3',
+      title: '获取信息',
+      subtitle: '单场低频采集，缺字段如实',
+      badge: job.value ? getJobStateLabel(job.value.state) : '未开始',
+      done: job.value?.state === 'completed',
+      prereqMet: matchReady,
+      lockReason: '请先在第 2 步完成人工匹配确认并关联校考档案后再采集。',
+    },
+    {
+      id: '4',
+      title: '核对入档',
+      subtitle: '人工锁定总分与本人排名',
+      badge: reviewDetail.value ? (reviewDetail.value.confirmed_by_user ? '总分已核对' : '待核对') : '待入档',
+      badgeTone: reviewDetail.value?.confirmed_by_user ? 'good' : 'wait',
+      done: Boolean(reviewDetail.value?.confirmed_by_user),
+      prereqMet: Boolean(currentExamId.value),
+      lockReason: '请先在第 2 步完成匹配并将原卷导入考试档案后再核对入档。',
+    },
+  ]
+})
 
 const cliCommand = computed(() => {
   const environment = center.value?.source.environment ?? 'development'
@@ -189,13 +241,6 @@ const sourceStatusText = computed(() => {
   if (!source) return '正在读取卷源状态…'
   if (!source.ready) return '私有收件箱不可用'
   return source.real_source_configured ? '真实授权卷源已就绪' : '仅本地收件箱 · 未配置真实卷源'
-})
-
-const nextStepText = computed(() => {
-  if (!selectedPaper.value) return '先扫描并选择一份待处理试卷。'
-  if (selectedPaper.value.status === 'imported') return '原卷已入档，请核对总分、逐题草稿与本人排名。'
-  if (selectedPaper.value.status === 'matched') return '考试已匹配，下一步启动单场信息采集。'
-  return '请核对卷头字段与候选考试，必要时人工确认匹配。'
 })
 
 function setNotice(text: string, tone: 'info' | 'caution' | 'error' = 'info') {
@@ -648,7 +693,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="exam-sync-center" aria-label="全科校考同步中心">
-    <header class="exam-sync-topbar">
+    <header class="exam-sync-topbar stage-wrap">
       <div class="exam-sync-env">
         <span class="chip good">{{ center?.source.environment || 'development' }} 环境</span>
         <span class="muted tiny">{{ sourceStatusText }}</span>
@@ -667,45 +712,29 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <ol class="exam-sync-steps" aria-label="校考同步四步工作流">
-      <li v-for="step in STEP_META" :key="step.id">
-        <button
-          type="button"
-          class="exam-sync-step"
-          :class="{ current: activeStep === step.id, done: activeStep > step.id }"
-          :aria-current="activeStep === step.id ? 'step' : undefined"
-          @click="goStep(step.id)"
-        >
-          <span class="exam-sync-step-num" aria-hidden="true">{{ step.id }}</span>
-          <span class="exam-sync-step-copy">
-            <b>{{ step.title }}</b>
-            <small>{{ step.hint }}</small>
-          </span>
-          <span class="chip subtle">{{ stepBadges[step.id] }}</span>
-        </button>
-      </li>
-    </ol>
+    <p v-if="loadError" class="exam-sync-banner bad stage-wrap" role="alert">{{ loadError }}</p>
+    <p v-if="actionNotice" :class="['exam-sync-banner', actionTone, 'stage-wrap']" role="status">{{ actionNotice }}</p>
 
-    <p v-if="loadError" class="exam-sync-banner bad" role="alert">{{ loadError }}</p>
-    <p v-if="actionNotice" :class="['exam-sync-banner', actionTone]" role="status">{{ actionNotice }}</p>
-
-    <!-- 第一步：发现试卷 -->
-    <section
-      v-show="activeStep === 1"
-      id="exam-sync-panel-1"
-      class="exam-sync-panel"
-      role="region"
-      aria-label="第一步：发现试卷"
+    <StepFlowWorkspace
+      v-model="activeStepStr"
+      :steps="syncSteps"
+      :context="syncContext"
+      steps-aria-label="校考同步四步工作流"
     >
-      <div class="exam-sync-grid exam-sync-grid-source">
-        <article class="card">
+      <!-- 第一步：发现试卷（合并为单一卡片） -->
+      <template #step-1>
+        <article class="card" aria-label="第一步：发现试卷">
           <div class="card-head">
             <div>
-              <h3>试卷发现</h3>
-              <p class="card-sub">本地扫描不会伪造远程下载；真实授权卷源未配置时明确显示为阻断。</p>
+              <h3>第一步 · 试卷发现与收件箱列表</h3>
+              <p class="card-sub">本地扫描不会伪造远程下载；任何文件都不会自动进入公共题库。</p>
             </div>
-            <span :class="['chip', sourceTone]">{{ sourceStatusText }}</span>
+            <div class="card-head-tools">
+              <span :class="['chip', sourceTone]">{{ sourceStatusText }}</span>
+              <span class="chip subtle">待核对 {{ center?.counts.needs_review ?? 0 }} · 已匹配 {{ center?.counts.matched ?? 0 }} · 已入档 {{ center?.counts.imported ?? 0 }}</span>
+            </div>
           </div>
+
           <dl class="exam-sync-facts">
             <div>
               <dt>当前目录</dt>
@@ -727,7 +756,8 @@ onBeforeUnmount(() => {
               <dd v-else>扫描后生成可复核记录</dd>
             </div>
           </dl>
-          <div class="exam-sync-action-row">
+
+          <div class="exam-sync-action-row" style="margin-bottom: 12px;">
             <button type="button" class="primary" :disabled="scanning" @click="scanInbox">
               {{ scanning ? '正在扫描…' : '扫描私有收件箱' }}
             </button>
@@ -745,10 +775,12 @@ onBeforeUnmount(() => {
               <p>你仍可把合法取得的文件放入私有收件箱后扫描；原始文件不会被删除或改名。</p>
             </HelpBubble>
           </div>
-          <p v-if="center && !center.source.real_source_configured" class="exam-sync-blocked" role="note">
+
+          <p v-if="center && !center.source.real_source_configured" class="exam-sync-blocked" role="note" style="margin-bottom: 12px;">
             <b>SOURCE_NOT_CONFIGURED</b>：{{ center.source.message }}
           </p>
-          <details v-if="center?.latest_scan?.errors.length" class="exam-sync-details">
+
+          <details v-if="center?.latest_scan?.errors.length" class="exam-sync-details" style="margin-bottom: 12px;">
             <summary>查看最近扫描被跳过的文件</summary>
             <ul class="exam-sync-error-list" tabindex="0">
               <li v-for="(err, idx) in center.latest_scan.errors" :key="`${err.code}-${idx}`">
@@ -756,100 +788,61 @@ onBeforeUnmount(() => {
               </li>
             </ul>
           </details>
-        </article>
 
-        <article class="card">
+          <h4 class="sub-head" style="margin: 12px 0 8px;">已发现试卷 ({{ papers.length }})</h4>
+          <div v-if="loading" class="exam-sync-empty">正在读取私有收件箱…</div>
+          <div v-else-if="papers.length === 0" class="exam-sync-empty">
+            <b>还没有发现试卷</b>
+            <p>把 PDF / DOCX / PNG / JPG 放入私有收件箱，或使用命令行 `--source-dir` 导入。单次最多处理 200 份，符号链接会被拒绝。</p>
+          </div>
+          <ul v-else class="exam-paper-list" tabindex="0" aria-label="已发现校考试卷列表">
+            <li v-for="paper in papers" :key="paper.id">
+              <button
+                type="button"
+                class="exam-paper-row"
+                :class="{ selected: selectedPaperId === paper.id }"
+                :aria-pressed="selectedPaperId === paper.id"
+                @click="selectPaper(paper)"
+              >
+                <span class="exam-paper-icon" aria-hidden="true">{{ paper.media_type.includes('pdf') ? 'PDF' : paper.media_type.includes('word') ? 'DOC' : 'IMG' }}</span>
+                <span class="exam-paper-main">
+                  <b>{{ paper.filename }}</b>
+                  <small>
+                    {{ formatPaperSubject(paper) }}
+                    · {{ formatPaperExamIdentity(paper) }}
+                    · {{ fmtBytes(paper.byte_size) }}
+                  </small>
+                  <small class="exam-paper-source">{{ paper.source_ref }}</small>
+                </span>
+                <span class="exam-paper-status">
+                  <span :class="['chip', getMatchMeta(paper.match_state).tone]">{{ getMatchMeta(paper.match_state).label }}</span>
+                  <span :class="['chip', getPaperStatusMeta(paper.status).tone]">{{ getPaperStatusMeta(paper.status).label }}</span>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </article>
+      </template>
+
+      <!-- 第二步：匹配考试（单一焦点卡内分节呈递） -->
+      <template #step-2>
+        <article v-if="selectedPaper" class="card" aria-label="第二步：匹配考试">
           <div class="card-head">
             <div>
-              <h3>下一步</h3>
-              <p class="card-sub">{{ nextStepText }}</p>
-            </div>
-            <span class="chip wait">{{ papers.length }} 份试卷</span>
-          </div>
-          <div class="exam-sync-mini-stats">
-            <div><b>{{ center?.counts.needs_review ?? 0 }}</b><span>待核对</span></div>
-            <div><b>{{ center?.counts.matched ?? 0 }}</b><span>已匹配</span></div>
-            <div><b>{{ center?.counts.imported ?? 0 }}</b><span>已入档</span></div>
-          </div>
-          <button
-            v-if="selectedPaper"
-            type="button"
-            class="primary"
-            @click="goStep(getPaperNextStep(selectedPaper))"
-          >
-            {{ selectedPaper.status === 'imported' ? '查看核对入档' : selectedPaper.status === 'matched' ? '继续获取信息' : '核对匹配' }}
-          </button>
-          <p v-else class="muted">收件箱为空时，把合法取得的月考试卷放入上方目录，再点“扫描”。</p>
-        </article>
-      </div>
-
-      <article class="card">
-        <div class="card-head">
-          <div>
-            <h3>已发现试卷</h3>
-            <p class="card-sub">列表只展示卷头识别与流程状态；任何文件都不会自动进入公共题库。</p>
-          </div>
-          <span class="chip subtle">独立滚动</span>
-        </div>
-        <div v-if="loading" class="exam-sync-empty">正在读取私有收件箱…</div>
-        <div v-else-if="papers.length === 0" class="exam-sync-empty">
-          <b>还没有发现试卷</b>
-          <p>把 PDF / DOCX / PNG / JPG 放入私有收件箱，或使用命令行 `--source-dir` 导入。单次最多处理 200 份，符号链接会被拒绝。</p>
-          <button type="button" class="primary" :disabled="scanning" @click="scanInbox">扫描收件箱</button>
-        </div>
-        <ul v-else class="exam-paper-list" tabindex="0" aria-label="已发现校考试卷列表">
-          <li v-for="paper in papers" :key="paper.id">
-            <button
-              type="button"
-              class="exam-paper-row"
-              :class="{ selected: selectedPaperId === paper.id }"
-              :aria-pressed="selectedPaperId === paper.id"
-              @click="selectPaper(paper)"
-            >
-              <span class="exam-paper-icon" aria-hidden="true">{{ paper.media_type.includes('pdf') ? 'PDF' : paper.media_type.includes('word') ? 'DOC' : 'IMG' }}</span>
-              <span class="exam-paper-main">
-                <b>{{ paper.filename }}</b>
-                <small>
-                  {{ formatPaperSubject(paper) }}
-                  · {{ formatPaperExamIdentity(paper) }}
-                  · {{ fmtBytes(paper.byte_size) }}
-                </small>
-                <small class="exam-paper-source">{{ paper.source_ref }}</small>
-              </span>
-              <span class="exam-paper-status">
-                <span :class="['chip', getMatchMeta(paper.match_state).tone]">{{ getMatchMeta(paper.match_state).label }}</span>
-                <span :class="['chip', getPaperStatusMeta(paper.status).tone]">{{ getPaperStatusMeta(paper.status).label }}</span>
-              </span>
-            </button>
-          </li>
-        </ul>
-      </article>
-    </section>
-
-    <!-- 第二步：匹配考试 -->
-    <section
-      v-show="activeStep === 2"
-      id="exam-sync-panel-2"
-      class="exam-sync-panel"
-      role="region"
-      aria-label="第二步：匹配考试"
-    >
-      <div v-if="!selectedPaper" class="card exam-sync-empty">
-        <b>尚未选择试卷</b>
-        <p>请回到第一步选择一份待核对试卷。</p>
-        <button type="button" class="ghost" @click="goStep(1)">返回发现试卷</button>
-      </div>
-      <div v-else class="exam-sync-grid exam-sync-grid-match">
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h3>卷头识别依据</h3>
+              <h3>第二步 · 卷头识别与候选考试匹配</h3>
               <p class="card-sub">{{ selectedPaper.filename }}</p>
             </div>
-            <span :class="['chip', selectedPaper.header.complete ? 'good' : 'wait']">
-              {{ CONFIDENCE_LABELS[selectedPaper.header.confidence || ''] || '待识别' }}
-            </span>
+            <div class="card-head-tools">
+              <span :class="['chip', selectedPaper.header.complete ? 'good' : 'wait']">
+                {{ CONFIDENCE_LABELS[selectedPaper.header.confidence || ''] || '待识别' }}
+              </span>
+              <span :class="['chip', getMatchMeta(selectedPaper.match_state).tone]">
+                {{ getMatchMeta(selectedPaper.match_state).label }}
+              </span>
+            </div>
           </div>
+
+          <h4 class="sub-head" style="margin-top: 4px;">卷头识别依据</h4>
           <dl class="exam-sync-identity">
             <div><dt>学年度</dt><dd>{{ selectedPaper.header.academic_year || '缺失' }}</dd></div>
             <div><dt>年级</dt><dd>{{ selectedPaper.header.grade || '缺失' }}</dd></div>
@@ -857,40 +850,28 @@ onBeforeUnmount(() => {
             <div><dt>学科</dt><dd>{{ formatPaperSubject(selectedPaper) === '学科待识别' ? '缺失' : formatPaperSubject(selectedPaper) }}</dd></div>
             <div><dt>考试日期</dt><dd>{{ fmtExamMonth(selectedPaper.header.exam_date) || '缺失' }}</dd></div>
           </dl>
-          <ul class="exam-sync-fields" tabindex="0" aria-label="卷头字段识别状态">
-            <li v-for="(field, key) in selectedPaper.header.fields" :key="key">
-              <span>{{ FIELD_LABELS[key] || key }}</span>
-              <span :class="['chip', field.status === 'found' ? 'good' : field.status === 'ambiguous' ? 'bad' : 'subtle']">
-                {{ FIELD_STATUS_LABELS[field.status] || field.status }}
-              </span>
-              <small>{{ field.evidence || '无识别依据' }}</small>
-            </li>
-          </ul>
-          <details class="exam-sync-details">
-            <summary>查看脱敏卷头摘录</summary>
+
+          <details class="exam-sync-details" style="margin-bottom: 12px;">
+            <summary>查看五字段证据与脱敏卷头摘录</summary>
+            <ul class="exam-sync-fields" tabindex="0" aria-label="卷头字段识别状态">
+              <li v-for="(field, key) in selectedPaper.header.fields" :key="key">
+                <span>{{ FIELD_LABELS[key] || key }}</span>
+                <span :class="['chip', field.status === 'found' ? 'good' : field.status === 'ambiguous' ? 'bad' : 'subtle']">
+                  {{ FIELD_STATUS_LABELS[field.status] || field.status }}
+                </span>
+                <small>{{ field.evidence || '无识别依据' }}</small>
+              </li>
+            </ul>
             <pre class="exam-sync-excerpt" tabindex="0">{{ selectedPaper.header.text_excerpt || '未提取到文字层。' }}</pre>
           </details>
-          <p v-if="selectedPaper.header.warnings.length" class="exam-sync-blocked" role="note">
+
+          <p v-if="selectedPaper.header.warnings.length" class="exam-sync-blocked" role="note" style="margin-bottom: 12px;">
             {{ selectedPaper.header.warnings.join('；') }}
           </p>
-          <div class="exam-sync-action-row">
-            <button type="button" class="ghost" :disabled="matching" @click="runMatch(false)">
-              {{ matching ? '匹配中…' : '重新执行自动匹配' }}
-            </button>
-            <button type="button" class="ghost small" @click="goStep(1)">返回试卷列表</button>
-          </div>
-        </article>
 
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h3>候选考试与字段差异</h3>
-              <p class="card-sub">只有五项核心字段（学年度、年级、类型、学科、日期）共同成立且候选唯一，或用平台 ID/全称消歧后才可自动继续。</p>
-            </div>
-            <span :class="['chip', getMatchMeta(selectedPaper.match_state).tone]">
-              {{ getMatchMeta(selectedPaper.match_state).label }}
-            </span>
-          </div>
+          <h4 class="sub-head" style="margin-top: 12px;">候选考试与字段差异</h4>
+          <p class="muted tiny" style="margin-top: 0;">只有五项核心字段共同成立且候选唯一，或人工确认消歧后才可导入并进入采集。</p>
+
           <div v-if="selectedCandidates.length === 0" class="exam-sync-empty">
             <b>没有可比较的候选</b>
             <p>先在“总分台账与建档”新建对应考试档案，再回来人工选择。</p>
@@ -942,6 +923,9 @@ onBeforeUnmount(() => {
               >
                 {{ matching ? '保存中…' : '确认匹配所选考试' }}
               </button>
+              <button type="button" class="ghost" :disabled="matching" @click="runMatch(false)">
+                {{ matching ? '匹配中…' : '重新执行自动匹配' }}
+              </button>
               <button
                 type="button"
                 class="ghost"
@@ -963,48 +947,47 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </article>
-      </div>
-    </section>
+      </template>
 
-    <!-- 第三步：获取信息 -->
-    <section
-      v-show="activeStep === 3"
-      id="exam-sync-panel-3"
-      class="exam-sync-panel"
-      role="region"
-      aria-label="第三步：获取信息"
-    >
-      <div class="exam-sync-grid exam-sync-grid-collect">
-        <article class="card">
+      <!-- 第三步：获取信息（单一焦点卡 + 内联折叠高级区） -->
+      <template #step-3>
+        <article class="card" aria-label="第三步：获取信息">
           <div class="card-head">
             <div>
-              <h3>本次采集范围</h3>
-              <p class="card-sub">只采集本人账号可见的单场考试信息；不扫描历史考试，不采集其他学生数据。</p>
+              <h3>第三步 · 本次单场采集范围与执行进度</h3>
+              <p class="card-sub">只采集本人账号可见的单场考试信息；部分字段缺失如实列出。</p>
             </div>
-            <span class="chip">{{ currentExamTitle }}</span>
+            <div class="card-head-tools">
+              <span class="chip">{{ currentExamTitle }}</span>
+              <span :class="['chip', job?.state === 'failed' ? 'bad' : job?.state === 'completed' ? 'good' : isJobActive ? 'wait' : 'subtle']">
+                {{ job ? getJobStateLabel(job.state) : '未启动' }}
+              </span>
+            </div>
           </div>
+
           <div class="exam-sync-scope-grid">
             <div><b>考试档案</b><span>平台名称、日期、学校、年级、类型、学科</span></div>
             <div><b>成绩</b><span>总分、满分、逐小题得分</span></div>
             <div><b>答题与批改</b><span>本人答题卡原图、答案、平台批改</span></div>
             <div><b>本人排名</b><span>班级 / 年级 / 学校 / 区域及参与人数</span></div>
           </div>
-          <div class="exam-sync-safety" role="note">
+
+          <div class="exam-sync-safety" role="note" style="margin-bottom: 10px;">
             <b>低频安全边界</b>
             <ul>
-              <li>单账号、单会话、串行；默认单次仅 1 场考试。</li>
-              <li>默认显示浏览器并优先复用登录会话；页面间隔保守。</li>
+              <li>单账号、单会话、串行；默认单次仅 1 场考试，优先复用登录会话。</li>
               <li>出现验证码、401 / 403 / 429、账号异常或平台不允许时立即停止，不换代理、不伪装指纹。</li>
-              <li>已取得的信息优先用缓存；页面缺字段不反复查询。</li>
             </ul>
           </div>
+
           <p v-if="runtime && !runtime.can_run_local" class="exam-sync-blocked" role="note">
             本机直连不可用：{{ runtime.unavailable_reason || '当前环境无法启动宿主机浏览器' }}。可使用下方离线采集包导入。
           </p>
           <p v-else-if="runtime" class="muted tiny">
             账号 {{ runtime.credentials.username_masked || '未配置' }} · 智能识图 {{ runtime.deepseek_configured ? '已配置' : '未配置（不影响基础采集）' }} · 环境 {{ runtime.environment }}
           </p>
-          <div class="exam-sync-action-row">
+
+          <div class="exam-sync-action-row" style="margin-bottom: 12px;">
             <button
               type="button"
               class="primary"
@@ -1018,19 +1001,8 @@ onBeforeUnmount(() => {
               {{ advancedOpen ? '收起高级设置' : '高级设置与离线包' }}
             </button>
           </div>
-        </article>
 
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h3>采集进度与覆盖</h3>
-              <p class="card-sub">部分字段缺失会单独列出，不用“采集完成”掩盖。</p>
-            </div>
-            <span :class="['chip', job?.state === 'failed' ? 'bad' : job?.state === 'completed' ? 'good' : isJobActive ? 'wait' : 'subtle']">
-              {{ job ? getJobStateLabel(job.state) : '未启动' }}
-            </span>
-          </div>
-          <div v-if="job" class="exam-sync-progress" aria-live="polite">
+          <div v-if="job" class="exam-sync-progress" aria-live="polite" style="margin-bottom: 10px;">
             <div class="exam-sync-progress-head">
               <b>{{ job.stage_message }}</b>
               <span class="muted tiny">{{ shortTime(job.updated_at) }}</span>
@@ -1038,17 +1010,16 @@ onBeforeUnmount(() => {
             <dl class="exam-sync-facts compact">
               <div><dt>任务状态</dt><dd>{{ getJobStateLabel(job.state) }}</dd></div>
               <div><dt>总分确认</dt><dd>默认待人工核对</dd></div>
-              <div><dt>请求限制</dt><dd>1 场 · 单会话串行</dd></div>
               <div><dt>失败原因</dt><dd>{{ job.error_message || '无' }}</dd></div>
             </dl>
           </div>
-          <div v-if="selectedPaper?.status === 'matched'" class="exam-sync-next-card">
+
+          <div v-if="selectedPaper?.status === 'matched'" class="exam-sync-next-card" style="margin-bottom: 10px;">
             <p><b>原卷尚未入档。</b>先把试卷纳入该考试的私有档案，再开始采集或进入核对。</p>
             <button type="button" class="primary" :disabled="importing" @click="importPaper">
               {{ importing ? '入档中…' : '将原卷导入该考试' }}
             </button>
           </div>
-          <p v-else-if="!job" class="exam-sync-empty-inline">尚未启动采集。匹配成功后才会发起真实平台请求。</p>
 
           <div v-if="currentResultRow" class="exam-sync-result">
             <h4>{{ currentResultRow.match_state ? getMatchMeta(currentResultRow.match_state).label : '采集结果' }}</h4>
@@ -1068,94 +1039,80 @@ onBeforeUnmount(() => {
             </p>
             <p v-if="currentResultRow.warning" class="exam-sync-banner caution">{{ currentResultRow.warning }}</p>
           </div>
-          <p v-if="collectionError" class="exam-sync-banner bad" role="alert">{{ collectionError }}</p>
-          <div v-if="lastResult" class="exam-sync-action-row">
-            <button type="button" class="ghost" @click="goStep(4)">进入核对入档</button>
-          </div>
-        </article>
-      </div>
 
-      <article v-if="advancedOpen" class="card exam-sync-advanced">
-        <div class="card-head">
-          <div>
-            <h3>高级设置与离线回退</h3>
-            <p class="card-sub">正常流程无需展开；所有外部总分默认待人工核对。</p>
-          </div>
-          <span class="chip subtle">高级</span>
-        </div>
-        <div class="exam-sync-options">
-          <label>考试名称关键词<input v-model="keyword" placeholder="可留空，默认按当前档案/卷头" /></label>
-          <label>平台考试日期<input v-model="targetDate" type="month" /></label>
-          <label>归档标题前缀<input v-model="seriesPrefix" placeholder="如：九上期中" /></label>
-        </div>
-        <div class="exam-sync-checks">
-          <label><input v-model="useAi" type="checkbox" /> 缺原卷文字层时允许智能识图辅助（仍需人工核对）</label>
-          <label><input v-model="extractPdfs" type="checkbox" /> 从已有原卷提取逐题题号/分值草稿</label>
-          <label><input v-model="uploadCards" type="checkbox" /> 保存本人答题卡原图到私有隔离存储</label>
-          <label><input v-model="replaceDrafts" type="checkbox" /> 重跑时替换未人工核对的旧草稿</label>
-          <label><input v-model="showBrowser" type="checkbox" /> 显示宿主机浏览器窗口（首次登录/验证码时人工处理）</label>
-        </div>
-        <div class="exam-sync-cli">
-          <span class="muted tiny">本地单次执行</span>
-          <code>{{ cliCommand }}</code>
-          <button type="button" class="ghost small" @click="copyCliCommand">复制命令</button>
-        </div>
-        <div class="exam-sync-bundle">
-          <div>
-            <b>离线采集包导入</b>
-            <p class="muted tiny">合法导出的脱敏 JSON；服务端二次 PII 清洗并强制草稿门禁。</p>
-          </div>
-          <input
-            ref="bundleInputRef"
-            type="file"
-            accept="application/json,.json"
-            class="sr-only-input"
-            aria-label="选择脱敏校考采集包"
-            @change="handleBundleFile"
-          />
-          <button type="button" class="ghost" :disabled="importingBundle" @click="triggerBundlePicker">
-            {{ importingBundle ? '导入中…' : '选择离线采集包' }}
-          </button>
-        </div>
-        <p v-if="bundleError" class="exam-sync-banner bad" role="alert">{{ bundleError }}</p>
-        <details class="exam-sync-details">
-          <summary>调试与限流信息</summary>
-          <pre class="exam-sync-excerpt">environment={{ runtime?.environment || center?.source.environment || 'development' }}
+          <p v-if="collectionError" class="exam-sync-banner bad" role="alert">{{ collectionError }}</p>
+
+          <!-- 内联折叠：高级设置与离线回退（同在一张卡片内，不再额外平铺第 3 张卡片） -->
+          <div v-if="advancedOpen" class="exam-sync-advanced" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);">
+            <h4 class="sub-head" style="margin-top: 0;">高级设置与离线回退</h4>
+            <div class="exam-sync-options">
+              <label>考试名称关键词<input v-model="keyword" placeholder="可留空，默认按当前档案/卷头" /></label>
+              <label>平台考试日期<input v-model="targetDate" type="month" /></label>
+              <label>归档标题前缀<input v-model="seriesPrefix" placeholder="如：九上期中" /></label>
+            </div>
+            <div class="exam-sync-checks">
+              <label><input v-model="useAi" type="checkbox" /> 缺原卷文字层时允许智能识图辅助（仍需人工核对）</label>
+              <label><input v-model="extractPdfs" type="checkbox" /> 从已有原卷提取逐题题号/分值草稿</label>
+              <label><input v-model="uploadCards" type="checkbox" /> 保存本人答题卡原图到私有隔离存储</label>
+              <label><input v-model="replaceDrafts" type="checkbox" /> 重跑时替换未人工核对的旧草稿</label>
+              <label><input v-model="showBrowser" type="checkbox" /> 显示宿主机浏览器窗口（首次登录/验证码时人工处理）</label>
+            </div>
+            <div class="exam-sync-cli">
+              <span class="muted tiny">本地单次执行</span>
+              <code>{{ cliCommand }}</code>
+              <button type="button" class="ghost small" @click="copyCliCommand">复制命令</button>
+            </div>
+            <div class="exam-sync-bundle">
+              <div>
+                <b>离线采集包导入</b>
+                <p class="muted tiny">合法导出的脱敏 JSON；服务端二次 PII 清洗并强制草稿门禁。</p>
+              </div>
+              <input
+                ref="bundleInputRef"
+                type="file"
+                accept="application/json,.json"
+                class="sr-only-input"
+                aria-label="选择脱敏校考采集包"
+                @change="handleBundleFile"
+              />
+              <button type="button" class="ghost" :disabled="importingBundle" @click="triggerBundlePicker">
+                {{ importingBundle ? '导入中…' : '选择离线采集包' }}
+              </button>
+            </div>
+            <p v-if="bundleError" class="exam-sync-banner bad" role="alert">{{ bundleError }}</p>
+            <details class="exam-sync-details">
+              <summary>调试与限流信息</summary>
+              <pre class="exam-sync-excerpt">environment={{ runtime?.environment || center?.source.environment || 'development' }}
 mode={{ runtime?.mode || 'unknown' }}
 can_run_local={{ runtime?.can_run_local ?? false }}
 browser_ready={{ runtime?.browser_ready ?? false }}
 playwright_available={{ runtime?.playwright_available ?? false }}
 source_code={{ center?.source.source_code || 'LOCAL_INBOX' }}
 active_job={{ isJobActive }}</pre>
-        </details>
-      </article>
-    </section>
+            </details>
+          </div>
 
-    <!-- 第四步：核对入档 -->
-    <section
-      v-show="activeStep === 4"
-      id="exam-sync-panel-4"
-      class="exam-sync-panel"
-      role="region"
-      aria-label="第四步：核对入档"
-    >
-      <div v-if="!currentExamId" class="card exam-sync-empty">
-        <b>还没有可核对的考试档案</b>
-        <p>先完成匹配并导入原卷，或在“总分台账与建档”选择已有考试。</p>
-        <button type="button" class="ghost" @click="goStep(2)">返回匹配考试</button>
-      </div>
-      <div v-else-if="reviewLoading" class="card exam-sync-empty">正在读取成绩、草稿与本人排名…</div>
-      <div v-else class="exam-sync-grid exam-sync-grid-review">
-        <article class="card">
+          <div v-if="lastResult || currentExamId" class="card-footer-flow">
+            <button type="button" class="ghost small" @click="goStep(2)">← 返回匹配考试</button>
+            <button type="button" class="primary small" @click="goStep(4)">进入核对入档 →</button>
+          </div>
+        </article>
+      </template>
+
+      <!-- 第四步：核对入档（总分锁定 & 本人排名统一于单卡内） -->
+      <template #step-4>
+        <div v-if="reviewLoading" class="card exam-sync-empty">正在读取成绩、草稿与本人排名…</div>
+        <article v-else class="card" aria-label="第四步：核对入档">
           <div class="card-head">
             <div>
-              <h3>{{ reviewDetail?.title || currentExamTitle }}</h3>
+              <h3>第四步 · {{ reviewDetail?.title || currentExamTitle }}（核对入档）</h3>
               <p class="card-sub">{{ fmtExamMonth(reviewDetail?.exam_date) }} · 源：{{ SOURCE_KIND_LABELS[reviewDetail?.source_kind || 'manual'] || reviewDetail?.source_kind || '手工建档' }}</p>
             </div>
             <span :class="['chip', reviewDetail?.confirmed_by_user ? 'good' : 'wait']">
               {{ reviewDetail?.confirmed_by_user ? '总分已核对' : '总分待核对' }}
             </span>
           </div>
+
           <div class="exam-sync-review-kpis">
             <div>
               <b>{{ reviewDetail ? `${fmtPoints(reviewDetail.earned_points)} / ${fmtPoints(reviewDetail.max_points)}` : '—' }}</b>
@@ -1176,7 +1133,7 @@ active_job={{ isJobActive }}</pre>
           </div>
 
           <div v-if="!reviewDetail?.confirmed_by_user" class="exam-sync-confirm-box">
-            <h4>人工核对总分</h4>
+            <h4 style="margin-top: 0;">人工核对总分</h4>
             <p class="muted tiny">只有你对照成绩单确认后才会锁定；平台采集值默认不自动确认。</p>
             <div class="exam-sync-inline-form">
               <label>
@@ -1195,66 +1152,73 @@ active_job={{ isJobActive }}</pre>
           <div v-else class="exam-sync-locked">
             总分已人工锁定。平台后续若给出不同候选值，只记录冲突，不覆盖历史值。
           </div>
-          <p v-if="reviewError" class="exam-sync-banner bad" role="alert">{{ reviewError }}</p>
-          <div class="exam-sync-action-row">
-            <button type="button" class="ghost" @click="openTab('papers')">去校对逐题草稿</button>
-            <button type="button" class="ghost" @click="openTab('scores')">查看总分台账</button>
-            <button type="button" class="ghost" @click="openTab('analysis')">错误分析</button>
-          </div>
-        </article>
 
-        <article class="card">
-          <div class="card-head">
-            <div>
-              <h3>本人排名快照</h3>
-              <p class="card-sub">平台实际提供的本人排名；独立保存，不进入知识点能力画像。</p>
+          <div style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line);">
+            <div class="card-head">
+              <div>
+                <h4 style="margin: 0;">本人排名快照（{{ reviewRanks?.ranks.length ?? 0 }} 个范围）</h4>
+                <p class="card-sub">平台实际提供的本人排名；独立保存，不进入知识点能力画像。</p>
+              </div>
             </div>
-            <span class="chip">{{ reviewRanks?.ranks.length ?? 0 }} 个范围</span>
+            <div v-if="reviewRanks && reviewRanks.ranks.length === 0" class="exam-sync-empty">
+              <b>平台未提供可用排名</b>
+              <p>系统不会用 0 或推算值补齐。缺失范围：{{ reviewRanks.missing_scopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') }}。</p>
+            </div>
+            <ul v-else class="exam-sync-ranks" tabindex="0" aria-label="本人排名列表">
+              <li v-for="rank in reviewRanks?.ranks ?? []" :key="rank.id">
+                <div class="exam-sync-rank-main">
+                  <b>{{ RANK_SCOPE_LABELS[rank.scope] || rank.scope }}</b>
+                  <span>{{ formatRankValue(rank) }}</span>
+                  <span v-if="rank.percentile !== null" class="chip subtle">百分位 {{ Math.round(rank.percentile * 100) }}%</span>
+                  <span :class="['chip', rank.ownership_status === 'verified' ? 'good' : 'bad']">
+                    {{ rank.ownership_status === 'verified' ? '本人归属已验证' : '归属未验证' }}
+                  </span>
+                </div>
+                <div class="exam-sync-rank-meta">
+                  来源 {{ rank.source_name }} · 字段 <code>{{ rank.source_field }}</code> · 采集 {{ shortTime(rank.captured_at) }}
+                  <span v-if="rank.history_count > 1" class="chip subtle">历史 {{ rank.history_count }} 条</span>
+                </div>
+                <div class="exam-sync-rank-actions">
+                  <span :class="['chip', rank.review_status === 'confirmed' ? 'good' : 'wait']">
+                    {{ rank.review_status === 'confirmed' ? '已人工确认' : '待确认来源' }}
+                  </span>
+                  <button
+                    v-if="rank.review_status !== 'confirmed' && rank.ownership_status === 'verified'"
+                    type="button"
+                    class="ghost small"
+                    :disabled="confirmingRankId === rank.id"
+                    @click="confirmRank(rank.id)"
+                  >
+                    {{ confirmingRankId === rank.id ? '确认中…' : '确认排名来源' }}
+                  </button>
+                </div>
+              </li>
+            </ul>
+            <p class="muted tiny">{{ reviewRanks?.disclaimer || '本人排名不得用于推断中考成绩。' }}</p>
+            <div class="exam-sync-missing">
+              <b>缺失信息</b>
+              <span>{{ reviewCoverage.missingRankScopes.length ? reviewCoverage.missingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '四个排名范围均已提供' }}</span>
+            </div>
           </div>
-          <div v-if="reviewRanks && reviewRanks.ranks.length === 0" class="exam-sync-empty">
-            <b>平台未提供可用排名</b>
-            <p>系统不会用 0 或推算值补齐。缺失范围：{{ reviewRanks.missing_scopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') }}。</p>
-          </div>
-          <ul v-else class="exam-sync-ranks" tabindex="0" aria-label="本人排名列表">
-            <li v-for="rank in reviewRanks?.ranks ?? []" :key="rank.id">
-              <div class="exam-sync-rank-main">
-                <b>{{ RANK_SCOPE_LABELS[rank.scope] || rank.scope }}</b>
-                <span>{{ formatRankValue(rank) }}</span>
-                <span v-if="rank.percentile !== null" class="chip subtle">百分位 {{ Math.round(rank.percentile * 100) }}%</span>
-                <span :class="['chip', rank.ownership_status === 'verified' ? 'good' : 'bad']">
-                  {{ rank.ownership_status === 'verified' ? '本人归属已验证' : '归属未验证' }}
-                </span>
-              </div>
-              <div class="exam-sync-rank-meta">
-                来源 {{ rank.source_name }} · 字段 <code>{{ rank.source_field }}</code> · 采集 {{ shortTime(rank.captured_at) }}
-                <span v-if="rank.history_count > 1" class="chip subtle">历史 {{ rank.history_count }} 条</span>
-              </div>
-              <div class="exam-sync-rank-actions">
-                <span :class="['chip', rank.review_status === 'confirmed' ? 'good' : 'wait']">
-                  {{ rank.review_status === 'confirmed' ? '已人工确认' : '待确认来源' }}
-                </span>
-                <button
-                  v-if="rank.review_status !== 'confirmed' && rank.ownership_status === 'verified'"
-                  type="button"
-                  class="ghost small"
-                  :disabled="confirmingRankId === rank.id"
-                  @click="confirmRank(rank.id)"
-                >
-                  {{ confirmingRankId === rank.id ? '确认中…' : '确认排名来源' }}
-                </button>
-              </div>
-            </li>
-          </ul>
-          <p class="muted tiny">{{ reviewRanks?.disclaimer || '本人排名不得用于推断中考成绩。' }}</p>
-          <div class="exam-sync-missing">
-            <b>缺失信息</b>
-            <span>{{ reviewCoverage.missingRankScopes.length ? reviewCoverage.missingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '四个排名范围均已提供' }}</span>
+
+          <p v-if="reviewError" class="exam-sync-banner bad" role="alert">{{ reviewError }}</p>
+
+          <div class="handoff-box">
+            <div>
+              <strong>入档核对就绪</strong>
+              <span>若有逐题草稿，请前往「原卷与草稿校对」校对入账后再看错误分析。</span>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="primary small" @click="openTab('papers')">去校对逐题草稿 →</button>
+              <button type="button" class="ghost small" @click="openTab('scores')">查看总分台账</button>
+              <button type="button" class="ghost small" @click="openTab('analysis')">错误分析</button>
+            </div>
           </div>
         </article>
-      </div>
-    </section>
+      </template>
+    </StepFlowWorkspace>
 
-    <footer class="exam-sync-footer">
+    <footer class="exam-sync-footer stage-wrap">
       <p>待核对草稿、未锁定总分和本人排名都不会写入学生端能力画像。所有自动获取都受账号授权、平台规则与低频边界约束。</p>
       <span class="chip subtle">ST-EXAM-AUTOSYNC-01</span>
     </footer>

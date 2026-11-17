@@ -74,12 +74,15 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expect(page.getByRole('region', { name: '知识点关系图谱展示' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  // 管理端工作台（/admin.html）：台账、学校考试与全科校考同步子标签只读加载后度量，无横向溢出。
+  // 管理端工作台（/admin.html）：分阶段子 Tab 条 + 单卡分步工作区 + 知识点审核工作台，均无横向溢出。
   await page.goto('/admin.html')
   await page.getByLabel('访问令牌').fill(ADMIN_TOKEN)
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await expect(page.getByRole('region', { name: '题源台账' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('tab', { name: /附件解析与录入/ }).click()
   await expectNoHorizontalOverflow(page)
 
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
@@ -92,6 +95,10 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
 
   await page.getByRole('tab', { name: /报告导入与核对/ }).click()
   await expect(page.getByRole('region', { name: '校考报告导入与核对' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '知识点审核' }).click()
+  await expect(page.getByRole('region', { name: '知识点工作台总览' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

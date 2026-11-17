@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import {
   describeError,
   SUBJECT_LABELS,
@@ -21,10 +21,15 @@ import {
 } from '../../config/knowledge'
 import HelpBubble from '../HelpBubble.vue'
 import type { NoticeTone } from '../Notice.vue'
+import StageTabStrip from './StageTabStrip.vue'
+import StepFlowWorkspace from './StepFlowWorkspace.vue'
+import type { StageGroup, StepDefinition, StepFlowContext } from './stepFlow'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 type ReviewTabId = 'review' | 'clauses' | 'mapping' | 'releases'
 type NodeFilterId = 'all' | 'pending' | 'approved'
+type ReviewStepId = 'pick' | 'trace' | 'audit'
+type ReleaseStepId = 'publish' | 'snapshots'
 
 // 三级知识节点中文层级标识
 const LEVEL_LABELS: Record<number, string> = {
@@ -40,7 +45,10 @@ const props = defineProps<{
 }>()
 
 const activeTab = ref<ReviewTabId>('review')
+const reviewStep = ref<ReviewStepId>('pick')
+const releaseStep = ref<ReleaseStepId>('publish')
 const reviewFilter = ref<NodeFilterId>('all')
+const reviewerInputRef = ref<HTMLInputElement | null>(null)
 // 标记当前学科初次加载时是否已根据审核状态自动定位默认筛选项
 const hasAutoSelectedFilter = ref(false)
 // 默认隐藏底层英文技术编码，按配置决定是否允许一键展开排障
@@ -211,33 +219,136 @@ const filteredClauses = computed(() => {
   return clauses.value.filter(c => c.domain === clauseDomainFilter.value)
 })
 
-// 方案二：四类矩阵子工作区标签与实时计数徽章
-const reviewTabs = computed(() => [
-  {
-    id: 'review' as const,
-    title: '知识点审定',
-    badge: pendingCount.value > 0 ? `待审 ${pendingCount.value}` : `${approvedNodes.value.length} 项`,
-    wait: pendingCount.value > 0,
-  },
-  {
-    id: 'clauses' as const,
-    title: '课标条款全集',
-    badge: `${clauses.value.length} 条`,
-    wait: false,
-  },
-  {
-    id: 'mapping' as const,
-    title: '新旧考点映射',
-    badge: mappingSummary.value.pending > 0 ? `待核 ${mappingSummary.value.pending}` : `${mappingSummary.value.total} 项`,
-    wait: mappingSummary.value.pending > 0,
-  },
-  {
-    id: 'releases' as const,
-    title: '版本发布与快照',
-    badge: `${releases.value.length} 版`,
-    wait: false,
-  },
-])
+// 三阶段分组工作区导航与单卡分步状态
+const knowledgeStageGroups = computed<StageGroup[]>(() => {
+  const allApproved = candidates.value.length > 0 && pendingCount.value === 0 && rejectedCount.value === 0
+  return [
+    {
+      id: 'kr-stage-1',
+      title: '第一阶段 · 同步与逐条审定',
+      tabs: [
+        {
+          id: 'review',
+          title: '知识点审定',
+          badge: pendingCount.value > 0 ? `待审 ${pendingCount.value}` : `${approvedNodes.value.length} 项`,
+          wait: pendingCount.value > 0,
+          done: allApproved,
+        },
+      ],
+    },
+    {
+      id: 'kr-stage-2',
+      title: '第二阶段 · 全局依据参照（只读）',
+      tabs: [
+        {
+          id: 'clauses',
+          title: '课标条款全集',
+          badge: `${clauses.value.length} 条`,
+        },
+        {
+          id: 'mapping',
+          title: '新旧考点映射',
+          badge: mappingSummary.value.pending > 0 ? `待核 ${mappingSummary.value.pending}` : `${mappingSummary.value.total} 项`,
+          wait: mappingSummary.value.pending > 0,
+        },
+      ],
+    },
+    {
+      id: 'kr-stage-3',
+      title: '第三阶段 · 强门禁发布',
+      tabs: [
+        {
+          id: 'releases',
+          title: '版本发布与快照',
+          badge: `${releases.value.length} 版`,
+          done: releases.value.length > 0,
+        },
+      ],
+    },
+  ]
+})
+
+const reviewContext = computed<StepFlowContext | null>(() => {
+  const node = selectedNode.value
+  if (!node) return null
+  const statusText =
+    node.review_status === 'approved'
+      ? '已通过'
+      : node.review_status === 'rejected'
+        ? '已驳回'
+        : node.id
+          ? '待人工审核'
+          : '未同步入库'
+  const statusTone =
+    node.review_status === 'approved'
+      ? 'good'
+      : node.review_status === 'rejected'
+        ? 'bad'
+        : 'wait'
+  return {
+    eyebrow: LEVEL_LABELS[node.level ?? 3] ?? '知识节点',
+    title: node.name,
+    statusText,
+    statusTone,
+  }
+})
+
+const reviewSteps = computed<StepDefinition[]>(() => {
+  const node = selectedNode.value
+  const clauseCount = node?.source_clause_ids?.length ?? 0
+  return [
+    {
+      id: 'pick',
+      title: '1. 选择待审知识节点',
+      subtitle: `${activeListNodes.value.length} 项候选`,
+      badge: `${candidates.value.length} 项`,
+      done: Boolean(node?.id),
+      prereqMet: true,
+    },
+    {
+      id: 'trace',
+      title: '2. 核对课标溯源与兼容',
+      subtitle: clauseCount > 0 ? `关联 ${clauseCount} 条款` : '核验 2022 课标依据',
+      badge: `${clauseCount} 条`,
+      done: Boolean(node?.id && clauseCount > 0),
+      prereqMet: node !== null,
+      lockReason: '请先在第 1 步同步候选并选定一个待审知识节点。',
+    },
+    {
+      id: 'audit',
+      title: '3. 提交专家审核决定',
+      subtitle: node?.review_status === 'approved' ? '已审定通过' : '实名填报审核人与意见',
+      badge: node?.review_status === 'approved' ? '已通过' : node?.review_status === 'rejected' ? '已驳回' : '待审',
+      badgeTone: node?.review_status === 'approved' ? 'good' : node?.review_status === 'rejected' ? 'bad' : 'wait',
+      done: node?.review_status === 'approved',
+      prereqMet: Boolean(node?.id),
+      lockReason: '当前节点尚未同步入库，请先点击顶部「同步候选入库 (待审)」或在第 1 步完成初始化后再执行实名审核。',
+    },
+  ]
+})
+
+const releaseSteps = computed<StepDefinition[]>(() => {
+  const gateReady = candidates.value.length > 0 && pendingCount.value === 0 && rejectedCount.value === 0
+  return [
+    {
+      id: 'publish',
+      title: '1. 发布正式版本快照',
+      subtitle: gateReady ? '门禁已满足，可生成快照' : '须全量节点审定通过',
+      badge: gateReady ? '可发布' : `待审 ${pendingCount.value}`,
+      badgeTone: gateReady ? 'good' : 'wait',
+      done: releases.value.length > 0,
+      prereqMet: true,
+    },
+    {
+      id: 'snapshots',
+      title: '2. 历史发布版本快照',
+      subtitle: '不可变发布记录归档',
+      badge: `${releases.value.length} 版`,
+      done: releases.value.length > 0,
+      prereqMet: true,
+    },
+  ]
+})
 
 function syncSelectedNodeForFilter() {
   const list = activeListNodes.value
@@ -304,6 +415,7 @@ async function seedCandidates() {
   try {
     const res = await props.client.adminSeedCandidates(props.subject)
     activeTab.value = 'review'
+    reviewStep.value = 'pick'
     reviewFilter.value = 'pending'
     props.notify(`已成功初始化 ${res.seeded_count} 个候选节点入库（总数 ${res.total_nodes}），全部置为待审核状态。`, 'info')
     await loadCandidates()
@@ -368,9 +480,21 @@ function fillOpinionDraft() {
   reviewOpinion.value = buildClauseOpinionDraft(selectedNode.value)
 }
 
+function fillOpinionAndAdvance() {
+  if (!selectedNode.value) return
+  reviewOpinion.value = buildClauseOpinionDraft(selectedNode.value)
+  reviewStep.value = 'audit'
+}
+
 async function batchApprovePending() {
   if (!reviewerId.value.trim()) {
-    props.notify('批量审核前，请先填写真实的审核人实名标识（严禁未记名审核）。', 'caution')
+    activeTab.value = 'review'
+    if (selectedNode.value?.id) {
+      reviewStep.value = 'audit'
+      await nextTick()
+      reviewerInputRef.value?.focus()
+    }
+    props.notify('批量审核前，请先在第 3 步填写真实的审核人实名标识（严禁未记名审核）。', 'caution')
     return
   }
   const pendingNodes = candidates.value.filter(c => c.review_status === 'pending' && c.id)
@@ -409,6 +533,7 @@ async function publishRelease() {
     const releaseLabel = formatReleaseChineseName(releaseVersion.value.trim())
     props.notify(`知识库正式版本「${releaseLabel}」发布成功，已生成不可变历史快照。`, 'success')
     await loadReleases()
+    releaseStep.value = 'snapshots'
   } catch (e) {
     releaseError.value = describeError(e)
     props.notify(`发布阻断拦截：${describeError(e)}`, 'caution')
@@ -425,6 +550,8 @@ watch(
     clauseDomainFilter.value = 'all'
     selectedNodeCode.value = null
     hasAutoSelectedFilter.value = false
+    reviewStep.value = 'pick'
+    releaseStep.value = 'publish'
     void loadCandidates()
     void loadClauses()
     void loadLegacyMapping()
@@ -446,56 +573,20 @@ watch(activeTab, tab => {
 
 <template>
   <div class="knowledge-workbench admin-workspace">
-    <!-- 顶部标题与工作区操作栏 -->
-    <section class="card" aria-label="知识点工作台总览">
-      <div class="card-head">
-        <div>
+    <!-- 紧凑顶部摘要与全局工具条（非卡片形态，专注下方单卡工作区） -->
+    <div class="slim-tool-bar" role="region" aria-label="知识点工作台总览">
+      <div class="slim-tool-main">
+        <div class="slim-tool-title-row">
           <h2>{{ SUBJECT_LABELS[props.subject] }}权威知识点库审核工作台</h2>
-          <p class="sub-head">
-            {{ SUBJECT_CURRICULUM_DOCS[props.subject] }}
-          </p>
+          <div class="status-badges-row status-banner" role="region" aria-label="知识点审核状态统计">
+            <span class="badge pending">待审核: {{ pendingCount }}</span>
+            <span class="badge approved">已通过: {{ approvedCount }}</span>
+            <span class="badge total">总知识节点: {{ candidates.length }}</span>
+            <span class="badge clauses">课标条款: {{ clauses.length }} 条</span>
+          </div>
         </div>
-        <div class="head-actions">
-          <HelpBubble compact tone="caution" title="课标审核红线说明" label="审核红线">
-            <p>
-              知识点必须溯源至教育部 2022 年版课程标准官方条文。所有自动归集的候选考点均初始化为待审核状态，须经学科专家人工逐项审核；审核通过后自动归入「已审定」集合。若存在未审核或已驳回考点，发布强门禁将阻断版本发布。
-            </p>
-          </HelpBubble>
-          <button
-            type="button"
-            class="ghost small"
-            :aria-pressed="showTechnicalCodes"
-            @click="showTechnicalCodes = !showTechnicalCodes"
-          >
-            {{ showTechnicalCodes ? '隐藏技术编码' : '显示技术编码' }}
-          </button>
-          <button
-            type="button"
-            class="ghost small"
-            :disabled="seeding"
-            @click="seedCandidates"
-          >
-            {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
-          </button>
-          <button
-            v-if="pendingCount > 0"
-            type="button"
-            class="primary small"
-            :disabled="batchReviewing"
-            @click="batchApprovePending"
-          >
-            {{ batchReviewing ? '批量审核中...' : `按课标批量审核待审 (${pendingCount})` }}
-          </button>
-          <button type="button" class="ghost small" @click="loadCandidates">
-            刷新
-          </button>
-        </div>
-      </div>
-
-      <!-- 紧凑状态统计条 -->
-      <div class="status-banner" role="region" aria-label="知识点审核状态统计">
-        <div class="stats-panel-head">
-          <h3>{{ SUBJECT_LABELS[props.subject] }}知识体系审核状态统计</h3>
+        <div class="sub-head" style="margin: 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <span>{{ SUBJECT_CURRICULUM_DOCS[props.subject] }}</span>
           <span
             v-if="candidates.length > 0 && pendingCount === 0 && rejectedCount === 0"
             class="audit-note audit-ok"
@@ -506,117 +597,210 @@ watch(activeTab, tab => {
             红线门禁：候选内容全量通过真实学科审核前，严禁发布正式知识库版本。
           </span>
         </div>
-        <div class="status-badges-row">
-          <span class="badge pending">待审核: {{ pendingCount }}</span>
-          <span class="badge approved">已通过: {{ approvedCount }}</span>
-          <span class="badge total">总知识节点: {{ candidates.length }}</span>
-          <span class="badge clauses">课标条款: {{ clauses.length }} 条</span>
-        </div>
       </div>
-    </section>
 
-    <!-- 方案二：4 类矩阵协同子 Tab 条 -->
-    <div class="admin-subtab-strip">
-      <div class="admin-subtab-list" role="tablist" aria-label="知识点审核工作区">
+      <div class="slim-tool-actions">
+        <HelpBubble compact tone="caution" title="课标审核红线说明" label="审核红线">
+          <p>
+            知识点必须溯源至教育部 2022 年版课程标准官方条文。所有自动归集的候选考点均初始化为待审核状态，须经学科专家人工逐项审核；审核通过后自动归入「已审定」集合。若存在未审核或已驳回考点，发布强门禁将阻断版本发布。
+          </p>
+        </HelpBubble>
         <button
-          v-for="tab in reviewTabs"
-          :key="tab.id"
-          :id="`kr-tab-${tab.id}`"
           type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="`kr-panel-${tab.id}`"
-          :class="['admin-subtab', activeTab === tab.id ? 'active' : '']"
-          @click="activeTab = tab.id"
+          class="ghost small"
+          :aria-pressed="showTechnicalCodes"
+          @click="showTechnicalCodes = !showTechnicalCodes"
         >
-          <span>{{ tab.title }}</span>
-          <span :class="['admin-subtab-badge', tab.wait ? 'wait' : '']">{{ tab.badge }}</span>
+          {{ showTechnicalCodes ? '隐藏技术编码' : '显示技术编码' }}
+        </button>
+        <button
+          type="button"
+          class="ghost small"
+          :disabled="seeding"
+          @click="seedCandidates"
+        >
+          {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
+        </button>
+        <button
+          v-if="pendingCount > 0"
+          type="button"
+          class="primary small"
+          :disabled="batchReviewing"
+          @click="batchApprovePending"
+        >
+          {{ batchReviewing ? '批量审核中...' : `按课标批量审核待审 (${pendingCount})` }}
+        </button>
+        <button type="button" class="ghost small" @click="loadCandidates">
+          刷新
         </button>
       </div>
     </div>
 
-    <!-- 子 Tab 1：知识点审定（3 列矩阵：节点列表+筛选 | 课标溯源与旧考点映射 | 专家审核操作） -->
+    <!-- 三阶段分组导航条：第一阶段同步与逐条审定 → 第二阶段全局依据参照 → 第三阶段强门禁发布 -->
+    <StageTabStrip
+      :model-value="activeTab"
+      :groups="knowledgeStageGroups"
+      region-label="知识点审核阶段工作区"
+      id-prefix="kr"
+      @update:model-value="id => (activeTab = id as ReviewTabId)"
+    />
+
+    <!-- 第一阶段：知识点审定（单卡三步：1. 选择待审知识节点 → 2. 核对课标溯源与兼容 → 3. 提交专家审核决定） -->
     <div
       v-if="activeTab === 'review'"
       id="kr-panel-review"
       role="tabpanel"
       aria-labelledby="kr-tab-review"
     >
-      <section v-if="candidates.length === 0" class="card empty-panel-card" aria-label="知识点审定空状态">
-        <h4>当前学科尚未同步候选知识点</h4>
-        <p>请点击右上角「同步候选入库 (待审)」载入教育部 2022 版课标拆解候选考点。</p>
-      </section>
-
-      <div v-else class="matrix-3col">
-        <!-- 左栏：知识点目录与审核状态切换（全部 / 待审核 / 已审定） -->
-        <section class="card" aria-label="知识点目录与状态筛选">
-          <div class="card-head">
-            <h3>知识点目录 ({{ activeListNodes.length }})</h3>
-          </div>
-          <div class="filter-bar" role="group" aria-label="按审核状态筛选知识点">
-            <button
-              type="button"
-              :class="reviewFilter === 'all' ? 'filter-chip selected' : 'filter-chip'"
-              @click="reviewFilter = 'all'"
-            >
-              全部 ({{ candidates.length }})
-            </button>
-            <button
-              type="button"
-              :class="reviewFilter === 'pending' ? 'filter-chip selected' : 'filter-chip'"
-              @click="reviewFilter = 'pending'"
-            >
-              待审核 ({{ pendingTabNodes.length }})
-            </button>
-            <button
-              type="button"
-              :class="reviewFilter === 'approved' ? 'filter-chip selected' : 'filter-chip'"
-              @click="reviewFilter = 'approved'"
-            >
-              已审定 ({{ approvedNodes.length }})
-            </button>
-          </div>
-
-          <div v-if="activeListNodes.length === 0" class="empty-hint">
-            当前筛选条件下暂无节点，可切换上方「全部 / 待审核 / 已审定」查看。
-          </div>
-          <div v-else class="candidate-scroll-list">
-            <button
-              v-for="cand in activeListNodes"
-              :key="cand.code"
-              type="button"
-              :aria-pressed="selectedNode?.code === cand.code"
-              :class="[
-                'candidate-item',
-                selectedNode?.code === cand.code ? 'selected' : '',
-                cand.review_status,
-                `level-${cand.level ?? 3}`,
-              ]"
-              @click="selectedNodeCode = cand.code"
-            >
-              <div class="cand-header">
-                <span class="cand-level-tag">{{ LEVEL_LABELS[cand.level ?? 3] ?? '知识节点' }}</span>
-                <span :class="['status-pill', cand.review_status]">
-                  {{ cand.review_status === 'approved' ? '已通过' : cand.review_status === 'rejected' ? '已驳回' : '待人工审核' }}
-                </span>
-              </div>
-              <div class="cand-name">{{ cand.name }}</div>
-              <div v-if="showTechnicalCodes" class="cand-code">{{ cand.code }}</div>
-              <div class="cand-meta">
-                <span v-if="cand.source_clause_ids?.length">
-                  关联 {{ cand.source_clause_ids.length }} 条款
-                </span>
-                <span v-if="cand.reviewer_id" class="reviewer-meta">
-                  审核人: {{ getOperatorLabel(cand.reviewer_id) }}
-                </span>
-              </div>
+      <div v-if="candidates.length === 0" class="stage-wrap">
+        <section class="card empty-panel-card" aria-label="知识点审定空状态">
+          <h4>当前学科尚未同步候选知识点</h4>
+          <p>请点击下方或顶部「同步候选入库 (待审)」载入教育部 2022 版课标拆解候选考点。</p>
+          <div style="margin-top: 12px;">
+            <button type="button" class="primary small" :disabled="seeding" @click="seedCandidates">
+              {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
             </button>
           </div>
         </section>
+      </div>
 
-        <!-- 中栏：课标溯源条文与旧考点兼容关系 -->
-        <section class="card" aria-label="课标溯源条款与旧考点兼容">
-          <template v-if="selectedNode">
+      <StepFlowWorkspace
+        v-else
+        :model-value="reviewStep"
+        :steps="reviewSteps"
+        :context="reviewContext"
+        steps-aria-label="知识点逐条审定步骤"
+        @update:model-value="id => (reviewStep = id as ReviewStepId)"
+      >
+        <template #context-actions>
+          <button
+            v-if="reviewStep !== 'pick'"
+            type="button"
+            class="ghost small"
+            @click="reviewStep = 'pick'"
+          >
+            切换知识节点
+          </button>
+        </template>
+
+        <template #locked="{ step }">
+          <section class="card" aria-label="步骤前置未就绪">
+            <div class="card-head">
+              <h3>{{ step.title }}</h3>
+              <span class="chip wait">前置未就绪</span>
+            </div>
+            <p class="muted">{{ step.lockReason || '请先完成前置步骤。' }}</p>
+            <div class="card-footer-flow">
+              <button type="button" class="primary small" @click="reviewStep = 'pick'">
+                ← 返回第 1 步选点
+              </button>
+              <button
+                v-if="!selectedNode?.id"
+                type="button"
+                class="ghost small"
+                :disabled="seeding"
+                @click="seedCandidates"
+              >
+                {{ seeding ? '同步中...' : '同步候选入库 (待审)' }}
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-pick>
+          <section class="card" aria-label="知识点目录与状态筛选">
+            <div class="card-head">
+              <h3>知识点目录 ({{ activeListNodes.length }})</h3>
+            </div>
+            <div class="filter-bar" role="group" aria-label="按审核状态筛选知识点">
+              <button
+                type="button"
+                :class="reviewFilter === 'all' ? 'filter-chip selected' : 'filter-chip'"
+                @click="reviewFilter = 'all'"
+              >
+                全部 ({{ candidates.length }})
+              </button>
+              <button
+                type="button"
+                :class="reviewFilter === 'pending' ? 'filter-chip selected' : 'filter-chip'"
+                @click="reviewFilter = 'pending'"
+              >
+                待审核 ({{ pendingTabNodes.length }})
+              </button>
+              <button
+                type="button"
+                :class="reviewFilter === 'approved' ? 'filter-chip selected' : 'filter-chip'"
+                @click="reviewFilter = 'approved'"
+              >
+                已审定 ({{ approvedNodes.length }})
+              </button>
+            </div>
+
+            <div v-if="activeListNodes.length === 0" class="empty-hint">
+              当前筛选条件下暂无节点，可切换上方「全部 / 待审核 / 已审定」查看。
+            </div>
+            <div v-else class="candidate-scroll-list">
+              <button
+                v-for="cand in activeListNodes"
+                :key="cand.code"
+                type="button"
+                :aria-pressed="selectedNode?.code === cand.code"
+                :class="[
+                  'candidate-item',
+                  selectedNode?.code === cand.code ? 'selected' : '',
+                  cand.review_status,
+                  `level-${cand.level ?? 3}`,
+                ]"
+                @click="selectedNodeCode = cand.code"
+              >
+                <div class="cand-header">
+                  <span class="cand-level-tag">{{ LEVEL_LABELS[cand.level ?? 3] ?? '知识节点' }}</span>
+                  <span :class="['status-pill', cand.review_status]">
+                    {{ cand.review_status === 'approved' ? '已通过' : cand.review_status === 'rejected' ? '已驳回' : '待人工审核' }}
+                  </span>
+                </div>
+                <div class="cand-name">{{ cand.name }}</div>
+                <div v-if="showTechnicalCodes" class="cand-code">{{ cand.code }}</div>
+                <div class="cand-meta">
+                  <span v-if="cand.source_clause_ids?.length">
+                    关联 {{ cand.source_clause_ids.length }} 条款
+                  </span>
+                  <span v-if="cand.reviewer_id" class="reviewer-meta">
+                    审核人: {{ getOperatorLabel(cand.reviewer_id) }}
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            <div class="card-footer-flow">
+              <span v-if="selectedNode" class="muted tiny">
+                当前选中「{{ selectedNode.name }}」
+              </span>
+              <span v-else class="muted tiny">请先点选上方列表中的知识点</span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button
+                  v-if="selectedNode?.id"
+                  type="button"
+                  class="ghost small"
+                  @click="reviewStep = 'audit'"
+                >
+                  直接进入第 3 步审核 →
+                </button>
+                <button
+                  v-if="selectedNode"
+                  type="button"
+                  class="primary small"
+                  @click="reviewStep = 'trace'"
+                >
+                  下一步：核对课标溯源与兼容 →
+                </button>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <template #step-trace>
+          <section v-if="selectedNode" class="card" aria-label="课标溯源条款与旧考点兼容">
             <h3>{{ selectedNode.name }}</h3>
             <p v-if="showTechnicalCodes" class="detail-code">技术编码: <code>{{ selectedNode.code }}</code></p>
             <p class="detail-desc">{{ selectedNode.description ?? '暂无详细描述' }}</p>
@@ -676,13 +860,36 @@ watch(activeTab, tab => {
                 </div>
               </div>
             </div>
-          </template>
-          <p v-else class="muted">请先在左侧列表点选一个知识点查看课标依据与兼容关系。</p>
-        </section>
 
-        <!-- 右栏：专家审核档案与实时审批表单 -->
-        <section class="card" aria-label="专家人工审核记录与操作">
-          <template v-if="selectedNode">
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="reviewStep = 'pick'">
+                ← 返回第 1 步选点
+              </button>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button
+                  v-if="!selectedNode.id"
+                  type="button"
+                  class="primary small"
+                  :disabled="seeding"
+                  @click="seedCandidates"
+                >
+                  {{ seeding ? '同步中...' : '请先同步候选入库 (待审)' }}
+                </button>
+                <template v-else>
+                  <button type="button" class="ghost small" @click="reviewStep = 'audit'">
+                    直接进入第 3 步审核 →
+                  </button>
+                  <button type="button" class="primary small" @click="fillOpinionAndAdvance">
+                    按课标生成依据草稿并进入第 3 步 →
+                  </button>
+                </template>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <template #step-audit>
+          <section v-if="selectedNode" class="card" aria-label="专家人工审核记录与操作">
             <div v-if="selectedNode.review_opinion || selectedNode.reviewer_id" class="expert-review-record">
               <div class="expert-review-head">
                 <h4>当前学科专家审核档案</h4>
@@ -713,6 +920,7 @@ watch(activeTab, tab => {
                 <label for="rev-id">审核人实名标识 (必填):</label>
                 <input
                   id="rev-id"
+                  ref="reviewerInputRef"
                   v-model="reviewerId"
                   type="text"
                   placeholder="请输入实际审核人员实名或工号标识"
@@ -753,10 +961,23 @@ watch(activeTab, tab => {
                 </button>
               </div>
             </div>
-          </template>
-          <p v-else class="muted">选中知识点后，可在此记录专家审核意见或执行审定操作。</p>
-        </section>
-      </div>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="reviewStep = 'trace'">
+                ← 返回第 2 步核对课标依据
+              </button>
+              <button
+                v-if="candidates.length > 0 && pendingCount === 0 && rejectedCount === 0"
+                type="button"
+                class="primary small"
+                @click="activeTab = 'releases'"
+              >
+                全量已审定，前往第三阶段发布版本 →
+              </button>
+            </div>
+          </section>
+        </template>
+      </StepFlowWorkspace>
     </div>
 
     <!-- 子 Tab 2：课标条款全集 -->
@@ -931,81 +1152,112 @@ watch(activeTab, tab => {
       </section>
     </div>
 
-    <!-- 子 Tab 4：版本发布与快照（2 列矩阵：左栏正式版本发布 | 右栏历史发布快照） -->
+    <!-- 第三阶段 · 强门禁发布：版本发布与快照（单卡两步：1. 发布正式版本快照 → 2. 历史发布版本快照） -->
     <div
       v-else
       id="kr-panel-releases"
       role="tabpanel"
       aria-labelledby="kr-tab-releases"
-      class="matrix-2col"
     >
-      <section class="card release-form" aria-label="发布正式版本">
-        <div class="card-head">
-          <h3>发布知识库正式版本</h3>
-          <HelpBubble compact tone="caution" title="发布强门禁规则" label="发布门禁">
-            <p>当且仅当当前学科全部候选知识点均经学科专家人工审核通过（待审核 0 个、已驳回 0 个）时，方可发布不可变正式版本快照。</p>
-          </HelpBubble>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-field">
-            <label for="rel-ver">版本标识:</label>
-            <input id="rel-ver" v-model="releaseVersion" type="text" />
-          </div>
-          <div class="form-field">
-            <label for="rel-by">发布人:</label>
-            <input id="rel-by" v-model="publishedBy" type="text" />
-          </div>
-        </div>
-        <div class="form-field">
-          <label for="rel-sum">版本摘要说明:</label>
-          <textarea id="rel-sum" v-model="releaseSummary" rows="2"></textarea>
-        </div>
-
-        <div v-if="releaseError" class="release-error-box">
-          <b>发布阻断拦截原因：</b>
-          <p>{{ releaseError }}</p>
-        </div>
-
-        <div class="release-actions">
-          <button
-            type="button"
-            class="primary"
-            :disabled="publishing"
-            @click="publishRelease"
-          >
-            {{ publishing ? '发布中...' : '发布正式版本快照' }}
-          </button>
-        </div>
-      </section>
-
-      <section class="card releases-list" aria-label="历史发布版本快照">
-        <div class="card-head">
-          <h3>历史发布版本快照 ({{ releases.length }} 个)</h3>
-        </div>
-        <div v-if="releases.length === 0" class="empty-hint">
-          暂无已发布正式版本（当前处于全量待审阶段）。
-        </div>
-        <div v-else class="release-scroll-list" tabindex="0" aria-label="历史发布版本快照列表">
-          <div
-            v-for="rel in releases"
-            :key="rel.id"
-            class="release-card"
-          >
-            <div class="rel-head">
-              <span class="rel-ver-zh">{{ formatReleaseChineseName(rel.release_version) }}</span>
-              <span v-if="showTechnicalCodes" class="rel-ver chip">{{ rel.release_version }}</span>
-              <span class="rel-status">{{ getReleaseStatusLabel(rel.status) }}</span>
-              <span class="rel-time">{{ rel.published_at ? new Date(rel.published_at).toLocaleString('zh-CN') : '—' }}</span>
+      <StepFlowWorkspace
+        :model-value="releaseStep"
+        :steps="releaseSteps"
+        steps-aria-label="版本发布与快照步骤"
+        @update:model-value="id => (releaseStep = id as ReleaseStepId)"
+      >
+        <template #step-publish>
+          <section class="card release-form" aria-label="发布正式版本">
+            <div class="card-head">
+              <h3>发布知识库正式版本</h3>
+              <HelpBubble compact tone="caution" title="发布强门禁规则" label="发布门禁">
+                <p>当且仅当当前学科全部候选知识点均经学科专家人工审核通过（待审核 0 个、已驳回 0 个）时，方可发布不可变正式版本快照。</p>
+              </HelpBubble>
             </div>
-            <p class="rel-summary">{{ rel.summary }}</p>
-            <div class="rel-meta">
-              <span>发布人: {{ getOperatorLabel(rel.published_by) }}</span>
-              <span>包含节点: {{ rel.total_nodes }} 个</span>
+
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="rel-ver">版本标识:</label>
+                <input id="rel-ver" v-model="releaseVersion" type="text" />
+              </div>
+              <div class="form-field">
+                <label for="rel-by">发布人:</label>
+                <input id="rel-by" v-model="publishedBy" type="text" />
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
+            <div class="form-field">
+              <label for="rel-sum">版本摘要说明:</label>
+              <textarea id="rel-sum" v-model="releaseSummary" rows="2"></textarea>
+            </div>
+
+            <div v-if="releaseError" class="release-error-box">
+              <b>发布阻断拦截原因：</b>
+              <p>{{ releaseError }}</p>
+            </div>
+
+            <div class="release-actions">
+              <button
+                type="button"
+                class="primary"
+                :disabled="publishing"
+                @click="publishRelease"
+              >
+                {{ publishing ? '发布中...' : '发布正式版本快照' }}
+              </button>
+            </div>
+
+            <div class="card-footer-flow">
+              <button
+                v-if="pendingCount > 0 || rejectedCount > 0 || candidates.length === 0"
+                type="button"
+                class="ghost small"
+                @click="activeTab = 'review'"
+              >
+                ← 返回第一阶段完成全量审定
+              </button>
+              <span v-else class="muted tiny">已通过全部前置审定检查，可生成不可变正式快照。</span>
+              <button type="button" class="ghost small" @click="releaseStep = 'snapshots'">
+                查看第 2 步 · 历史发布版本快照 ({{ releases.length }}) →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-snapshots>
+          <section class="card releases-list" aria-label="历史发布版本快照">
+            <div class="card-head">
+              <h3>历史发布版本快照 ({{ releases.length }} 个)</h3>
+            </div>
+            <div v-if="releases.length === 0" class="empty-hint">
+              暂无已发布正式版本（当前处于全量待审阶段）。
+            </div>
+            <div v-else class="release-scroll-list" tabindex="0" aria-label="历史发布版本快照列表">
+              <div
+                v-for="rel in releases"
+                :key="rel.id"
+                class="release-card"
+              >
+                <div class="rel-head">
+                  <span class="rel-ver-zh">{{ formatReleaseChineseName(rel.release_version) }}</span>
+                  <span v-if="showTechnicalCodes" class="rel-ver chip">{{ rel.release_version }}</span>
+                  <span class="rel-status">{{ getReleaseStatusLabel(rel.status) }}</span>
+                  <span class="rel-time">{{ rel.published_at ? new Date(rel.published_at).toLocaleString('zh-CN') : '—' }}</span>
+                </div>
+                <p class="rel-summary">{{ rel.summary }}</p>
+                <div class="rel-meta">
+                  <span>发布人: {{ getOperatorLabel(rel.published_by) }}</span>
+                  <span>包含节点: {{ rel.total_nodes }} 个</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="releaseStep = 'publish'">
+                ← 返回第 1 步发布正式版本
+              </button>
+            </div>
+          </section>
+        </template>
+      </StepFlowWorkspace>
     </div>
   </div>
 </template>
@@ -1036,14 +1288,10 @@ watch(activeTab, tab => {
 }
 .status-banner {
   display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  background: #F4EDE0;
-  border: 1px solid #DDD1BA;
-  padding: 0.9rem 1.05rem;
-  border-radius: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 0.85rem;
-  margin-top: 0.85rem;
 }
 .stats-panel-head {
   display: flex;

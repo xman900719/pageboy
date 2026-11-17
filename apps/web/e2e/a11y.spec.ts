@@ -129,12 +129,19 @@ test('A3 知识点展示：图谱画布与节点详情 WCAG A/AA 扫描', async 
 test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', async ({ page }) => {
   await enterAdminSpace(page)
 
-  // 种子含两个已发布题源：默认落在「题源与来源审核」三列矩阵，确认挂载完整后扫描。
+  // 种子含两个已发布题源：默认落在第一阶段第 1 步「题源台账」（单卡聚焦），逐步推进并扫描各阶段工作台。
   // 本扫描只读：不创建题源、不上传、不提交审核（state 边界与 a11y 文件头一致）。
   const ledger = page.getByRole('region', { name: '题源台账' })
   await expect(ledger.locator('li.source-item').first()).toBeVisible()
-  await expect(page.getByRole('region', { name: '来源人工审核' })).toBeVisible()
+  await expect(page.locator('#ledger-panel-sources .step-stage-body section.card')).toHaveCount(1)
   await scanAndReport(page, 'admin-sources')
+
+  // 逐步推进至第 3 步「来源人工审核」（仍只呈现 1 张卡片）
+  await ledger.getByRole('button', { name: /下一步：题源概览与顺序核查/ }).click()
+  await page.getByRole('button', { name: /下一步：来源人工审核/ }).click()
+  await expect(page.getByRole('region', { name: '来源人工审核' })).toBeVisible()
+  await expect(page.locator('#ledger-panel-sources .step-stage-body section.card')).toHaveCount(1)
+  await scanAndReport(page, 'admin-sources-review')
 
   await page.getByRole('tab', { name: /附件解析与录入/ }).click()
   await expect(page.getByRole('region', { name: '附件与解析' })).toBeVisible()
@@ -143,7 +150,7 @@ test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', 
   await page.getByRole('tab', { name: /题目审核与发布/ }).click()
   const versions = page.getByRole('region', { name: '题目草稿与发布' })
   await expect(versions).toBeVisible()
-  // 选中题源的题目已全部发布：至少一行「已发布」徽章证明只读列表真实挂载。
+  // 选中题源的题目已全部发布：自动聚焦第 2 步「已发布入池题目（只读）」，至少一行「已发布」徽章。
   await expect(versions.locator('.badge.qstatus-published').first()).toBeVisible()
   await scanAndReport(page, 'admin-versions')
 })

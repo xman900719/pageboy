@@ -4,12 +4,15 @@ import {
   describeError,
   type ApiClient,
   type SchoolExamReport,
+  type SchoolExamReportAttachment,
   type SchoolSubject,
 } from '../../api'
 import type { NoticeTone } from '../Notice.vue'
-import type { SchoolExamReportAttachment } from '../../api'
+import StepFlowWorkspace from './StepFlowWorkspace.vue'
+import type { StepDefinition, StepFlowContext } from './stepFlow'
 
 type Notify = (text: string, tone?: NoticeTone) => void
+type ReportStepId = 'discover' | 'match' | 'parse' | 'confirm'
 
 const props = defineProps<{
   client: ApiClient
@@ -17,6 +20,12 @@ const props = defineProps<{
   notify: Notify
 }>()
 
+const emit = defineEmits<{
+  (e: 'open-scores'): void
+  (e: 'open-papers-drafts', examId?: string): void
+}>()
+
+const reportStep = ref<ReportStepId>('discover')
 const reports = ref<SchoolExamReport[] | null>(null)
 const selectedId = ref<string | null>(null)
 const loading = ref(false)
@@ -39,11 +48,16 @@ const supplementClassRank = ref<number | ''>('')
 const supplementGradeRank = ref<number | ''>('')
 const savingSubject = ref(false)
 const generatingDrafts = ref(false)
+const draftsGeneratedHere = ref(false)
 const aiMapping = ref(false)
 const matchUnresolved = ref<string[]>([])
 const matchAmbiguous = ref<string[]>([])
 const SUBJECT_LABELS: Record<string, string> = {
-  chinese: '语文', math: '数学', english: '英语', physics: '物理', ethics: '道德与法治',
+  chinese: '语文',
+  math: '数学',
+  english: '英语',
+  physics: '物理',
+  ethics: '道德与法治',
 }
 
 const selected = computed(() => reports.value?.find(item => item.id === selectedId.value) ?? null)
@@ -69,17 +83,26 @@ function syncEditIdentity() {
   editYear.value = selected.value.academic_year ?? ''
 }
 
-watch(selected, () => {
-  syncEditIdentity()
-  void loadCards()
-}, { immediate: true })
+watch(
+  selected,
+  () => {
+    draftsGeneratedHere.value = false
+    syncEditIdentity()
+    void loadCards()
+  },
+  { immediate: true },
+)
+
 const linkedCount = computed(() => selected.value?.linked_exam_ids.length ?? 0)
 const questionCount = computed(() => selected.value?.questions.length ?? 0)
 const sessionOnlySubjects = computed(
   () => (selected.value?.linked_exam_ids ?? []).filter(link => link.match === 'SESSION_ONLY'),
 )
+const isMatchReady = computed(
+  () => Boolean(selected.value && ['EXACT_MATCH', 'PARTIAL_MATCH'].includes(selected.value.match_state)),
+)
 const canConfirm = computed(
-  () => Boolean(selected.value && ['EXACT_MATCH', 'PARTIAL_MATCH'].includes(selected.value.match_state) && selected.value.status !== 'confirmed'),
+  () => Boolean(selected.value && isMatchReady.value && selected.value.status !== 'confirmed'),
 )
 
 const MATCH_LABELS: Record<string, string> = {
@@ -107,6 +130,56 @@ function fmtScore(value: number | null | undefined): string {
 function scopeTone(status: string): string {
   return status === 'CONSISTENT' ? 'good' : status === 'DIFFERENT_SCOPE_POSSIBLE' ? 'wait' : 'bad'
 }
+
+const reportContext = computed<StepFlowContext | null>(() => {
+  if (!selected.value) return null
+  return {
+    eyebrow: '当前报告册',
+    title: selected.value.title || selected.value.filename,
+    statusText: `${MATCH_LABELS[selected.value.match_state] || selected.value.match_state} · ${selected.value.status === 'confirmed' ? '已确认' : '待核对'}`,
+    statusTone: selected.value.status === 'confirmed' ? 'good' : 'wait',
+  }
+})
+
+const steps = computed<StepDefinition[]>(() => [
+  {
+    id: 'discover',
+    title: '1. 发现文件',
+    subtitle: reports.value ? `${reports.value.length} 份报告册` : '扫描 inbox PDF',
+    badge: reports.value ? `${reports.value.length} 份` : undefined,
+    done: selected.value !== null,
+    prereqMet: true,
+  },
+  {
+    id: 'match',
+    title: '2. 关联考试',
+    subtitle: selected.value ? (MATCH_LABELS[selected.value.match_state] || selected.value.match_state) : '补录身份并匹配',
+    badge: selected.value ? `${linkedCount.value} 科` : undefined,
+    badgeTone: isMatchReady.value ? 'good' : 'wait',
+    done: isMatchReady.value,
+    prereqMet: selected.value !== null,
+    lockReason: '请先在第 1 步扫描并选定一份分析报告册。',
+  },
+  {
+    id: 'parse',
+    title: '3. 成绩与答题卡',
+    subtitle: selected.value ? `${selected.value.pages} 页 · 逐题 ${questionCount.value}` : '核查口径与切图',
+    badge: cardAttachments.value.length > 0 ? `${cardAttachments.value.length} 页卡` : undefined,
+    done: isMatchReady.value && (selected.value?.status === 'confirmed' || cardAttachments.value.length > 0),
+    prereqMet: isMatchReady.value,
+    lockReason: '请先在第 2 步完成至少部分学科的校考档案关联（全部或部分匹配），否则无法同步答题卡或成绩。',
+  },
+  {
+    id: 'confirm',
+    title: '4. 核对入档',
+    subtitle: selected.value?.status === 'confirmed' ? '已人工确认' : '确认并生成草稿',
+    badge: selected.value?.status === 'confirmed' ? '已确认' : '待确认',
+    badgeTone: selected.value?.status === 'confirmed' ? 'good' : 'wait',
+    done: selected.value?.status === 'confirmed' && draftsGeneratedHere.value,
+    prereqMet: isMatchReady.value,
+    lockReason: '请先在第 2 步完成校考档案关联后再执行确认入档与生成逐题草稿。',
+  },
+])
 
 async function load(preferId?: string) {
   loading.value = true
@@ -142,6 +215,11 @@ function selectReport(id: string) {
   selectedId.value = id
 }
 
+function selectReportAndAdvance(id: string) {
+  selectedId.value = id
+  reportStep.value = 'match'
+}
+
 async function rematch() {
   if (!selected.value) return
   matching.value = true
@@ -153,7 +231,7 @@ async function rematch() {
     props.notify(
       result.match.match_state === 'EXACT_MATCH'
         ? '全部学科已唯一关联，请继续核对成绩并人工确认。'
-        : `关联未完成：未匹配 ${result.match.unresolved_subjects.length} 科，歧义 ${result.match.ambiguous_subjects.length} 科。`,
+        : `关联结果：未匹配 ${result.match.unresolved_subjects.length} 科，歧义 ${result.match.ambiguous_subjects.length} 科。`,
       result.match.match_state === 'EXACT_MATCH' ? 'success' : 'caution',
     )
   } catch (error) {
@@ -253,6 +331,7 @@ async function generateDrafts() {
         'caution',
       )
     } else {
+      draftsGeneratedHere.value = true
       props.notify(
         `已生成 ${result.created} 条逐题草稿（无需原卷/答题卡）；请到“原卷与草稿校对”映射知识点并逐题确认。`,
         'success',
@@ -304,72 +383,101 @@ async function confirmReport() {
   }
 }
 
+function goToPapersDrafts() {
+  const firstMatch = selected.value?.linked_exam_ids.find(l => l.subject === props.subject) ?? selected.value?.linked_exam_ids[0]
+  emit('open-papers-drafts', firstMatch?.exam_id)
+}
+
 onMounted(() => void load())
 </script>
 
 <template>
   <section class="report-center" aria-label="校考报告导入与核对">
-    <div class="report-topbar">
-      <div>
-        <h3>校考报告导入与核对</h3>
-        <p class="muted">
-          扫描当前私有 inbox 中的分析报告册；先关联考试，再核对总分、学科、逐题和答题卡。
-          不访问外部平台，不伪造缺失数据。
-        </p>
-      </div>
-      <div class="report-actions">
-        <button type="button" class="ghost small" :disabled="loading" @click="load()">
-          {{ loading ? '加载中…' : '刷新报告' }}
-        </button>
-        <button type="button" class="primary small" :disabled="scanning" @click="scan">
-          {{ scanning ? '解析中…' : '扫描报告册' }}
-        </button>
-      </div>
-    </div>
-
-    <div v-if="reports === null" class="card report-empty">报告加载中…</div>
-    <div v-else-if="reports.length === 0" class="card report-empty">
-      当前环境还没有已登记的分析报告册。请先将报告 PDF 放入私有 inbox，再点击“扫描报告册”。
-    </div>
-    <div v-else class="report-layout">
-      <aside class="card report-list-card">
-        <div class="card-head">
-          <div>
-            <h4>第一步 · 发现文件</h4>
-            <p class="card-sub">{{ reports.length }} 份报告册</p>
-          </div>
-        </div>
-        <ul class="exam-list report-list" aria-label="分析报告册列表">
-          <li
-            v-for="report in reports"
-            :key="report.id"
-            :class="['exam-item', report.id === selectedId ? 'selected' : '']"
-          >
-            <button type="button" class="source-pick" :aria-pressed="report.id === selectedId" @click="selectReport(report.id)">
-              <span class="exam-title">{{ report.title || report.filename }}</span>
-              <span class="muted tiny">{{ report.pages }} 页 · {{ report.status }} · {{ report.match_state }}</span>
-            </button>
-          </li>
-        </ul>
-      </aside>
-
-      <div v-if="selected" class="report-detail">
-        <article class="card">
+    <StepFlowWorkspace
+      v-model="reportStep"
+      :steps="steps"
+      :context="reportContext"
+      steps-aria-label="校考报告导入四步向导"
+    >
+      <!-- 第一步 · 发现文件 -->
+      <template #step-discover>
+        <section class="card" aria-label="第一步 · 发现文件">
           <div class="card-head">
             <div>
-              <h4>第二步 · 关联考试</h4>
+              <h3>第一步 · 发现分析报告册</h3>
+              <p class="card-sub">
+                扫描当前私有 inbox 中的分析报告册；不访问外部平台，不伪造缺失数据。
+              </p>
+            </div>
+            <div class="report-actions">
+              <button type="button" class="ghost small" :disabled="loading" @click="load()">
+                {{ loading ? '加载中…' : '刷新报告' }}
+              </button>
+              <button type="button" class="primary small" :disabled="scanning" @click="scan">
+                {{ scanning ? '解析中…' : '扫描报告册' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="reports === null" class="muted">报告加载中…</div>
+          <div v-else-if="reports.length === 0" class="muted">
+            当前环境还没有已登记的分析报告册。请先将报告 PDF 放入私有 inbox，再点击“扫描报告册”。
+          </div>
+          <template v-else>
+            <ul class="exam-list report-list" aria-label="分析报告册列表">
+              <li
+                v-for="report in reports"
+                :key="report.id"
+                :class="['exam-item', report.id === selectedId ? 'selected' : '']"
+              >
+                <button
+                  type="button"
+                  class="source-pick"
+                  :aria-pressed="report.id === selectedId"
+                  @click="selectReport(report.id)"
+                >
+                  <span class="exam-title">{{ report.title || report.filename }}</span>
+                  <span class="muted tiny">{{ report.pages }} 页 · {{ report.status }} · {{ MATCH_LABELS[report.match_state] || report.match_state }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="ghost small"
+                  @click="selectReportAndAdvance(report.id)"
+                >
+                  关联考试 →
+                </button>
+              </li>
+            </ul>
+            <div v-if="selected" class="card-footer-flow">
+              <span class="muted tiny">已选定「{{ selected.title || selected.filename }}」</span>
+              <button type="button" class="primary small" @click="reportStep = 'match'">
+                下一步：关联校考档案 →
+              </button>
+            </div>
+          </template>
+        </section>
+      </template>
+
+      <!-- 第二步 · 关联考试 -->
+      <template #step-match>
+        <article v-if="selected" class="card" aria-label="第二步 · 关联考试">
+          <div class="card-head">
+            <div>
+              <h3>第二步 · 关联考试</h3>
               <p class="card-sub">{{ selected.filename }}</p>
             </div>
-            <span :class="['chip', ['EXACT_MATCH', 'PARTIAL_MATCH'].includes(selected.match_state) ? 'good' : 'wait']">
+            <span :class="['chip', isMatchReady ? 'good' : 'wait']">
               {{ MATCH_LABELS[selected.match_state] || selected.match_state }}
             </span>
           </div>
+
           <dl class="report-kv">
             <div><dt>学年度</dt><dd>{{ selected.academic_year || '缺失' }}</dd></div>
             <div><dt>年级</dt><dd>{{ selected.grade || '缺失' }}</dd></div>
             <div><dt>考试类型</dt><dd>{{ selected.exam_type || '缺失' }}</dd></div>
             <div><dt>报告时间</dt><dd>{{ selected.report_time || '缺失' }}</dd></div>
           </dl>
+
           <div class="report-edit-row">
             <label>年级<input v-model="editGrade" placeholder="如：9 / 九年级 / 初三" /></label>
             <label>考试类型<input v-model="editType" placeholder="如：统一练习一 / 期中考试" /></label>
@@ -378,6 +486,7 @@ onMounted(() => void load())
               {{ savingIdentity ? '保存中…' : '保存补录' }}
             </button>
           </div>
+
           <p v-if="selected.linked_exam_ids.length === 0" class="muted">尚未关联任何单科校考档案。</p>
           <ul v-else class="report-linked-list" aria-label="已关联校考">
             <li v-for="link in selected.linked_exam_ids" :key="link.exam_id">
@@ -386,11 +495,14 @@ onMounted(() => void load())
               <small>{{ link.exam_date }} · {{ LINK_LABELS[link.match] || link.match }}</small>
             </li>
           </ul>
+
           <p v-if="selected.linked_exam_ids.some(link => link.match === 'SESSION_ONLY')" class="report-scope-note">
             部分学科仅建立场次关联：报告中该科没有成绩行，系统未伪造成绩，后续可在此补录统计。
           </p>
+
           <div v-if="sessionOnlySubjects.length" class="report-edit-row">
-            <label>补齐学科
+            <label>
+              补齐学科
               <select v-model="supplementSubject">
                 <option value="">请选择</option>
                 <option v-for="link in sessionOnlySubjects" :key="link.subject" :value="link.subject">
@@ -406,30 +518,50 @@ onMounted(() => void load())
               {{ savingSubject ? '保存中…' : '补录并重新关联' }}
             </button>
           </div>
-          <p v-if="matchUnresolved.length" class="report-scope-note">
-            缺少对应校考档案：{{ matchUnresolved.map(code => SUBJECT_LABELS[code] || code).join('、') }}。
-            请先在“总分台账与建档”中补录该科校考，再回来重新执行关联。
-          </p>
+
+          <div v-if="matchUnresolved.length || (!isMatchReady && selected.match_state === 'NOT_FOUND')" class="gate-alert-banner">
+            <span>
+              缺少对应校考档案{{ matchUnresolved.length ? `（${matchUnresolved.map(code => SUBJECT_LABELS[code] || code).join('、')}）` : '' }}。
+              请先在「第一阶段 · 总分台账与建档」中补录该科校考，再回来重新执行关联。
+            </span>
+            <button type="button" class="primary small" @click="emit('open-scores')">
+              前往总分台账与建档 →
+            </button>
+          </div>
+
           <p v-if="matchAmbiguous.length" class="report-scope-note">
             存在多个同科候选：{{ matchAmbiguous.map(code => SUBJECT_LABELS[code] || code).join('、') }}。请先整理重复档案。
           </p>
-          <div class="report-actions">
+
+          <div class="card-footer-flow">
             <button type="button" class="ghost small" :disabled="matching" @click="rematch">
               {{ matching ? '关联中…' : '重新执行关联' }}
             </button>
+            <button
+              type="button"
+              class="primary small"
+              :disabled="!isMatchReady"
+              @click="reportStep = 'parse'"
+            >
+              下一步：成绩校验与答题卡 →
+            </button>
           </div>
         </article>
+      </template>
 
-        <article class="card">
+      <!-- 第三步 · 成绩与报告解析 -->
+      <template #step-parse>
+        <article v-if="selected" class="card" aria-label="第三步 · 成绩与报告解析">
           <div class="card-head">
             <div>
-              <h4>第三步 · 成绩与报告解析</h4>
+              <h3>第三步 · 成绩与报告解析</h3>
               <p class="card-sub">{{ selected.pages }} 页 · 置信度 {{ selected.confidence }}</p>
             </div>
             <span :class="['chip', scopeTone(selected.scope_status)]">
               {{ SCOPE_LABELS[selected.scope_status] || selected.scope_status }}
             </span>
           </div>
+
           <dl class="report-total">
             <div><dt>报告总分</dt><dd>{{ fmtScore(selected.report_total_score) }} / {{ fmtScore(selected.report_total_max) }}</dd></div>
             <div><dt>已列学科合计</dt><dd>{{ fmtScore(selected.listed_subject_score) }} / {{ fmtScore(selected.listed_subject_max) }}</dd></div>
@@ -437,11 +569,15 @@ onMounted(() => void load())
             <div><dt>总分年排</dt><dd>{{ selected.total_grade_rank ?? '缺失' }}</dd></div>
             <div><dt>实考人数</dt><dd>{{ selected.total_participants ?? '缺失' }}</dd></div>
           </dl>
+
           <p v-if="selected.scope_status !== 'CONSISTENT'" class="report-scope-note">
             报告总分与已列学科合计不一致。保留报告原始总分，等待人工确认统计范围；系统不自动改写。
           </p>
+
           <table class="report-subject-table">
-            <thead><tr><th>学科</th><th>得分/满分</th><th>班排</th><th>年排</th><th>实考</th><th>页码</th></tr></thead>
+            <thead>
+              <tr><th>学科</th><th>得分/满分</th><th>班排</th><th>年排</th><th>实考</th><th>页码</th></tr>
+            </thead>
             <tbody>
               <tr v-for="item in selected.subjects" :key="item.subject">
                 <td>{{ item.name || item.subject }}</td>
@@ -453,17 +589,19 @@ onMounted(() => void load())
               </tr>
             </tbody>
           </table>
+
           <p class="muted tiny">
-            逐题 {{ questionCount }} 条；答题卡 {{ Object.keys(selected.answer_card_pages).length }} 个学科。
-            逐题和答题卡仍需逐项人工核对。
+            逐题 {{ questionCount }} 条；答题卡 {{ Object.keys(selected.answer_card_pages).length }} 个学科。逐题和答题卡仍需逐项人工核对。
           </p>
           <ul v-if="Object.keys(selected.answer_card_pages).length" class="report-warnings" aria-label="答题卡页范围">
             <li v-for="(pages, code) in selected.answer_card_pages" :key="code">
               答题卡 · {{ code }}：第 {{ pages.join('、') }} 页
             </li>
           </ul>
+
           <div class="report-edit-row">
-            <label>旋转角度
+            <label>
+              旋转角度
               <select v-model.number="cardRotation" aria-label="答题卡旋转角度">
                 <option :value="0">0°</option>
                 <option :value="90">90°</option>
@@ -471,39 +609,62 @@ onMounted(() => void load())
                 <option :value="270">270°</option>
               </select>
             </label>
-            <button type="button" class="ghost small" :disabled="buildingCards || !Object.keys(selected.answer_card_pages).length" @click="buildCards">
+            <button
+              type="button"
+              class="ghost small"
+              :disabled="buildingCards || !Object.keys(selected.answer_card_pages).length"
+              @click="buildCards"
+            >
               {{ buildingCards ? '生成中…' : '生成答题卡附件' }}
             </button>
             <span class="muted tiny">选择角度后点“生成”；点“预览”会自动同步当前角度。</span>
           </div>
+
           <ul v-if="cardAttachments.length" class="report-linked-list" aria-label="答题卡私有附件">
             <li v-for="card in cardAttachments" :key="card.id">
               <b>{{ card.subject }}</b>
               <span>第 {{ card.page_number }} 页 · {{ card.rotation }}°</span>
-              <button type="button" class="ghost small" @click="previewCard(card)">预览</button>
+              <button type="button" class="ghost small" @click="previewCard(card)">
+                预览
+              </button>
             </li>
           </ul>
+
           <div v-if="previewUrl" class="report-card-preview-box">
             <img :src="previewUrl" :alt="previewName" class="report-card-preview" />
             <p class="muted tiny">
               <a :href="previewUrl" target="_blank" rel="noopener">{{ previewName }}</a>（仅管理端当前会话可访问）
             </p>
           </div>
+
           <ul v-if="selected.warnings.length" class="report-warnings">
             <li v-for="warning in selected.warnings" :key="warning">{{ warning }}</li>
           </ul>
-        </article>
 
-        <article class="card">
+          <div class="card-footer-flow">
+            <button type="button" class="ghost small" @click="reportStep = 'match'">
+              ← 返回关联考试
+            </button>
+            <button type="button" class="primary small" @click="reportStep = 'confirm'">
+              下一步：确认入档与生成草稿 →
+            </button>
+          </div>
+        </article>
+      </template>
+
+      <!-- 第四步 · 核对入档 -->
+      <template #step-confirm>
+        <article v-if="selected" class="card" aria-label="第四步 · 核对入档">
           <div class="card-head">
             <div>
-              <h4>第四步 · 核对入档</h4>
-              <p class="card-sub">已关联 {{ linkedCount }} / {{ selected.subjects.length }} 科</p>
+              <h3>第四步 · 核对入档与生成逐题草稿</h3>
+              <p class="card-sub">已关联 {{ linkedCount }} / {{ selected.subjects.length }} 科 · 推荐顺序：① 人工确认报告 → ② 生成逐题草稿 → ③ 校对草稿入账</p>
             </div>
             <span :class="['chip', selected.status === 'confirmed' ? 'good' : 'wait']">
               {{ selected.status === 'confirmed' ? '已确认' : '待核对' }}
             </span>
           </div>
+
           <p v-if="selected.match_state === 'AMBIGUOUS'" class="report-scope-note">
             存在多个同科候选，请先整理重复档案后再确认。
           </p>
@@ -514,35 +675,49 @@ onMounted(() => void load())
             部分学科已关联；缺卷学科允许后续补录，不影响本次人工确认。
           </p>
           <p v-else class="muted">
-            确认只记录“已人工核对报告”状态；报告中的总分、排名、逐题和答题卡不会被写成已验证知识点错误。
+            确认只记录“已人工核对报告”状态并回写台账总分与答题卡；报告中的总分、排名、逐题和答题卡不会被写成已验证知识点错误。
           </p>
-          <div class="report-actions">
-            <button type="button" class="ghost small" :disabled="generatingDrafts" @click="generateDrafts">
-              {{ generatingDrafts ? '生成中…' : '生成逐题草稿到台账' }}
-            </button>
-            <button type="button" class="ghost small" :disabled="aiMapping" @click="aiMapKnowledge">
-              {{ aiMapping ? '匹配中…' : 'DeepSeek 匹配知识点' }}
-            </button>
+
+          <div class="report-actions" style="margin: 12px 0;">
             <button type="button" class="primary small" :disabled="!canConfirm || confirming" @click="confirmReport">
-              {{ confirming ? '确认中…' : '人工确认报告' }}
+              {{ confirming ? '确认中…' : selected.status === 'confirmed' ? '① 已人工确认报告' : '① 人工确认报告' }}
+            </button>
+            <button type="button" class="ghost small" :disabled="generatingDrafts" @click="generateDrafts">
+              {{ generatingDrafts ? '生成中…' : '② 生成逐题草稿到台账' }}
+            </button>
+            <button
+              type="button"
+              class="ghost small"
+              :disabled="aiMapping"
+              title="需先生成逐题草稿；若对应校考已上传原卷附件可自动抽取题干供 DeepSeek 匹配"
+              @click="aiMapKnowledge"
+            >
+              {{ aiMapping ? '匹配中…' : '③ DeepSeek 匹配知识点（可选）' }}
             </button>
           </div>
+
           <p class="muted tiny">
-            逐题草稿直接从分析报告生成，不需要原卷/答题卡；默认知识点为“unmapped”，必须在“原卷与草稿校对”的待核对草稿台映射并确认后，错误分析与复盘才会使用。
+            逐题草稿直接从分析报告生成，不需要原卷/答题卡；默认知识点为“unmapped”，必须在「原卷与草稿校对」的待核对草稿台映射并确认后，错误分析与复盘才会使用。
           </p>
+
+          <div class="handoff-box">
+            <div>
+              <strong>{{ draftsGeneratedHere ? '逐题草稿已生成！' : '去草稿校对台逐题确认' }}</strong>
+              <span>在「原卷与草稿校对」第 3 步校对台确认知识点与错因后，即可查看「错误分析与复盘」。</span>
+            </div>
+            <button type="button" class="primary small" @click="goToPapersDrafts">
+              前往草稿校对台 →
+            </button>
+          </div>
         </article>
-      </div>
-    </div>
+      </template>
+    </StepFlowWorkspace>
   </section>
 </template>
 
 <style scoped>
 .report-center { display: flex; flex-direction: column; gap: 14px; }
-.report-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.report-topbar h3 { margin: 0; }
 .report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.report-layout { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2fr); gap: 14px; align-items: start; }
-.report-detail { display: flex; flex-direction: column; gap: 14px; }
 .report-list { margin-top: 0; }
 .report-kv, .report-total { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 10px 0; }
 .report-kv div, .report-total div { border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 8px 10px; }
@@ -554,11 +729,9 @@ onMounted(() => void load())
 .report-subject-table th, .report-subject-table td { text-align: left; border-bottom: 1px solid var(--line-soft); padding: 6px 4px; }
 .report-scope-note { border-left: 3px solid var(--amber-line, #e2c58e); padding: 8px 10px; background: var(--amber-soft); border-radius: var(--radius-s); }
 .report-warnings { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
-.report-empty { padding: 18px; }
 .report-edit-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
 .report-edit-row label { margin: 0; flex: 0 1 180px; }
 .report-edit-row label input { margin-top: 4px; }
 .report-card-preview-box { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .report-card-preview { max-width: 100%; max-height: 420px; object-fit: contain; border: 1px solid var(--line-soft); border-radius: var(--radius-s); background: #fff; }
-@media (max-width: 780px) { .report-layout { grid-template-columns: 1fr; } }
 </style>
