@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "cloudflare": {
+      "command": "/home/xc/.npm-global/bin/mcp-remote",
+      "args": [
+        "https://mcp.cloudflare.com/mcp"
+      ]
+    }
+  }
+}

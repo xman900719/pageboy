@@ -138,16 +138,15 @@
 
 ## 6. 按需加载项目策略
 
-优先阅读项目核心引导与权威文档：`CODEX_START_HERE.md`、`IMPLEMENTATION_PLAN.md`、`docs/design/architecture.md`、`docs/quality/acceptance.md`。当存在 `.agent/policies/` 时，按以下任务类型触发加载：
+优先阅读项目核心引导与权威文档：`CODEX_START_HERE.md`、`IMPLEMENTATION_PLAN.md`、`docs/design/architecture.md`、`docs/quality/acceptance.md`。工作区插件（`.agents/plugins/`）已封装渐进式 Skills 与门禁 Hooks，按以下任务类型触发按需加载：
 
-| 任务涉及                               | 加载                                     |
-| ---------------------------------- | -------------------------------------- |
-| 编码、Python、代码结构、注释                  | `.agent/policies/coding.md`            |
-| 测试、TDD、质量门禁、验收                     | `.agent/policies/testing.md`           |
-| Git、分支、Worktree、commit、push、remote | `.agent/policies/git.md`               |
-| 文档、LLM 架构、安全、文档同步                  | `.agent/policies/docs-architecture.md` |
-| TODO 注册、查询、关闭、收割                   | `.agent/policies/todo.md`              |
-| 版本、CHANGELOG、发布、部署标签               | `.agent/policies/release.md`           |
+| 任务涉及                                           | 加载                                                                                  |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 测试、契约、OpenAPI、Docs as Code、Alembic 迁移、CI 门禁 | `.agents/plugins/pageboy-dev/skills/verify-and-ci/SKILL.md`                         |
+| 前端（`apps/web/`）、回环开发服务、iPadOS 模拟机与选项式人工测试门禁 | `.agents/plugins/pageboy-dev/skills/frontend-ipad-acceptance/SKILL.md`              |
+| 学校考试五字段同步、`k12100` 隔离采录、报告解析、2022 课标与 135 知识点 | `.agents/plugins/pageboy-dev/skills/school-exam-and-corpus/SKILL.md`                |
+| 符号定位、跨文件调用链探索与受影响测试分析                          | `.agents/plugins/pageboy-dev/rules/AGENTS.md`（优先使用 `codegraph` MCP）                 |
+| 生产栈探针、标签化部署回滚、R2 异地联合备份恢复演练、Cloudflare 隧道    | `.agents/plugins/pageboy-ops/skills/ops-backup-deploy/SKILL.md`（默认禁用，运维窗口按需启用插件） |
 
 不支持自动加载的 Agent：只注入任务所需策略，不注入全部策略。
 
