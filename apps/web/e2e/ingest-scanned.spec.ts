@@ -95,7 +95,6 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '语文' }).click()
 
   const ledger = page.getByRole('region', { name: '题源台账' })
-  const review = page.getByRole('region', { name: '来源人工审核' })
 
   // ① 选中 beforeAll 建好的题源（已人工审核）。
   await ledger.getByRole('button', { name: new RegExp(SOURCE_TITLE) }).click()
@@ -115,7 +114,7 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await expect(page.getByRole('status')).toContainText('附件已上传')
 
   // ③ 解析：pdftoppm→tesseract 逐页 OCR 草稿（上传使题源复位为未审核，如实）。
-  await attachments.getByRole('button', { name: '解析' }).click()
+  await attachments.getByRole('button', { name: '解析', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('解析完成', { timeout: 60_000 })
   const row = attachments.locator('li.attachment-row', { hasText: 'j8-scan.pdf' })
   await expect(row.locator('.chip.mid')).toContainText('已解析')
@@ -124,7 +123,7 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await expect(row.locator('.parsed-text blockquote')).toContainText('SCAN PAGE 2')
   await expect(row.locator('.parsed-text blockquote')).toContainText('OCR 草稿') // 页码标记如实存在
 
-  // ④ OCR 只是草稿：逐题人工录入（题干含公式，ST-013 渲染面）+ 显式人工核对 → 确认导入。
+  // ④ OCR 只是草稿：点击「逐题录入并确认导入」进入第 2 步录入台，完成公式题目 + 显式人工核对。
   await attachments.getByRole('button', { name: '逐题录入并确认导入' }).click()
   const entryForm = attachments.locator('.confirm-import')
   await entryForm.getByLabel('题干').fill(SCANNED_STEM)
@@ -138,7 +137,7 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await entryForm.getByRole('button', { name: '确认导入 1 题' }).click()
   await expect(page.getByRole('status')).toContainText('已确认导入 1 题，草稿待人工审核')
 
-  // ⑤ 切至「题目审核与发布」人工审核通过；来源因上传复位 → 回「题源与来源审核」重审后发布（门禁如实）。
+  // ⑤ 切至「题目审核与发布」人工审核通过；来源因上传复位 → 回「题源与来源审核」第 3 步重审后发布（门禁如实）。
   await page.getByRole('tab', { name: /题目审核与发布/ }).click()
   const versions = page.getByRole('region', { name: '题目草稿与发布' })
   const draftRow = versions.locator('li.version-row', { hasText: '由扫描件人工誊写' })
@@ -148,6 +147,8 @@ test('J8 扫描件摄取：图像型 PDF 上传→OCR 解析草稿→人工确�
   await expect(draftRow.getByRole('button', { name: '发布' })).toBeDisabled()
 
   await page.getByRole('tab', { name: /题源与来源审核/ }).click()
+  await page.getByRole('button', { name: /来源人工审核/ }).click()
+  const review = page.getByRole('region', { name: '来源人工审核' })
   // 上传把题源复位为未审核：人工核查勾选框按会话重置（默认未勾选），须显式重新勾选后提交。
   await review.getByLabel(/我已人工核查来源与版权/).check()
   await review.getByRole('button', { name: '提交人工审核' }).click()

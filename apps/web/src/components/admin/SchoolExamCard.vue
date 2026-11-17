@@ -23,10 +23,17 @@ import {
 import HelpBubble from '../HelpBubble.vue'
 import SchoolExamReportCenter from './SchoolExamReportCenter.vue'
 import SchoolExamSyncCenter from './SchoolExamSyncCenter.vue'
+import StageTabStrip from './StageTabStrip.vue'
+import StepFlowWorkspace from './StepFlowWorkspace.vue'
+import type { StageGroup, StepDefinition, StepFlowContext } from './stepFlow'
 import type { NoticeTone } from '../Notice.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 export type ExamTabId = 'scores' | 'papers' | 'items' | 'analysis' | 'sync' | 'report'
+type ScoreStepId = 'pick' | 'detail'
+type PaperStepId = 'upload' | 'parse' | 'drafts'
+type ItemStepId = 'list' | 'add'
+type AnalysisStepId = 'overview' | 'knowledge' | 'history'
 
 const DIAGNOSIS_TAG_META: Record<string, { label: string; tone: string }> = {
   double_weak: { label: '双重薄弱 · 优先突破', tone: 'bad' },
@@ -101,6 +108,11 @@ const selectedDetail = ref<SchoolExamDetail | null>(null)
 const errorAnalysis = ref<SchoolExamErrorAnalysis | null>(null)
 const loadingDetail = ref(false)
 const activeTab = ref<ExamTabId>(props.initialTab ?? 'scores')
+const scoreStep = ref<ScoreStepId>('pick')
+const scorePickMode = ref<'list' | 'create'>('list')
+const paperStep = ref<PaperStepId>('upload')
+const itemStep = ref<ItemStepId>('list')
+const analysisStep = ref<AnalysisStepId>('overview')
 
 // 学科可选中文知识点列表（供手动补录与草稿校对输入提示）
 const subjectKnowledgeOptions = computed(() => getSubjectKnowledgeOptions(props.subject, false))
@@ -192,8 +204,8 @@ const selectedExamSummary = computed(
   () => exams.value?.find(e => e.id === selectedExamId.value) ?? null
 )
 
-// 五类内容矩阵协同子 Tab 定义及实时状态徽章
-const categoryTabs = computed(() => {
+// 四阶段真实执行次序分组导航：前置立锚 → 材料入库（报告/同步/原卷） → 明细查漏 → 诊断终点
+const examStageGroups = computed<StageGroup[]>(() => {
   const listCount = exams.value?.length ?? 0
   const ex = selectedDetail.value ?? selectedExamSummary.value
   const scoreBadge = ex ? (ex.confirmed_by_user ? '已核对' : '待补总分') : `${listCount} 场`
@@ -213,46 +225,195 @@ const categoryTabs = computed(() => {
   const analysisWait = Boolean(
     errorAnalysis.value?.status === 'analyzed' &&
       (errorAnalysis.value.overview.uncategorized_item_count > 0 ||
-        errorAnalysis.value.recurring_knowledge.some(r => r.repeat_in_current_exam))
+        errorAnalysis.value.recurring_knowledge.some(r => r.repeat_in_current_exam)),
   )
-  const syncBadge = '四步'
 
   return [
     {
-      id: 'scores' as const,
-      title: '总分台账与建档',
-      badge: scoreBadge,
-      wait: Boolean(ex && !ex.confirmed_by_user),
+      id: 'exam-stage-1',
+      title: '第一阶段 · 前置立锚',
+      tabs: [
+        {
+          id: 'scores',
+          title: '总分台账与建档',
+          badge: scoreBadge,
+          wait: Boolean(ex && !ex.confirmed_by_user),
+          done: Boolean(ex?.confirmed_by_user),
+        },
+      ],
     },
     {
-      id: 'papers' as const,
-      title: '原卷与草稿校对',
-      badge: paperDraftBadge,
-      wait: draftCount > 0,
+      id: 'exam-stage-2',
+      title: '第二阶段 · 材料入库（按需选路）',
+      tabs: [
+        {
+          id: 'report',
+          title: '报告导入与核对',
+          badge: '四步',
+        },
+        {
+          id: 'sync',
+          title: '全科校考同步',
+          badge: '四步',
+        },
+        {
+          id: 'papers',
+          title: '原卷与草稿校对',
+          badge: paperDraftBadge,
+          wait: draftCount > 0,
+          done: Boolean(selectedDetail.value && draftCount === 0 && confirmedItems.value.length > 0),
+        },
+      ],
     },
     {
-      id: 'items' as const,
-      title: '已核对明细与补录',
-      badge: confirmedBadge,
-      wait: false,
+      id: 'exam-stage-3',
+      title: '第三阶段 · 明细查漏',
+      tabs: [
+        {
+          id: 'items',
+          title: '已核对明细与补录',
+          badge: confirmedBadge,
+          done: confirmedItems.value.length > 0,
+        },
+      ],
     },
     {
-      id: 'analysis' as const,
-      title: '错误分析与复盘',
-      badge: analysisBadge,
-      wait: analysisWait,
+      id: 'exam-stage-4',
+      title: '第四阶段 · 诊断终点',
+      tabs: [
+        {
+          id: 'analysis',
+          title: '错误分析与复盘',
+          badge: analysisBadge,
+          wait: analysisWait,
+          done: errorAnalysis.value?.status === 'analyzed',
+        },
+      ],
+    },
+  ]
+})
+
+const examContext = computed<StepFlowContext | null>(() => {
+  if (!selectedDetail.value) return null
+  return {
+    eyebrow: '当前场次',
+    title: selectedDetail.value.title,
+    statusText: `${fmtPoints(selectedDetail.value.earned_points)} / ${fmtPoints(selectedDetail.value.max_points)} · ${selectedDetail.value.confirmed_by_user ? '已核对' : '未核对'}`,
+    statusTone: selectedDetail.value.confirmed_by_user ? 'good' : 'wait',
+  }
+})
+
+const scoreSteps = computed<StepDefinition[]>(() => [
+  {
+    id: 'pick',
+    title: '1. 选定或新建校考档案',
+    subtitle: selectedDetail.value ? '已选定场次' : '先从台账选定或建新档',
+    badge: `${exams.value?.length ?? 0} 场`,
+    done: selectedDetail.value !== null,
+    prereqMet: true,
+  },
+  {
+    id: 'detail',
+    title: '2. 总分概览与材料入口',
+    subtitle: selectedDetail.value?.confirmed_by_user ? '总分已锁定' : '核对总分或分流第二阶段',
+    badge: selectedDetail.value?.confirmed_by_user ? '已锁定' : '待核对',
+    badgeTone: selectedDetail.value?.confirmed_by_user ? 'good' : 'wait',
+    done: Boolean(selectedDetail.value?.confirmed_by_user),
+    prereqMet: selectedDetail.value !== null,
+    lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
+  },
+])
+
+const paperSteps = computed<StepDefinition[]>(() => {
+  const hasExam = selectedDetail.value !== null
+  const hasAttach = (selectedDetail.value?.attachments.length ?? 0) > 0
+  const hasParseable = parseableAttachments.value.length > 0
+  const hasDraftsOrConfirmed = unconfirmedDrafts.value.length > 0 || confirmedItems.value.length > 0
+  return [
+    {
+      id: 'upload',
+      title: '1. 上传私有原卷与答题卡',
+      subtitle: hasAttach ? `已归档 ${selectedDetail.value?.attachments.length ?? 0} 份` : '加密隔离归档',
+      badge: `${selectedDetail.value?.attachments.length ?? 0} 份`,
+      done: hasAttach || unconfirmedDrafts.value.length > 0,
+      prereqMet: hasExam,
+      lockReason: '请先在「第一阶段 · 总分台账与建档」选定或新建一场学校考试。',
     },
     {
-      id: 'sync' as const,
-      title: '全科校考同步',
-      badge: syncBadge,
-      wait: false,
+      id: 'parse',
+      title: '2. 自动解析待核对草稿',
+      subtitle: hasParseable ? `可选 ${parseableAttachments.value.length} 份附件` : '须先上传可解析附件',
+      done: hasDraftsOrConfirmed,
+      prereqMet: hasExam && hasParseable,
+      lockReason: '请先在第 1 步上传可解析的原卷或答题卡；若已从「报告导入」生成草稿，可直接点击第 3 步校对台。',
     },
     {
-      id: 'report' as const,
-      title: '报告导入与核对',
-      badge: '四步',
-      wait: false,
+      id: 'drafts',
+      title: '3. 待核对草稿校对台',
+      subtitle:
+        unconfirmedDrafts.value.length > 0
+          ? `待核对 ${unconfirmedDrafts.value.length} 题`
+          : confirmedItems.value.length > 0
+            ? '本页草稿已全部入账'
+            : '待第 2 步或报告生成草稿',
+      badge: `${unconfirmedDrafts.value.length} 题`,
+      badgeTone: unconfirmedDrafts.value.length > 0 ? 'wait' : 'good',
+      done: hasExam && unconfirmedDrafts.value.length === 0 && confirmedItems.value.length > 0,
+      prereqMet: hasExam && hasDraftsOrConfirmed,
+      lockReason: '当前场次还没有待核对草稿：请先在第 2 步解析原卷，或前往「报告导入与核对」生成逐题草稿。',
+    },
+  ]
+})
+
+const itemSteps = computed<StepDefinition[]>(() => {
+  const hasExam = selectedDetail.value !== null
+  return [
+    {
+      id: 'list',
+      title: '1. 已核对逐题明细与复盘',
+      subtitle: `已核对 ${confirmedItems.value.length} 题`,
+      badge: `${confirmedItems.value.length} 条`,
+      done: confirmedItems.value.length > 0,
+      prereqMet: hasExam,
+      lockReason: '请先在「第一阶段 · 总分台账与建档」选定或新建一场学校考试。',
+    },
+    {
+      id: 'add',
+      title: '2. 人工补录已核对小题',
+      subtitle: '对照纸质卷手工补充',
+      done: confirmedItems.value.length > 0,
+      prereqMet: hasExam,
+      lockReason: '请先在「第一阶段 · 总分台账与建档」选定或新建一场学校考试。',
+    },
+  ]
+})
+
+const analysisSteps = computed<StepDefinition[]>(() => {
+  const analyzed = Boolean(selectedDetail.value && errorAnalysis.value?.status === 'analyzed')
+  return [
+    {
+      id: 'overview',
+      title: '1. 本场失分概览与错因分布',
+      subtitle: '总体失分 KPI 与错因占比',
+      done: analyzed,
+      prereqMet: analyzed,
+      lockReason: '当前场次尚无已人工确认的失分小题明细，请先核对草稿或手工补录小题。',
+    },
+    {
+      id: 'knowledge',
+      title: '2. 失分考点排行与交叉诊断',
+      subtitle: '校考失分 × 平时掌握对照',
+      done: analyzed,
+      prereqMet: analyzed,
+      lockReason: '请先补充并确认失分小题明细。',
+    },
+    {
+      id: 'history',
+      title: '3. 同科历次顽固失分点对比',
+      subtitle: '跨 ≥ 2 场校考重复失分',
+      done: analyzed,
+      prereqMet: analyzed,
+      lockReason: '请先补充并确认失分小题明细。',
     },
   ]
 })
@@ -320,6 +481,9 @@ async function refreshExams(preferId?: string) {
           ? selectedExamId.value
           : (list[0]?.id ?? null)
     selectedExamId.value = targetId
+    if (list.length === 0) {
+      scorePickMode.value = 'create'
+    }
     if (targetId) {
       await loadDetail(targetId)
     } else {
@@ -337,6 +501,11 @@ async function refreshExams(preferId?: string) {
 watch(
   [() => props.client, () => props.subject],
   () => {
+    scoreStep.value = 'pick'
+    scorePickMode.value = 'list'
+    paperStep.value = 'upload'
+    itemStep.value = 'list'
+    analysisStep.value = 'overview'
     paperFile.value = null
     uploadError.value = ''
     editingAnalysisItemId.value = null
@@ -407,7 +576,9 @@ async function saveExam() {
     examTitle.value = ''
     examEarned.value = ''
     await refreshExams(created.id)
+    scorePickMode.value = 'list'
     activeTab.value = 'scores'
+    scoreStep.value = 'detail'
   } catch (e) {
     props.notify(describeError(e), 'error')
   } finally {
@@ -521,6 +692,7 @@ async function addItem() {
     itemErrorCategory.value = ''
     itemErrorNote.value = ''
     await loadDetail(selectedDetail.value.id)
+    itemStep.value = 'list'
   } catch (e) {
     props.notify(describeError(e), 'error')
   } finally {
@@ -578,6 +750,9 @@ async function runParseDrafts() {
     props.notify(lastParseSummary.value, 'success')
     draftEdits.value = {}
     await loadDetail(selectedDetail.value.id)
+    if (unconfirmedDrafts.value.length > 0) {
+      paperStep.value = 'drafts'
+    }
   } catch (e) {
     parseDraftError.value = describeError(e)
   } finally {
@@ -727,6 +902,7 @@ async function saveItemAnalysis(it: SchoolExamItem) {
 
 function jumpToEditItem(itemId: string) {
   activeTab.value = 'items'
+  itemStep.value = 'list'
   const target = selectedDetail.value?.items.find(it => it.id === itemId)
   if (target) {
     startEditAnalysis(target)
@@ -738,6 +914,29 @@ async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'item
     await selectExam(examId)
   }
   activeTab.value = tab
+  if (tab === 'papers' && unconfirmedDrafts.value.length > 0) {
+    paperStep.value = 'drafts'
+  } else if (tab === 'scores' && selectedDetail.value) {
+    scoreStep.value = 'detail'
+  }
+}
+
+async function openPapersDraftsFromReport(examId?: string) {
+  await refreshExams(examId)
+  activeTab.value = 'papers'
+  if (unconfirmedDrafts.value.length > 0) {
+    paperStep.value = 'drafts'
+  }
+}
+
+function goAnalysisAddItems() {
+  activeTab.value = 'items'
+  itemStep.value = 'add'
+}
+
+async function selectExamAndAdvance(examId: string) {
+  await selectExam(examId)
+  scoreStep.value = 'detail'
 }
 
 async function handleSyncPapersImported(examId: string) {
@@ -747,26 +946,15 @@ async function handleSyncPapersImported(examId: string) {
 
 <template>
   <section class="exam-workspace admin-workspace" aria-label="学校考试总分">
-    <!-- 二级工作区子 Tab 条（方案二：矩阵协同） -->
-    <div class="admin-subtab-strip">
-      <div class="admin-subtab-list" role="tablist" aria-label="学校考试工作区">
-        <button
-          v-for="tab in categoryTabs"
-          :key="tab.id"
-          :id="`exam-tab-${tab.id}`"
-          type="button"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="`exam-panel-${tab.id}`"
-          :class="['admin-subtab', activeTab === tab.id ? 'active' : '']"
-          @click="activeTab = tab.id"
-        >
-          <span>{{ tab.title }}</span>
-          <span :class="['admin-subtab-badge', tab.wait ? 'wait' : '']">{{ tab.badge }}</span>
-        </button>
-      </div>
-
-      <div class="admin-subtab-tools">
+    <!-- 四阶段分组导航条：第一阶段总分建档 → 第二阶段三路入库 → 第三阶段明细查漏 → 第四阶段诊断终点 -->
+    <StageTabStrip
+      :model-value="activeTab"
+      :groups="examStageGroups"
+      region-label="学校考试阶段工作区"
+      id-prefix="exam"
+      @update:model-value="id => (activeTab = id as ExamTabId)"
+    >
+      <template #tools>
         <span class="chip">{{ SCHOOL_SUBJECT_LABELS[subject] }} · {{ exams?.length ?? 0 }} 场</span>
         <HelpBubble title="校考录入说明" label="校考录入说明">
           <ul>
@@ -784,246 +972,366 @@ async function handleSyncPapersImported(examId: string) {
         <button type="button" class="ghost small" @click="refreshExams()">
           刷新
         </button>
-      </div>
-    </div>
-
-    <!-- 在原卷/已核对/错误分析子 Tab 下展示当前处理场次快速切换条 -->
-    <div
-      v-if="(activeTab === 'papers' || activeTab === 'items' || activeTab === 'analysis') && exams && exams.length > 0 && selectedDetail"
-      class="matrix-context-bar"
-    >
-      <div class="matrix-context-main">
-        <span class="eyebrow">当前场次</span>
-        <b>{{ selectedDetail.title }}</b>
-        <span :class="['chip', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
-          {{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }} ·
-          {{ selectedDetail.confirmed_by_user ? '已核对' : '未核对' }}
-        </span>
-      </div>
-      <div v-if="exams.length > 1" class="active-exam-switcher">
-        <span class="muted tiny">快速切换：</span>
-        <button
-          v-for="ex in exams"
-          :key="ex.id"
-          type="button"
-          :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
-          @click="selectExam(ex.id)"
-        >
-          {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
-        </button>
-      </div>
-    </div>
+      </template>
+    </StageTabStrip>
 
     <!-- 全局复用：当前学科知识点中文补全列表（供草稿校对与手工补录共用） -->
     <datalist :id="`school-exam-knowledge-list-${subject}`">
       <option v-for="opt in subjectKnowledgeOptions" :key="opt.code" :value="opt.label" />
     </datalist>
 
-    <!-- 子 Tab 1：总分台账与建档（3 列矩阵：已录校考台账 | 总分概览与锁定 | 新建校考档案） -->
+    <!-- 第一阶段 · 前置立锚：总分台账与建档（单卡两步：1. 选定或新建校考档案 → 2. 总分概览与材料入口） -->
     <div
       v-if="activeTab === 'scores'"
       id="exam-panel-scores"
       role="tabpanel"
       aria-labelledby="exam-tab-scores"
-      class="matrix-3col"
     >
-      <section class="card" aria-label="已录校考台账">
-        <div class="card-head">
-          <div>
-            <h3>已录校考台账 · {{ SCHOOL_SUBJECT_LABELS[subject] }}</h3>
-            <p class="card-sub">点击场次即可在中间栏查看总分或补充核对</p>
-          </div>
-          <span class="chip">{{ exams?.length ?? 0 }} 场</span>
-        </div>
-        <p v-if="exams === null" class="muted">已录入考试加载中…</p>
-        <p v-else-if="exams.length === 0" class="muted">
-          当前科目还没有录入过学校考试记录，可直接在右侧栏登记首场校考档案。
-        </p>
-        <ul v-else class="exam-list" tabindex="0" aria-label="已录校考场次列表">
-          <li
-            v-for="exam in exams"
-            :key="exam.id"
-            :class="['exam-item', exam.id === selectedExamId ? 'selected' : '']"
+      <StepFlowWorkspace
+        :model-value="scoreStep"
+        :steps="scoreSteps"
+        :context="examContext"
+        steps-aria-label="总分建档步骤"
+        @update:model-value="id => (scoreStep = id as ScoreStepId)"
+      >
+        <template #step-pick>
+          <section
+            class="card"
+            :aria-label="scorePickMode === 'create' ? '新建学校考试档案' : '已录校考台账'"
           >
-            <button
-              type="button"
-              class="source-pick exam-pick"
-              :aria-pressed="exam.id === selectedExamId"
-              @click="selectExam(exam.id)"
-            >
-              <span class="exam-title">{{ exam.title }}</span>
-              <span class="muted tiny">
-                {{ fmtExamMonth(exam.exam_date) }} · <b>{{ fmtPoints(exam.earned_points) }} / {{ fmtPoints(exam.max_points) }}</b>
-              </span>
-            </button>
-            <span :class="['chip', exam.confirmed_by_user ? 'good' : 'wait']">
-              {{ exam.confirmed_by_user ? '已核对' : '未核对' }}
-            </span>
-            <div class="exam-delete">
-              <template v-if="confirmDeleteExamId === exam.id">
-                <span class="muted tiny">删除本场？</span>
+            <div class="card-head">
+              <div>
+                <h3>
+                  {{
+                    scorePickMode === 'create'
+                      ? `新建 / 暂存校考档案 · ${SCHOOL_SUBJECT_LABELS[subject]}`
+                      : `已录校考台账 · ${SCHOOL_SUBJECT_LABELS[subject]}`
+                  }}
+                </h3>
+                <p class="card-sub">
+                  {{
+                    scorePickMode === 'create'
+                      ? '可先只暂存档案，成绩公布后再补锁总分'
+                      : '先选定一场学校考试或新建档案，再进入第 2 步查看总分与材料分流入口'
+                  }}
+                </p>
+              </div>
+              <div class="card-head-tools">
+                <div class="mode-switch" role="group" aria-label="台账与建档切换">
+                  <button
+                    type="button"
+                    :class="['mode-switch-btn', scorePickMode === 'list' ? 'active' : '']"
+                    @click="scorePickMode = 'list'"
+                  >
+                    已录校考台账 ({{ exams?.length ?? 0 }})
+                  </button>
+                  <button
+                    type="button"
+                    :class="['mode-switch-btn', scorePickMode === 'create' ? 'active' : '']"
+                    @click="scorePickMode = 'create'"
+                  >
+                    ＋ 新建 / 暂存档案
+                  </button>
+                </div>
+                <HelpBubble v-if="scorePickMode === 'create'" compact title="校考建档口径" label="建档说明">
+                  <p>{{ EXAM_NOTE }} 若暂未出分，可取消勾选人工核对先建档上传原卷。</p>
+                </HelpBubble>
+              </div>
+            </div>
+
+            <template v-if="scorePickMode === 'list'">
+              <p v-if="exams === null" class="muted">已录入考试加载中…</p>
+              <div v-else-if="exams.length === 0" class="muted">
+                <p>当前科目还没有录入过学校考试记录，点击右上角「＋ 新建 / 暂存档案」登记首场校考。</p>
+                <button type="button" class="primary small" @click="scorePickMode = 'create'">
+                  ＋ 新建首场校考档案
+                </button>
+              </div>
+              <template v-else>
+                <ul class="exam-list" tabindex="0" aria-label="已录校考场次列表">
+                  <li
+                    v-for="exam in exams"
+                    :key="exam.id"
+                    :class="['exam-item', exam.id === selectedExamId ? 'selected' : '']"
+                  >
+                    <button
+                      type="button"
+                      class="source-pick exam-pick"
+                      :aria-pressed="exam.id === selectedExamId"
+                      @click="selectExam(exam.id)"
+                    >
+                      <span class="exam-title">{{ exam.title }}</span>
+                      <span class="muted tiny">
+                        {{ fmtExamMonth(exam.exam_date) }} · <b>{{ fmtPoints(exam.earned_points) }} / {{ fmtPoints(exam.max_points) }}</b>
+                      </span>
+                    </button>
+                    <span :class="['chip', exam.confirmed_by_user ? 'good' : 'wait']">
+                      {{ exam.confirmed_by_user ? '已核对' : '未核对' }}
+                    </span>
+                    <button
+                      type="button"
+                      class="ghost small"
+                      @click="selectExamAndAdvance(exam.id)"
+                    >
+                      进入核对 →
+                    </button>
+                    <div class="exam-delete">
+                      <template v-if="confirmDeleteExamId === exam.id">
+                        <span class="muted tiny">删除本场？</span>
+                        <button
+                          type="button"
+                          class="ghost small"
+                          :disabled="deletingExamId === exam.id"
+                          :aria-label="`确认删除 ${exam.title}`"
+                          @click.stop="deleteExam(exam.id)"
+                        >
+                          {{ deletingExamId === exam.id ? '删除中…' : '确认删除' }}
+                        </button>
+                        <button type="button" class="ghost small" @click.stop="confirmDeleteExamId = null">取消</button>
+                      </template>
+                      <button
+                        v-else
+                        type="button"
+                        class="ghost small"
+                        :aria-label="`删除 ${exam.title}`"
+                        title="删除本场校考，同时删除逐题得分、原卷附件与排名快照，不可撤销"
+                        @click.stop="confirmDeleteExamId = exam.id"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </li>
+                </ul>
+
+                <div v-if="selectedDetail" class="card-footer-flow">
+                  <span class="muted tiny">已选中「{{ selectedDetail.title }}」</span>
+                  <button type="button" class="primary small" @click="scoreStep = 'detail'">
+                    下一步：总分概览与材料入口 →
+                  </button>
+                </div>
+              </template>
+            </template>
+
+            <template v-else>
+              <div class="exam-create-grid">
+                <label class="wide">
+                  考试名称
+                  <input v-model="examTitle" placeholder="如：九年级十月统一练习" />
+                </label>
+                <label>
+                  考试日期
+                  <input type="month" v-model="examDate" />
+                </label>
+                <label>
+                  获得分数
+                  <input
+                    type="number"
+                    :min="0"
+                    step="0.5"
+                    v-model.number="examEarned"
+                    :placeholder="createConfirmed ? '' : '暂存可留空（默认 0）'"
+                  />
+                </label>
+                <label>
+                  考试满分
+                  <input type="number" :min="1" step="0.5" v-model.number="examMax" />
+                </label>
+              </div>
+              <div class="confirm-box">
+                <input id="exam-create-confirmed" type="checkbox" v-model="createConfirmed" />
+                <label for="exam-create-confirmed">
+                  我已人工核对总分（若仅先归档空白原卷与答题卡、稍后补分，可取消勾选）
+                </label>
+              </div>
+              <div class="card-footer-flow">
                 <button
+                  v-if="exams && exams.length > 0"
                   type="button"
                   class="ghost small"
-                  :disabled="deletingExamId === exam.id"
-                  :aria-label="`确认删除 ${exam.title}`"
-                  @click.stop="deleteExam(exam.id)"
+                  @click="scorePickMode = 'list'"
                 >
-                  {{ deletingExamId === exam.id ? '删除中…' : '确认删除' }}
+                  ← 返回已录校考台账
                 </button>
-                <button type="button" class="ghost small" @click.stop="confirmDeleteExamId = null">取消</button>
-              </template>
-              <button
-                v-else
-                type="button"
-                class="ghost small"
-                :aria-label="`删除 ${exam.title}`"
-                title="删除本场校考，同时删除逐题得分、原卷附件与排名快照，不可撤销"
-                @click.stop="confirmDeleteExamId = exam.id"
-              >
-                删除
-              </button>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <section class="card exam-detail" aria-label="总分概览与核对锁定">
-        <p v-if="selectedExamId && loadingDetail && !selectedDetail" class="muted">正在加载校考详情…</p>
-        <template v-else-if="selectedDetail">
-          <div class="card-head">
-            <div>
-              <h3>总分概览：{{ selectedDetail.title }}</h3>
-              <p class="card-sub">总分仅作阶段台账记录，不折算考点得分</p>
-            </div>
-            <span :class="['chip', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
-              {{ selectedDetail.confirmed_by_user ? '总分已核对锁定' : '总分待补充确认' }}
-            </span>
-          </div>
-
-          <div class="exam-kpi-row">
-            <div :class="['kpi-tile', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
-              <b>{{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }}</b>
-              <span>实得 / 满分</span>
-            </div>
-            <div class="kpi-tile">
-              <b>{{ fmtExamMonth(selectedDetail.exam_date) }}</b>
-              <span>考试日期</span>
-            </div>
-            <div class="kpi-tile">
-              <b>{{ selectedDetail.attachments.length }} 份</b>
-              <span>私有原件附件</span>
-            </div>
-          </div>
-
-          <div v-if="!selectedDetail.confirmed_by_user" class="exam-confirm-panel">
-            <p class="muted tiny" style="margin: 0 0 8px;">
-              该场考试当前为待核对归档状态，核实成绩后可在此补充实得总分（确认后不可改写）。
-            </p>
-            <div class="confirm-inline-row">
-              <label>
-                补充实得总分
-                <input
-                  type="number"
-                  :min="0"
-                  :max="selectedDetail.max_points"
-                  step="0.5"
-                  v-model.number="confirmEarned"
-                />
-              </label>
-              <button
-                type="button"
-                class="primary"
-                @click="confirmSelectedExam"
-                :disabled="confirmingExam"
-              >
-                {{ confirmingExam ? '确认中…' : '确认并锁定总分' }}
-              </button>
-            </div>
-          </div>
-          <p v-else class="muted tiny" style="margin: 8px 0 0;">
-            该场次总分已完成人工核对并锁定；如需挂载原卷或校对草稿，可切换至「原卷与草稿校对」。
-          </p>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
-            <button type="button" class="ghost small" @click="activeTab = 'papers'">
-              前往原卷与草稿校对
-            </button>
-            <button type="button" class="ghost small" @click="activeTab = 'analysis'">
-              查看错误分析
-            </button>
-          </div>
+                <span v-else />
+                <button type="button" class="primary" @click="saveExam" :disabled="savingExam">
+                  {{ savingExam ? '保存中…' : (createConfirmed ? '记录已核对总分' : '暂存待核对档案') }}
+                </button>
+              </div>
+            </template>
+          </section>
         </template>
-        <template v-else>
-          <div class="card-head">
-            <h3>总分概览与核对锁定</h3>
-          </div>
-          <p class="muted">请先在左侧选择一场学校考试，或在右侧直接新建校考档案。</p>
-        </template>
-      </section>
 
-      <section class="card" aria-label="新建学校考试档案">
-        <div class="card-head">
-          <div>
-            <h3>新建 / 暂存校考档案 · {{ SCHOOL_SUBJECT_LABELS[subject] }}</h3>
-            <p class="card-sub">可先只暂存档案，成绩公布后再补锁总分</p>
-          </div>
-          <HelpBubble compact title="校考建档口径" label="建档说明">
-            <p>{{ EXAM_NOTE }} 若暂未出分，可取消勾选人工核对先建档上传原卷。</p>
-          </HelpBubble>
-        </div>
-        <div class="exam-create-grid">
-          <label class="wide">
-            考试名称
-            <input v-model="examTitle" placeholder="如：九年级十月统一练习" />
-          </label>
-          <label>
-            考试日期
-            <input type="month" v-model="examDate" />
-          </label>
-          <label>
-            获得分数
-            <input
-              type="number"
-              :min="0"
-              step="0.5"
-              v-model.number="examEarned"
-              :placeholder="createConfirmed ? '' : '暂存可留空（默认 0）'"
-            />
-          </label>
-          <label>
-            考试满分
-            <input type="number" :min="1" step="0.5" v-model.number="examMax" />
-          </label>
-        </div>
-        <div class="confirm-box">
-          <input id="exam-create-confirmed" type="checkbox" v-model="createConfirmed" />
-          <label for="exam-create-confirmed">
-            我已人工核对总分（若仅先归档空白原卷与答题卡、稍后补分，可取消勾选）
-          </label>
-        </div>
-        <button type="button" class="primary" @click="saveExam" :disabled="savingExam">
-          {{ savingExam ? '保存中…' : (createConfirmed ? '记录已核对总分' : '暂存待核对档案') }}
-        </button>
-      </section>
+        <template #step-detail>
+          <section class="card exam-detail" aria-label="总分概览与核对锁定">
+            <p v-if="selectedExamId && loadingDetail && !selectedDetail" class="muted">正在加载校考详情…</p>
+            <template v-else-if="selectedDetail">
+              <div class="card-head">
+                <div>
+                  <h3>总分概览：{{ selectedDetail.title }}</h3>
+                  <p class="card-sub">总分仅作阶段台账记录，不折算考点得分</p>
+                </div>
+                <span :class="['chip', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
+                  {{ selectedDetail.confirmed_by_user ? '总分已核对锁定' : '总分待补充确认' }}
+                </span>
+              </div>
+
+              <div class="exam-kpi-row">
+                <div :class="['kpi-tile', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
+                  <b>{{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }}</b>
+                  <span>实得 / 满分</span>
+                </div>
+                <div class="kpi-tile">
+                  <b>{{ fmtExamMonth(selectedDetail.exam_date) }}</b>
+                  <span>考试日期</span>
+                </div>
+                <div class="kpi-tile">
+                  <b>{{ selectedDetail.attachments.length }} 份</b>
+                  <span>私有原件附件</span>
+                </div>
+              </div>
+
+              <div v-if="!selectedDetail.confirmed_by_user" class="exam-confirm-panel">
+                <p class="muted tiny" style="margin: 0 0 8px;">
+                  该场考试当前为待核对归档状态，核实成绩后可在此补充实得总分（确认后不可改写）。
+                </p>
+                <div class="confirm-inline-row">
+                  <label>
+                    补充实得总分
+                    <input
+                      type="number"
+                      :min="0"
+                      :max="selectedDetail.max_points"
+                      step="0.5"
+                      v-model.number="confirmEarned"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="primary"
+                    @click="confirmSelectedExam"
+                    :disabled="confirmingExam"
+                  >
+                    {{ confirmingExam ? '确认中…' : '确认并锁定总分' }}
+                  </button>
+                </div>
+              </div>
+              <p v-else class="muted tiny" style="margin: 8px 0 0;">
+                该场次总分已完成人工核对并锁定；按手中材料在下方选择「第二阶段 · 材料入库」任意一条入口继续推进。
+              </p>
+
+              <div class="handoff-box" style="margin-top: 14px;">
+                <div>
+                  <b>第二阶段分流入口（按本次拿到材料任选一路）</b>
+                  <p class="muted tiny" style="margin: 4px 0 0;">
+                    已拿到分析报告去「报告导入」；多科同批导入去「全科同步」；直接传单科卷纸去「原卷与草稿校对」。
+                  </p>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button type="button" class="primary small" @click="activeTab = 'report'">
+                    1. 报告导入与核对
+                  </button>
+                  <button type="button" class="ghost small" @click="activeTab = 'sync'">
+                    2. 全科校考同步
+                  </button>
+                  <button type="button" class="ghost small" @click="activeTab = 'papers'">
+                    3. 原卷与草稿校对
+                  </button>
+                  <button type="button" class="ghost small" @click="activeTab = 'analysis'">
+                    查看错误分析
+                  </button>
+                </div>
+              </div>
+
+              <div class="card-footer-flow">
+                <button type="button" class="ghost small" @click="scoreStep = 'pick'">
+                  ← 返回第 1 步切换或新建场次
+                </button>
+              </div>
+            </template>
+          </section>
+        </template>
+      </StepFlowWorkspace>
     </div>
 
-    <!-- 子 Tab 2：原卷与草稿校对（4:6 矩阵：左栏上传与自动解析触发 | 右栏待核对草稿校对台） -->
+    <!-- 第二阶段（入口 3）：原卷与草稿校对（单卡三步：1. 上传私有原卷与答题卡 → 2. 自动解析待核对草稿 → 3. 待核对草稿校对台） -->
     <div
       v-else-if="activeTab === 'papers'"
       id="exam-panel-papers"
       role="tabpanel"
       aria-labelledby="exam-tab-papers"
     >
-      <section v-if="!selectedDetail" class="card" aria-label="私有原卷与答题卡">
-        <div class="card-head">
-          <h3>原卷与草稿校对</h3>
-        </div>
-        <p class="muted">当前尚未选定学校考试，请先前往「总分台账与建档」选定或新建场次。</p>
-      </section>
-      <div v-else class="matrix-4-6">
-        <!-- 左栏：私有原卷上传 + 附件清单 + 自动解析控制 -->
-        <div class="matrix-col-stack">
-          <section class="card" aria-label="上传私有原卷与答题卡">
+      <StepFlowWorkspace
+        :model-value="paperStep"
+        :steps="paperSteps"
+        :context="examContext"
+        steps-aria-label="原卷与草稿校对步骤"
+        @update:model-value="id => (paperStep = id as PaperStepId)"
+      >
+        <template #context-actions>
+          <div v-if="exams && exams.length > 1" class="active-exam-switcher">
+            <span class="muted tiny">快速切换：</span>
+            <button
+              v-for="ex in exams"
+              :key="ex.id"
+              type="button"
+              :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
+              @click="selectExam(ex.id)"
+            >
+              {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
+            </button>
+          </div>
+          <button type="button" class="ghost small" @click="activeTab = 'scores'">
+            ← 回第一阶段选场次
+          </button>
+        </template>
+
+        <template #locked="{ step }">
+          <section class="card" aria-label="私有原卷与答题卡">
+            <div class="card-head">
+              <h3>{{ step.title }}</h3>
+              <span class="chip wait">前置未就绪</span>
+            </div>
+            <p class="muted">{{ step.lockReason || '请先完成前置步骤。' }}</p>
+            <div class="card-footer-flow">
+              <button
+                v-if="!selectedDetail"
+                type="button"
+                class="primary small"
+                @click="activeTab = 'scores'"
+              >
+                ← 前往第一阶段选定校考
+              </button>
+              <template v-else-if="step.id === 'parse'">
+                <button type="button" class="primary small" @click="paperStep = 'upload'">
+                  ← 返回第 1 步上传原卷
+                </button>
+                <button
+                  v-if="unconfirmedDrafts.length > 0"
+                  type="button"
+                  class="ghost small"
+                  @click="paperStep = 'drafts'"
+                >
+                  前往第 3 步校对草稿 →
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  class="primary small"
+                  @click="paperStep = parseableAttachments.length > 0 ? 'parse' : 'upload'"
+                >
+                  ← {{ parseableAttachments.length > 0 ? '前往第 2 步解析草稿' : '前往第 1 步上传原卷' }}
+                </button>
+                <button type="button" class="ghost small" @click="activeTab = 'report'">
+                  去「报告导入与核对」生成草稿
+                </button>
+              </template>
+            </div>
+          </section>
+        </template>
+
+        <template #step-upload>
+          <section v-if="selectedDetail" class="card" aria-label="上传私有原卷与答题卡">
             <div class="card-head">
               <div>
                 <h3>上传私有原卷与答题卡</h3>
@@ -1090,9 +1398,35 @@ async function handleSyncPapersImported(examId: string) {
                 </li>
               </ul>
             </div>
-          </section>
 
-          <section class="card" aria-label="自动解析待核对草稿">
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="activeTab = 'report'">
+                或去「报告导入与核对」生成草稿
+              </button>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button
+                  v-if="unconfirmedDrafts.length > 0"
+                  type="button"
+                  class="ghost small"
+                  @click="paperStep = 'drafts'"
+                >
+                  直接校对现有草稿 ({{ unconfirmedDrafts.length }}) →
+                </button>
+                <button
+                  v-if="parseableAttachments.length > 0"
+                  type="button"
+                  class="primary small"
+                  @click="paperStep = 'parse'"
+                >
+                  下一步：自动解析待核对草稿 →
+                </button>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <template #step-parse>
+          <section v-if="selectedDetail" class="card" aria-label="自动解析待核对草稿">
             <div class="card-head">
               <div>
                 <h3>从原卷/答题卡自动解析草稿</h3>
@@ -1103,76 +1437,81 @@ async function handleSyncPapersImported(examId: string) {
               <span class="chip wait">未确认不进画像</span>
             </div>
 
-            <div v-if="parseableAttachments.length === 0" class="attachment-actions">
-              <span class="muted">
-                请先在上方上传可解析的原卷文档或答题卡图片；若已有分析报告册，也可直接从报告生成逐题草稿。
-              </span>
-              <button type="button" class="ghost small" @click="activeTab = 'report'">去“报告导入与核对”生成</button>
+            <span class="field-label">勾选参与本次解析的附件（支持多份联合识别）</span>
+            <div class="parse-attach-list">
+              <label
+                v-for="att in parseableAttachments"
+                :key="att.id"
+                :class="['parse-attach-chip', selectedParseAttachmentIds.includes(att.id) ? 'selected' : '']"
+              >
+                <input
+                  type="checkbox"
+                  :checked="selectedParseAttachmentIds.includes(att.id)"
+                  @change="toggleParseAttachment(att.id)"
+                />
+                <span>{{ att.filename }}</span>
+                <small class="muted">({{ getMediaTypeLabel(att.media_type) }})</small>
+              </label>
             </div>
-            <template v-else>
-              <span class="field-label">勾选参与本次解析的附件（支持多份联合识别）</span>
-              <div class="parse-attach-list">
-                <label
-                  v-for="att in parseableAttachments"
-                  :key="att.id"
-                  :class="['parse-attach-chip', selectedParseAttachmentIds.includes(att.id) ? 'selected' : '']"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="selectedParseAttachmentIds.includes(att.id)"
-                    @change="toggleParseAttachment(att.id)"
-                  />
-                  <span>{{ att.filename }}</span>
-                  <small class="muted">({{ getMediaTypeLabel(att.media_type) }})</small>
-                </label>
-              </div>
 
-              <div class="parse-controls-grid">
-                <label>
-                  解析方式
-                  <select v-model="parseMode" class="parse-mode-select" aria-label="草稿解析方式">
-                    <option value="auto">智能多模态联合识别（原卷 + 答题卡，识别错点与候选考点）</option>
-                    <option value="skeleton_only">仅本地提取题号与分值骨架（不联网，纯文字卷适用）</option>
-                  </select>
-                </label>
-              </div>
+            <div class="parse-controls-grid">
+              <label>
+                解析方式
+                <select v-model="parseMode" class="parse-mode-select" aria-label="草稿解析方式">
+                  <option value="auto">智能多模态联合识别（原卷 + 答题卡，识别错点与候选考点）</option>
+                  <option value="skeleton_only">仅本地提取题号与分值骨架（不联网，纯文字卷适用）</option>
+                </select>
+              </label>
+            </div>
 
-              <div v-if="parseMode === 'auto'" class="confirm-box">
-                <input id="parse-mask-header" type="checkbox" v-model="maskStudentHeader" />
-                <label for="parse-mask-header">
-                  送检识别模型前自动遮罩答题卡顶部姓名/考场/座位号区域（隐私脱敏保护）
-                </label>
-              </div>
+            <div v-if="parseMode === 'auto'" class="confirm-box">
+              <input id="parse-mask-header" type="checkbox" v-model="maskStudentHeader" />
+              <label for="parse-mask-header">
+                送检识别模型前自动遮罩答题卡顶部姓名/考场/座位号区域（隐私脱敏保护）
+              </label>
+            </div>
 
-              <div class="confirm-box">
-                <input id="parse-replace-unconfirmed" type="checkbox" v-model="replaceUnconfirmedDrafts" />
-                <label for="parse-replace-unconfirmed">
-                  重生成时清理本场尚未人工确认的旧草稿（已人工确认题目永久锁定，绝不覆盖）
-                </label>
-              </div>
+            <div class="confirm-box">
+              <input id="parse-replace-unconfirmed" type="checkbox" v-model="replaceUnconfirmedDrafts" />
+              <label for="parse-replace-unconfirmed">
+                重生成时清理本场尚未人工确认的旧草稿（已人工确认题目永久锁定，绝不覆盖）
+              </label>
+            </div>
 
-              <div class="attachment-actions">
-                <p v-if="parseMode === 'auto' && !hasAnswerCard" class="muted tiny">
-                  提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或去「报告导入与核对」生成逐题草稿。
-                </p>
-                <button
-                  type="button"
-                  class="primary"
-                  :disabled="parsingDrafts || selectedParseAttachmentIds.length === 0"
-                  @click="runParseDrafts"
-                >
-                  {{ parsingDrafts ? '解析中…' : '生成待核对草稿' }}
-                </button>
-                <span v-if="lastParseSummary" class="chip good">{{ lastParseSummary }}</span>
-              </div>
-              <p v-if="parseDraftError" class="form-error">{{ parseDraftError }}</p>
-            </template>
+            <div class="attachment-actions">
+              <p v-if="parseMode === 'auto' && !hasAnswerCard" class="muted tiny">
+                提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或去「报告导入与核对」生成逐题草稿。
+              </p>
+              <button
+                type="button"
+                class="primary"
+                :disabled="parsingDrafts || selectedParseAttachmentIds.length === 0"
+                @click="runParseDrafts"
+              >
+                {{ parsingDrafts ? '解析中…' : '生成待核对草稿' }}
+              </button>
+              <span v-if="lastParseSummary" class="chip good">{{ lastParseSummary }}</span>
+            </div>
+            <p v-if="parseDraftError" class="form-error">{{ parseDraftError }}</p>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="paperStep = 'upload'">
+                ← 返回第 1 步 · 上传原卷
+              </button>
+              <button
+                v-if="unconfirmedDrafts.length > 0 || confirmedItems.length > 0"
+                type="button"
+                class="primary small"
+                @click="paperStep = 'drafts'"
+              >
+                前往第 3 步 · 待核对草稿校对台 →
+              </button>
+            </div>
           </section>
-        </div>
+        </template>
 
-        <!-- 右栏：待核对草稿校对台 -->
-        <div class="matrix-col-stack">
-          <section class="card" aria-label="草稿校对台">
+        <template #step-drafts>
+          <section v-if="selectedDetail" class="card" aria-label="草稿校对台">
             <div class="card-head">
               <div>
                 <h3>待核对草稿校对台（未确认前不进能力画像）</h3>
@@ -1313,502 +1652,610 @@ async function handleSyncPapersImported(examId: string) {
             </template>
             <div v-else>
               <p class="muted">
-                当前场次暂无待核对草稿：可在左侧勾选原卷/答题卡发起解析，或切换「已核对明细与补录」手工录入小题。
+                当前场次暂无待核对草稿：可返回上传或解析原卷，或进入「第三阶段 · 已核对明细与补录」查看或手工录入小题。
               </p>
-              <button type="button" class="ghost small" @click="activeTab = 'items'">
-                前往已核对明细与补录
+            </div>
+
+            <div class="card-footer-flow">
+              <button
+                type="button"
+                class="ghost small"
+                @click="paperStep = parseableAttachments.length > 0 ? 'parse' : 'upload'"
+              >
+                ← {{ parseableAttachments.length > 0 ? '返回第 2 步 · 重新解析' : '返回第 1 步 · 上传原卷' }}
+              </button>
+              <button type="button" class="primary small" @click="activeTab = 'items'">
+                前往第三阶段 · 已核对明细与补录 →
               </button>
             </div>
           </section>
-        </div>
-      </div>
+        </template>
+      </StepFlowWorkspace>
     </div>
 
-    <!-- 子 Tab 3：已核对明细与补录（6:4 矩阵：已核对明细与复盘编辑 | 人工补录已核对小题） -->
+    <!-- 第三阶段 · 明细查漏：已核对明细与补录（单卡两步：1. 已核对逐题明细与复盘 → 2. 人工补录已核对小题） -->
     <div
       v-else-if="activeTab === 'items'"
       id="exam-panel-items"
       role="tabpanel"
       aria-labelledby="exam-tab-items"
     >
-      <section v-if="!selectedDetail" class="card" aria-label="逐题得分与考点明细">
-        <div class="card-head">
-          <h3>已核对明细与补录</h3>
-        </div>
-        <p class="muted">当前尚未选定学校考试，请先在「总分台账与建档」选定或新建场次。</p>
-      </section>
-      <div v-else class="matrix-6-4">
-        <section class="card" aria-label="逐题得分与考点明细">
-          <div class="card-head">
-            <div>
-              <h3>已核对逐题得分与考点明细（{{ confirmedItems.length }}）</h3>
-              <p class="card-sub">
-                {{
-                  subject === 'ethics'
-                    ? '道法暂未建立公共课标知识图谱，可按自定义主题标注错因与复盘备注'
-                    : '已完成人工确认的逐题明细已纳入学科能力证据与错误分析'
-                }}
-              </p>
-            </div>
-            <div class="card-head-tools">
-              <button
-                v-if="unconfirmedDrafts.length > 0"
-                type="button"
-                class="ghost small"
-                @click="activeTab = 'papers'"
-              >
-                待核对草稿 ({{ unconfirmedDrafts.length }}) →
-              </button>
-              <span class="chip">{{ subject === 'ethics' ? '道法 · 校考复盘档案' : '细粒度证据' }}</span>
-            </div>
-          </div>
-          <p v-if="confirmedItems.length === 0" class="muted">
-            {{
-              unconfirmedDrafts.length > 0
-                ? '当前题目均在「原卷与草稿校对」等待人工确认；确认后将在此显示并生成分析结果。'
-                : '还没有录入已确认的逐题得分明细，可在右侧表单手工补录。'
-            }}
-          </p>
-          <ul v-else class="attachment-list" tabindex="0" aria-label="已确认逐题得分明细列表">
-            <li v-for="it in confirmedItems" :key="it.id" class="attachment-row">
-              <div class="attachment-main">
-                <b>{{ it.question_label }}</b>
-                <span>{{ displayKnowledgeName(it) }}</span>
-                <span><b>{{ fmtPoints(it.earned_points) }} / {{ fmtPoints(it.max_points) }}</b></span>
-                <span v-if="it.earned_points < it.max_points" class="chip bad">
-                  失 -{{ fmtPoints(it.max_points - it.earned_points) }} 分
-                </span>
-                <span
-                  v-if="it.earned_points < it.max_points"
-                  :class="['chip', it.error_category ? 'mid' : 'wait']"
-                >
-                  {{ getSchoolErrorCategoryLabel(it.error_category) }}
-                </span>
-                <span class="chip good">已确认</span>
-              </div>
-              <p v-if="it.error_note" class="item-error-note">
-                复盘备注：{{ it.error_note }}
-              </p>
-              <div class="attachment-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button
-                  v-if="it.earned_points < it.max_points"
-                  type="button"
-                  class="ghost small"
-                  @click="editingAnalysisItemId === it.id ? cancelEditAnalysis() : startEditAnalysis(it)"
-                >
-                  {{ editingAnalysisItemId === it.id ? '收起复盘编辑' : '标注/修改错因' }}
-                </button>
-              </div>
-              <div v-if="editingAnalysisItemId === it.id" class="inline-analysis-editor">
-                <div class="admin-grid">
-                  <label>
-                    错因分类
-                    <select
-                      v-model="editErrorCategory"
-                      :aria-label="`${it.question_label} 错因分类`"
-                    >
-                      <option value="">未归类错因</option>
-                      <option
-                        v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                        :key="opt.value"
-                        :value="opt.value"
-                      >
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label>
-                    错题复盘备注
-                    <input
-                      v-model="editErrorNote"
-                      :aria-label="`${it.question_label} 错题复盘备注`"
-                      maxlength="500"
-                      placeholder="记录失分原因与改进要点"
-                    />
-                  </label>
-                </div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                  <button
-                    type="button"
-                    class="primary small"
-                    :disabled="savingAnalysis"
-                    @click="saveItemAnalysis(it)"
-                  >
-                    {{ savingAnalysis ? '保存中…' : '保存复盘' }}
-                  </button>
-                  <button type="button" class="ghost small" @click="cancelEditAnalysis">
-                    取消
-                  </button>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </section>
-
-        <section class="card" aria-label="人工补录已核对小题">
-          <div class="card-head">
-            <div>
-              <h3>人工补录已核对小题</h3>
-              <p class="card-sub">对照纸质阅卷结果逐题补充；未拿满分可同步标注错因</p>
-            </div>
+      <StepFlowWorkspace
+        :model-value="itemStep"
+        :steps="itemSteps"
+        :context="examContext"
+        steps-aria-label="逐题明细与补录步骤"
+        @update:model-value="id => (itemStep = id as ItemStepId)"
+      >
+        <template #context-actions>
+          <div v-if="exams && exams.length > 1" class="active-exam-switcher">
+            <span class="muted tiny">快速切换：</span>
             <button
-              v-if="subject === 'ethics'"
+              v-for="ex in exams"
+              :key="ex.id"
               type="button"
-              class="ghost small"
-              @click="itemKnowledgeId = '道法综合主题'"
+              :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
+              @click="selectExam(ex.id)"
             >
-              填入默认主题
+              {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
             </button>
           </div>
-          <div class="admin-grid">
-            <label>
-              题号（如 第1题）
-              <input v-model="itemLabel" placeholder="第1题" />
-            </label>
-            <label>
-              所属知识点
-              <input
-                v-model="itemKnowledgeId"
-                :list="`school-exam-knowledge-list-${subject}`"
-                :placeholder="subject === 'ethics' ? '如：法治与责任（支持直接填主题）' : '请从下拉选取或输入知识点中文名'"
-              />
-            </label>
-            <label>
-              小题得分
-              <input type="number" min="0" step="0.5" v-model.number="itemEarned" />
-            </label>
-            <label>
-              小题满分
-              <input type="number" min="0.5" max="100" step="0.5" v-model.number="itemMax" />
-            </label>
-            <template v-if="isNewItemLost">
-              <label>
-                错因分类（失分题选填）
-                <select v-model="itemErrorCategory">
-                  <option value="">暂不归类</option>
-                  <option
-                    v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                    :key="opt.value"
-                    :value="opt.value"
+        </template>
+
+        <template #locked="{ step }">
+          <section class="card" aria-label="逐题得分与考点明细">
+            <div class="card-head">
+              <h3>已核对明细与补录</h3>
+              <span class="chip wait">前置未就绪</span>
+            </div>
+            <p class="muted">{{ step.lockReason || '当前尚未选定学校考试，请先在「总分台账与建档」选定或新建场次。' }}</p>
+            <div class="card-footer-flow">
+              <button type="button" class="primary small" @click="activeTab = 'scores'">
+                ← 前往第一阶段选定校考
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-list>
+          <section v-if="selectedDetail" class="card" aria-label="逐题得分与考点明细">
+            <div class="card-head">
+              <div>
+                <h3>已核对逐题得分与考点明细（{{ confirmedItems.length }}）</h3>
+                <p class="card-sub">
+                  {{
+                    subject === 'ethics'
+                      ? '道法暂未建立公共课标知识图谱，可按自定义主题标注错因与复盘备注'
+                      : '已完成人工确认的逐题明细已纳入学科能力证据与错误分析'
+                  }}
+                </p>
+              </div>
+              <div class="card-head-tools">
+                <button
+                  v-if="unconfirmedDrafts.length > 0"
+                  type="button"
+                  class="ghost small"
+                  @click="activeTab = 'papers'; paperStep = 'drafts'"
+                >
+                  待核对草稿 ({{ unconfirmedDrafts.length }}) →
+                </button>
+                <span class="chip">{{ subject === 'ethics' ? '道法 · 校考复盘档案' : '细粒度证据' }}</span>
+              </div>
+            </div>
+            <p v-if="confirmedItems.length === 0" class="muted">
+              {{
+                unconfirmedDrafts.length > 0
+                  ? '当前题目均在「原卷与草稿校对」等待人工确认；确认后将在此显示并生成分析结果。'
+                  : '还没有录入已确认的逐题得分明细，可点击下方「第 2 步 · 人工补录小题」手工补充。'
+              }}
+            </p>
+            <ul v-else class="attachment-list" tabindex="0" aria-label="已确认逐题得分明细列表">
+              <li v-for="it in confirmedItems" :key="it.id" class="attachment-row">
+                <div class="attachment-main">
+                  <b>{{ it.question_label }}</b>
+                  <span>{{ displayKnowledgeName(it) }}</span>
+                  <span><b>{{ fmtPoints(it.earned_points) }} / {{ fmtPoints(it.max_points) }}</b></span>
+                  <span v-if="it.earned_points < it.max_points" class="chip bad">
+                    失 -{{ fmtPoints(it.max_points - it.earned_points) }} 分
+                  </span>
+                  <span
+                    v-if="it.earned_points < it.max_points"
+                    :class="['chip', it.error_category ? 'mid' : 'wait']"
                   >
-                    {{ opt.label }}
-                  </option>
-                </select>
+                    {{ getSchoolErrorCategoryLabel(it.error_category) }}
+                  </span>
+                  <span class="chip good">已确认</span>
+                </div>
+                <p v-if="it.error_note" class="item-error-note">
+                  复盘备注：{{ it.error_note }}
+                </p>
+                <div class="attachment-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button
+                    v-if="it.earned_points < it.max_points"
+                    type="button"
+                    class="ghost small"
+                    @click="editingAnalysisItemId === it.id ? cancelEditAnalysis() : startEditAnalysis(it)"
+                  >
+                    {{ editingAnalysisItemId === it.id ? '收起复盘编辑' : '标注/修改错因' }}
+                  </button>
+                </div>
+                <div v-if="editingAnalysisItemId === it.id" class="inline-analysis-editor">
+                  <div class="admin-grid">
+                    <label>
+                      错因分类
+                      <select
+                        v-model="editErrorCategory"
+                        :aria-label="`${it.question_label} 错因分类`"
+                      >
+                        <option value="">未归类错因</option>
+                        <option
+                          v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
+                          :key="opt.value"
+                          :value="opt.value"
+                        >
+                          {{ opt.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      错题复盘备注
+                      <input
+                        v-model="editErrorNote"
+                        :aria-label="`${it.question_label} 错题复盘备注`"
+                        maxlength="500"
+                        placeholder="记录失分原因与改进要点"
+                      />
+                    </label>
+                  </div>
+                  <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <button
+                      type="button"
+                      class="primary small"
+                      :disabled="savingAnalysis"
+                      @click="saveItemAnalysis(it)"
+                    >
+                      {{ savingAnalysis ? '保存中…' : '保存复盘' }}
+                    </button>
+                    <button type="button" class="ghost small" @click="cancelEditAnalysis">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </li>
+            </ul>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="itemStep = 'add'">
+                ＋ 第 2 步：人工补录已核对小题
+              </button>
+              <button type="button" class="primary small" @click="activeTab = 'analysis'">
+                前往第四阶段 · 错误分析与复盘 →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-add>
+          <section v-if="selectedDetail" class="card" aria-label="人工补录已核对小题">
+            <div class="card-head">
+              <div>
+                <h3>人工补录已核对小题</h3>
+                <p class="card-sub">对照纸质阅卷结果逐题补充；未拿满分可同步标注错因</p>
+              </div>
+              <button
+                v-if="subject === 'ethics'"
+                type="button"
+                class="ghost small"
+                @click="itemKnowledgeId = '道法综合主题'"
+              >
+                填入默认主题
+              </button>
+            </div>
+            <div class="admin-grid">
+              <label>
+                题号（如 第1题）
+                <input v-model="itemLabel" placeholder="第1题" />
               </label>
               <label>
-                错题复盘备注
+                所属知识点
                 <input
-                  v-model="itemErrorNote"
-                  maxlength="500"
-                  placeholder="如：漏看条件 / 判别式未讨论 / 材料要点缺失"
+                  v-model="itemKnowledgeId"
+                  :list="`school-exam-knowledge-list-${subject}`"
+                  :placeholder="subject === 'ethics' ? '如：法治与责任（支持直接填主题）' : '请从下拉选取或输入知识点中文名'"
                 />
               </label>
-            </template>
-          </div>
-          <button type="button" class="primary" @click="addItem" :disabled="savingItem">
-            {{ savingItem ? '录入中…' : '录入已核对小题' }}
-          </button>
-        </section>
-      </div>
+              <label>
+                小题得分
+                <input type="number" min="0" step="0.5" v-model.number="itemEarned" />
+              </label>
+              <label>
+                小题满分
+                <input type="number" min="0.5" max="100" step="0.5" v-model.number="itemMax" />
+              </label>
+              <template v-if="isNewItemLost">
+                <label>
+                  错因分类（失分题选填）
+                  <select v-model="itemErrorCategory">
+                    <option value="">暂不归类</option>
+                    <option
+                      v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  错题复盘备注
+                  <input
+                    v-model="itemErrorNote"
+                    maxlength="500"
+                    placeholder="如：漏看条件 / 判别式未讨论 / 材料要点缺失"
+                  />
+                </label>
+              </template>
+            </div>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="itemStep = 'list'">
+                ← 返回第 1 步 · 已核对明细列表
+              </button>
+              <button type="button" class="primary" @click="addItem" :disabled="savingItem">
+                {{ savingItem ? '录入中…' : '录入已核对小题' }}
+              </button>
+            </div>
+          </section>
+        </template>
+      </StepFlowWorkspace>
     </div>
 
-    <!-- 子 Tab 4：错误分析与复盘（上方 2 列对比概览与考点排行 + 下方整行历次顽固失分对比） -->
+    <!-- 第四阶段 · 诊断终点：错误分析与复盘（单卡三步：1. 失分概览与错因分布 → 2. 失分考点排行与交叉诊断 → 3. 同科历次顽固失分点对比） -->
     <div
       v-else-if="activeTab === 'analysis'"
       id="exam-panel-analysis"
       role="tabpanel"
       aria-labelledby="exam-tab-analysis"
-      class="matrix-col-stack"
     >
-      <section v-if="!selectedDetail || !errorAnalysis" class="card" aria-label="错误分析与复盘">
-        <div class="card-head">
-          <h3>错误分析与复盘</h3>
-        </div>
-        <p class="muted">
-          {{ loadingDetail ? '正在加载错误分析数据…' : '当前尚未选定学校考试，请先在「总分台账与建档」选定或新建场次。' }}
-        </p>
-      </section>
-      <template v-else>
-        <!-- 数据不足或尚无失分时的诚实状态卡 -->
-        <section
-          v-if="errorAnalysis.status !== 'analyzed'"
-          class="card"
-          aria-label="错误分析数据状态说明"
-        >
-          <div class="card-head">
-            <div>
-              <h3>本场错误分析 · {{ errorAnalysis.title }}</h3>
-              <p class="card-sub">{{ errorAnalysis.diagnosis_summary }}</p>
-            </div>
-            <div class="card-head-tools">
-              <HelpBubble compact title="错误分析口径说明" label="分析口径">
-                <p>严格遵守诚实诊断口径，绝不从试卷总分反推考点得分；{{ errorAnalysis.disclaimer }}</p>
-              </HelpBubble>
-              <span class="chip wait">
-                {{ errorAnalysis.status === 'insufficient_items' ? '待补充逐题失分明细' : '暂无失分记录' }}
-              </span>
-            </div>
-          </div>
-          <div class="exam-kpi-row">
-            <div class="kpi-tile">
-              <b>
-                {{
-                  errorAnalysis.confirmed_by_user
-                    ? `${fmtPoints(errorAnalysis.overview.earned_points)} / ${fmtPoints(errorAnalysis.overview.max_points)}`
-                    : '待确认'
-                }}
-              </b>
-              <span>卷面总分</span>
-            </div>
-            <div class="kpi-tile">
-              <b>{{ errorAnalysis.overview.confirmed_item_count }} 题</b>
-              <span>已核对小题明细</span>
-            </div>
-            <div class="kpi-tile wait">
-              <b>{{ errorAnalysis.overview.unconfirmed_draft_count }} 题</b>
-              <span>待核对自动提取草稿</span>
-            </div>
-          </div>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-            <button type="button" class="primary" @click="activeTab = 'items'">
-              前往补录失分小题
+      <StepFlowWorkspace
+        :model-value="analysisStep"
+        :steps="analysisSteps"
+        :context="examContext"
+        steps-aria-label="错误分析与复盘步骤"
+        @update:model-value="id => (analysisStep = id as AnalysisStepId)"
+      >
+        <template #context-actions>
+          <div v-if="exams && exams.length > 1" class="active-exam-switcher">
+            <span class="muted tiny">快速切换：</span>
+            <button
+              v-for="ex in exams"
+              :key="ex.id"
+              type="button"
+              :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
+              @click="selectExam(ex.id)"
+            >
+              {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
             </button>
-            <button type="button" class="ghost small" @click="activeTab = 'papers'">
-              查看原卷与草稿校对
-            </button>
-          </div>
-        </section>
-
-        <!-- 已有失分明细时的 2 列主诊断 + 跨场次历次复盘 -->
-        <template v-else>
-          <div class="matrix-2col">
-            <!-- 左栏：本场失分概览与错因分布 -->
-            <section class="card" aria-label="本场失分概览与错因分布">
-              <div class="card-head">
-                <div>
-                  <h3>本场失分概览与错因分布</h3>
-                  <p class="card-sub">{{ errorAnalysis.diagnosis_summary }}</p>
-                </div>
-                <div class="card-head-tools">
-                  <HelpBubble compact title="统计范围说明" label="口径说明">
-                    <p>仅汇总已人工核对的逐题失分；未单独归类的失分小题保持如实标示。</p>
-                    <p v-if="errorAnalysis.overview.unconfirmed_draft_count > 0">
-                      另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 道自动提取草稿待核对，确认后自动纳入统计。
-                    </p>
-                  </HelpBubble>
-                  <span class="chip mid">
-                    已归因 {{ errorAnalysis.overview.lost_item_count }} 题 · -{{ fmtPoints(errorAnalysis.overview.itemized_lost_points) }} 分
-                  </span>
-                </div>
-              </div>
-
-              <div
-                v-if="errorAnalysis.overview.unconfirmed_draft_count > 0"
-                style="margin-bottom: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;"
-              >
-                <span class="chip wait">
-                  另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 题草稿待核对
-                </span>
-                <button type="button" class="ghost small" @click="activeTab = 'papers'">
-                  去校对草稿
-                </button>
-              </div>
-
-              <div class="exam-analysis-kpis">
-                <div class="kpi-tile bad">
-                  <b>{{ errorAnalysis.overview.lost_item_count }} / {{ errorAnalysis.overview.confirmed_item_count }} 题</b>
-                  <span>已核对失分题 / 总核对题</span>
-                </div>
-                <div class="kpi-tile">
-                  <b>
-                    -{{ fmtPoints(errorAnalysis.overview.itemized_lost_points) }}
-                    <template v-if="errorAnalysis.overview.paper_lost_points !== null">
-                      / -{{ fmtPoints(errorAnalysis.overview.paper_lost_points) }}
-                    </template>
-                    分
-                  </b>
-                  <span>
-                    {{
-                      errorAnalysis.overview.paper_lost_points !== null
-                        ? '已归因失分 / 卷面总失分'
-                        : '已归因失分（卷面总分待核对）'
-                    }}
-                  </span>
-                </div>
-                <div class="kpi-tile wait">
-                  <b>
-                    {{
-                      errorAnalysis.overview.primary_error_category
-                        ? getSchoolErrorCategoryLabel(errorAnalysis.overview.primary_error_category)
-                        : '待标注'
-                    }}
-                  </b>
-                  <span>首要错因类型</span>
-                </div>
-                <div class="kpi-tile">
-                  <b>{{ errorAnalysis.overview.primary_knowledge_name || '—' }}</b>
-                  <span>首要失分考点</span>
-                </div>
-              </div>
-
-              <h4 class="sub-head" style="margin: 12px 0 8px;">各错因类型失分占比</h4>
-              <ul class="error-cat-list" tabindex="0" aria-label="错因归类统计列表">
-                <li v-for="cat in errorAnalysis.by_category" :key="cat.category" class="error-cat-row">
-                  <div class="error-cat-head">
-                    <b>{{ getSchoolErrorCategoryLabel(cat.category) }}</b>
-                    <span>
-                      <b>-{{ fmtPoints(cat.lost_points) }} 分</b>
-                      （占 {{ fmtPct(cat.share_of_itemized_loss) }} · {{ cat.item_count }} 题）
-                    </span>
-                  </div>
-                  <div class="error-bar-track" aria-hidden="true">
-                    <div
-                      class="error-bar-fill"
-                      :style="{ width: `${Math.max(4, Math.round(cat.share_of_itemized_loss * 100))}%` }"
-                    />
-                  </div>
-                  <div class="muted tiny">
-                    涉及题号：{{ cat.question_labels.join('、') }}
-                    <button
-                      v-if="cat.category === 'uncategorized'"
-                      type="button"
-                      class="link-btn"
-                      @click="activeTab = 'items'"
-                    >
-                      前往补充错因标注
-                    </button>
-                  </div>
-                </li>
-              </ul>
-            </section>
-
-            <!-- 右栏：本场失分考点排行与平时掌握度交叉诊断 -->
-            <section class="card" aria-label="本场失分考点排行与交叉诊断">
-              <div class="card-head">
-                <div>
-                  <h3>本场失分考点排行与交叉诊断</h3>
-                  <p class="card-sub">
-                    {{
-                      errorAnalysis.has_taxonomy
-                        ? '对比本次校考失分与日常练习独立首答表现'
-                        : '道法科目无公共知识图谱，按手工主题归集复盘'
-                    }}
-                  </p>
-                </div>
-                <span class="chip">
-                  {{ errorAnalysis.has_taxonomy ? '校考失分 × 平时掌握对照' : '主题失分排行' }}
-                </span>
-              </div>
-              <ul class="attachment-list" tabindex="0" aria-label="本场失分考点排行列表">
-                <li v-for="kn in errorAnalysis.by_knowledge" :key="kn.knowledge_id" class="attachment-row">
-                  <div class="attachment-main">
-                    <b>{{ kn.knowledge_name }}</b>
-                    <span class="chip bad">失 -{{ fmtPoints(kn.lost_points) }} 分</span>
-                    <span class="chip subtle">占已归因 {{ fmtPct(kn.share_of_itemized_loss) }}</span>
-                    <span
-                      :class="['chip', DIAGNOSIS_TAG_META[kn.diagnosis_tag]?.tone || 'mid']"
-                    >
-                      {{ DIAGNOSIS_TAG_META[kn.diagnosis_tag]?.label || kn.diagnosis_tag }}
-                    </span>
-                  </div>
-                  <div class="attachment-meta">
-                    本场得分率 {{ fmtPct(kn.exam_observed_rate) }}（涉及 {{ kn.question_labels.join('、') }}）
-                    <template v-if="errorAnalysis.has_taxonomy">
-                      · 平时作答：{{ PRACTICE_STATUS_TEXT[kn.practice_status] || kn.practice_status }}
-                      <template v-if="kn.practice_observed_rate !== null">
-                        （{{ fmtPct(kn.practice_observed_rate) }} / {{ kn.practice_sample_size }} 题）
-                      </template>
-                    </template>
-                    <template v-if="kn.categories.length > 0">
-                      · 错因：{{ kn.categories.map(c => getSchoolErrorCategoryLabel(c)).join('、') }}
-                    </template>
-                  </div>
-                  <p
-                    v-for="(noteItem, idx) in kn.notes"
-                    :key="`${kn.knowledge_id}-${idx}`"
-                    class="item-error-note"
-                  >
-                    {{ noteItem.question_label }} 复盘：{{ noteItem.note }}
-                  </p>
-                </li>
-              </ul>
-
-              <h4 class="sub-head" style="margin: 14px 0 8px;">失分小题明细速览（点击可回明细页修改复盘）</h4>
-              <ul class="attachment-list" tabindex="0" aria-label="失分小题明细列表">
-                <li v-for="li in errorAnalysis.lost_items" :key="li.id" class="attachment-row">
-                  <div class="attachment-main">
-                    <b>{{ li.question_label }}</b>
-                    <span>{{ li.knowledge_name }}</span>
-                    <span class="chip bad">-{{ fmtPoints(li.lost_points) }} 分</span>
-                    <span :class="['chip', li.error_category ? 'mid' : 'wait']">
-                      {{ getSchoolErrorCategoryLabel(li.error_category) }}
-                    </span>
-                    <button
-                      type="button"
-                      class="ghost small"
-                      style="margin-left: auto;"
-                      @click="jumpToEditItem(li.id)"
-                    >
-                      补充/修改错因
-                    </button>
-                  </div>
-                  <p v-if="li.error_note" class="item-error-note">
-                    复盘备注：{{ li.error_note }}
-                  </p>
-                </li>
-              </ul>
-            </section>
           </div>
         </template>
 
-        <!-- 下方整行：同科历次校考顽固失分点对比 -->
-        <section class="card" aria-label="同科历次校考顽固失分点对比">
-          <div class="card-head">
-            <div>
-              <h3>同科历次校考顽固失分点对比</h3>
-              <p class="card-sub">
-                自动统计「{{ SCHOOL_SUBJECT_LABELS[subject] }}」跨 ≥ 2 场已核对校考重复扣分的知识点
-              </p>
+        <template #locked>
+          <section v-if="!selectedDetail || !errorAnalysis" class="card" aria-label="错误分析与复盘">
+            <div class="card-head">
+              <h3>错误分析与复盘</h3>
+              <span class="chip wait">前置未就绪</span>
             </div>
-            <div class="card-head-tools">
-              <HelpBubble compact title="校考数据诚实声明" label="诚实口径">
-                <p>{{ errorAnalysis.disclaimer }}</p>
-              </HelpBubble>
+            <p class="muted">
+              {{ loadingDetail ? '正在加载错误分析数据…' : '当前尚未选定学校考试，请先在「总分台账与建档」选定或新建场次。' }}
+            </p>
+            <div v-if="!loadingDetail" class="card-footer-flow">
+              <button type="button" class="primary small" @click="activeTab = 'scores'">
+                ← 前往第一阶段选定校考
+              </button>
+            </div>
+          </section>
+
+          <section v-else class="card" aria-label="错误分析数据状态说明">
+            <div class="card-head">
+              <div>
+                <h3>本场错误分析 · {{ errorAnalysis.title }}</h3>
+                <p class="card-sub">{{ errorAnalysis.diagnosis_summary }}</p>
+              </div>
+              <div class="card-head-tools">
+                <HelpBubble compact title="错误分析口径说明" label="分析口径">
+                  <p>严格遵守诚实诊断口径，绝不从试卷总分反推考点得分；{{ errorAnalysis.disclaimer }}</p>
+                </HelpBubble>
+                <span class="chip wait">
+                  {{ errorAnalysis.status === 'insufficient_items' ? '待补充逐题失分明细' : '暂无失分记录' }}
+                </span>
+              </div>
+            </div>
+            <div class="exam-kpi-row">
+              <div class="kpi-tile">
+                <b>
+                  {{
+                    errorAnalysis.confirmed_by_user
+                      ? `${fmtPoints(errorAnalysis.overview.earned_points)} / ${fmtPoints(errorAnalysis.overview.max_points)}`
+                      : '待确认'
+                  }}
+                </b>
+                <span>卷面总分</span>
+              </div>
+              <div class="kpi-tile">
+                <b>{{ errorAnalysis.overview.confirmed_item_count }} 题</b>
+                <span>已核对小题明细</span>
+              </div>
+              <div class="kpi-tile wait">
+                <b>{{ errorAnalysis.overview.unconfirmed_draft_count }} 题</b>
+                <span>待核对自动提取草稿</span>
+              </div>
+            </div>
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="activeTab = 'papers'">
+                查看原卷与草稿校对
+              </button>
+              <button type="button" class="primary" @click="goAnalysisAddItems">
+                前往补录失分小题
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-overview>
+          <section v-if="errorAnalysis" class="card" aria-label="本场失分概览与错因分布">
+            <div class="card-head">
+              <div>
+                <h3>本场失分概览与错因分布</h3>
+                <p class="card-sub">{{ errorAnalysis.diagnosis_summary }}</p>
+              </div>
+              <div class="card-head-tools">
+                <HelpBubble compact title="统计范围说明" label="口径说明">
+                  <p>仅汇总已人工核对的逐题失分；未单独归类的失分小题保持如实标示。</p>
+                  <p v-if="errorAnalysis.overview.unconfirmed_draft_count > 0">
+                    另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 道自动提取草稿待核对，确认后自动纳入统计。
+                  </p>
+                </HelpBubble>
+                <span class="chip mid">
+                  已归因 {{ errorAnalysis.overview.lost_item_count }} 题 · -{{ fmtPoints(errorAnalysis.overview.itemized_lost_points) }} 分
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="errorAnalysis.overview.unconfirmed_draft_count > 0"
+              style="margin-bottom: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;"
+            >
+              <span class="chip wait">
+                另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 题草稿待核对
+              </span>
+              <button type="button" class="ghost small" @click="activeTab = 'papers'; paperStep = 'drafts'">
+                去校对草稿
+              </button>
+            </div>
+
+            <div class="exam-analysis-kpis">
+              <div class="kpi-tile bad">
+                <b>{{ errorAnalysis.overview.lost_item_count }} / {{ errorAnalysis.overview.confirmed_item_count }} 题</b>
+                <span>已核对失分题 / 总核对题</span>
+              </div>
+              <div class="kpi-tile">
+                <b>
+                  -{{ fmtPoints(errorAnalysis.overview.itemized_lost_points) }}
+                  <template v-if="errorAnalysis.overview.paper_lost_points !== null">
+                    / -{{ fmtPoints(errorAnalysis.overview.paper_lost_points) }}
+                  </template>
+                  分
+                </b>
+                <span>
+                  {{
+                    errorAnalysis.overview.paper_lost_points !== null
+                      ? '已归因失分 / 卷面总失分'
+                      : '已归因失分（卷面总分待核对）'
+                  }}
+                </span>
+              </div>
+              <div class="kpi-tile wait">
+                <b>
+                  {{
+                    errorAnalysis.overview.primary_error_category
+                      ? getSchoolErrorCategoryLabel(errorAnalysis.overview.primary_error_category)
+                      : '待标注'
+                  }}
+                </b>
+                <span>首要错因类型</span>
+              </div>
+              <div class="kpi-tile">
+                <b>{{ errorAnalysis.overview.primary_knowledge_name || '—' }}</b>
+                <span>首要失分考点</span>
+              </div>
+            </div>
+
+            <h4 class="sub-head" style="margin: 12px 0 8px;">各错因类型失分占比</h4>
+            <ul class="error-cat-list" tabindex="0" aria-label="错因归类统计列表">
+              <li v-for="cat in errorAnalysis.by_category" :key="cat.category" class="error-cat-row">
+                <div class="error-cat-head">
+                  <b>{{ getSchoolErrorCategoryLabel(cat.category) }}</b>
+                  <span>
+                    <b>-{{ fmtPoints(cat.lost_points) }} 分</b>
+                    （占 {{ fmtPct(cat.share_of_itemized_loss) }} · {{ cat.item_count }} 题）
+                  </span>
+                </div>
+                <div class="error-bar-track" aria-hidden="true">
+                  <div
+                    class="error-bar-fill"
+                    :style="{ width: `${Math.max(4, Math.round(cat.share_of_itemized_loss * 100))}%` }"
+                  />
+                </div>
+                <div class="muted tiny">
+                  涉及题号：{{ cat.question_labels.join('、') }}
+                  <button
+                    v-if="cat.category === 'uncategorized'"
+                    type="button"
+                    class="link-btn"
+                    @click="activeTab = 'items'; itemStep = 'list'"
+                  >
+                    前往补充错因标注
+                  </button>
+                </div>
+              </li>
+            </ul>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="activeTab = 'items'; itemStep = 'list'">
+                ← 回第三阶段修改错因标注
+              </button>
+              <button type="button" class="primary small" @click="analysisStep = 'knowledge'">
+                下一步：失分考点排行与交叉诊断 →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-knowledge>
+          <section v-if="errorAnalysis" class="card" aria-label="本场失分考点排行与交叉诊断">
+            <div class="card-head">
+              <div>
+                <h3>本场失分考点排行与交叉诊断</h3>
+                <p class="card-sub">
+                  {{
+                    errorAnalysis.has_taxonomy
+                      ? '对比本次校考失分与日常练习独立首答表现'
+                      : '道法科目无公共知识图谱，按手工主题归集复盘'
+                  }}
+                </p>
+              </div>
               <span class="chip">
-                已统计 {{ errorAnalysis.history_summary.same_subject_exams_with_items }} / {{ errorAnalysis.history_summary.same_subject_exam_count }} 场含明细校考
+                {{ errorAnalysis.has_taxonomy ? '校考失分 × 平时掌握对照' : '主题失分排行' }}
               </span>
             </div>
-          </div>
-          <p v-if="errorAnalysis.recurring_knowledge.length === 0" class="muted">
-            当前「{{ SCHOOL_SUBJECT_LABELS[subject] }}」暂无跨 2 场以上重复失分的考点；连续多次录入逐题明细后，系统将自动识别顽固薄弱环节。
-          </p>
-          <ul v-else class="attachment-list" tabindex="0" aria-label="同科历次顽固失分考点列表">
-            <li
-              v-for="rk in errorAnalysis.recurring_knowledge"
-              :key="rk.knowledge_id"
-              class="attachment-row"
-            >
-              <div class="attachment-main">
-                <b>{{ rk.knowledge_name }}</b>
-                <span v-if="rk.repeat_in_current_exam" class="chip bad">本场再次失分</span>
-                <span class="chip wait">跨 {{ rk.exam_count }} 场共 {{ rk.total_item_count }} 题</span>
-                <span class="chip bad">累计失 -{{ fmtPoints(rk.total_lost_points) }} 分</span>
+            <ul class="attachment-list" tabindex="0" aria-label="本场失分考点排行列表">
+              <li v-for="kn in errorAnalysis.by_knowledge" :key="kn.knowledge_id" class="attachment-row">
+                <div class="attachment-main">
+                  <b>{{ kn.knowledge_name }}</b>
+                  <span class="chip bad">失 -{{ fmtPoints(kn.lost_points) }} 分</span>
+                  <span class="chip subtle">占已归因 {{ fmtPct(kn.share_of_itemized_loss) }}</span>
+                  <span
+                    :class="['chip', DIAGNOSIS_TAG_META[kn.diagnosis_tag]?.tone || 'mid']"
+                  >
+                    {{ DIAGNOSIS_TAG_META[kn.diagnosis_tag]?.label || kn.diagnosis_tag }}
+                  </span>
+                </div>
+                <div class="attachment-meta">
+                  本场得分率 {{ fmtPct(kn.exam_observed_rate) }}（涉及 {{ kn.question_labels.join('、') }}）
+                  <template v-if="errorAnalysis.has_taxonomy">
+                    · 平时作答：{{ PRACTICE_STATUS_TEXT[kn.practice_status] || kn.practice_status }}
+                    <template v-if="kn.practice_observed_rate !== null">
+                      （{{ fmtPct(kn.practice_observed_rate) }} / {{ kn.practice_sample_size }} 题）
+                    </template>
+                  </template>
+                  <template v-if="kn.categories.length > 0">
+                    · 错因：{{ kn.categories.map(c => getSchoolErrorCategoryLabel(c)).join('、') }}
+                  </template>
+                </div>
+                <p
+                  v-for="(noteItem, idx) in kn.notes"
+                  :key="`${kn.knowledge_id}-${idx}`"
+                  class="item-error-note"
+                >
+                  {{ noteItem.question_label }} 复盘：{{ noteItem.note }}
+                </p>
+              </li>
+            </ul>
+
+            <h4 class="sub-head" style="margin: 14px 0 8px;">失分小题明细速览（点击可回明细页修改复盘）</h4>
+            <ul class="attachment-list" tabindex="0" aria-label="失分小题明细列表">
+              <li v-for="li in errorAnalysis.lost_items" :key="li.id" class="attachment-row">
+                <div class="attachment-main">
+                  <b>{{ li.question_label }}</b>
+                  <span>{{ li.knowledge_name }}</span>
+                  <span class="chip bad">-{{ fmtPoints(li.lost_points) }} 分</span>
+                  <span :class="['chip', li.error_category ? 'mid' : 'wait']">
+                    {{ getSchoolErrorCategoryLabel(li.error_category) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="ghost small"
+                    style="margin-left: auto;"
+                    @click="jumpToEditItem(li.id)"
+                  >
+                    补充/修改错因
+                  </button>
+                </div>
+                <p v-if="li.error_note" class="item-error-note">
+                  复盘备注：{{ li.error_note }}
+                </p>
+              </li>
+            </ul>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="analysisStep = 'overview'">
+                ← 上一步：本场失分概览
+              </button>
+              <button type="button" class="primary small" @click="analysisStep = 'history'">
+                下一步：同科历次顽固失分点对比 →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-history>
+          <section v-if="errorAnalysis" class="card" aria-label="同科历次校考顽固失分点对比">
+            <div class="card-head">
+              <div>
+                <h3>同科历次校考顽固失分点对比</h3>
+                <p class="card-sub">
+                  自动统计「{{ SCHOOL_SUBJECT_LABELS[subject] }}」跨 ≥ 2 场已核对校考重复扣分的知识点
+                </p>
               </div>
-              <div class="attachment-meta">
-                涉及场次：
-                {{
-                  rk.exams
-                    .map(ex => `${fmtExamMonth(ex.exam_date)} ${ex.title}（-${fmtPoints(ex.lost_points)} 分 / ${ex.item_count} 题）`)
-                    .join('；')
-                }}
+              <div class="card-head-tools">
+                <HelpBubble compact title="校考数据诚实声明" label="诚实口径">
+                  <p>{{ errorAnalysis.disclaimer }}</p>
+                </HelpBubble>
+                <span class="chip">
+                  已统计 {{ errorAnalysis.history_summary.same_subject_exams_with_items }} / {{ errorAnalysis.history_summary.same_subject_exam_count }} 场含明细校考
+                </span>
               </div>
-            </li>
-          </ul>
-        </section>
-      </template>
+            </div>
+            <p v-if="errorAnalysis.recurring_knowledge.length === 0" class="muted">
+              当前「{{ SCHOOL_SUBJECT_LABELS[subject] }}」暂无跨 2 场以上重复失分的考点；连续多次录入逐题明细后，系统将自动识别顽固薄弱环节。
+            </p>
+            <ul v-else class="attachment-list" tabindex="0" aria-label="同科历次顽固失分考点列表">
+              <li
+                v-for="rk in errorAnalysis.recurring_knowledge"
+                :key="rk.knowledge_id"
+                class="attachment-row"
+              >
+                <div class="attachment-main">
+                  <b>{{ rk.knowledge_name }}</b>
+                  <span v-if="rk.repeat_in_current_exam" class="chip bad">本场再次失分</span>
+                  <span class="chip wait">跨 {{ rk.exam_count }} 场共 {{ rk.total_item_count }} 题</span>
+                  <span class="chip bad">累计失 -{{ fmtPoints(rk.total_lost_points) }} 分</span>
+                </div>
+                <div class="attachment-meta">
+                  涉及场次：
+                  {{
+                    rk.exams
+                      .map(ex => `${fmtExamMonth(ex.exam_date)} ${ex.title}（-${fmtPoints(ex.lost_points)} 分 / ${ex.item_count} 题）`)
+                      .join('；')
+                  }}
+                </div>
+              </li>
+            </ul>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="analysisStep = 'knowledge'">
+                ← 上一步：失分考点排行诊断
+              </button>
+              <button type="button" class="ghost small" @click="activeTab = 'items'; itemStep = 'list'">
+                前往第三阶段补充/修改错因
+              </button>
+            </div>
+          </section>
+        </template>
+      </StepFlowWorkspace>
     </div>
 
-    <!-- 子 Tab 5：全科校考同步（发现 → 匹配 → 获取 → 核对四步工作流） -->
+    <!-- 第二阶段（入口 2）：全科校考同步（发现 → 匹配 → 获取 → 核对四步工作流） -->
     <div
       v-else-if="activeTab === 'sync'"
       id="exam-panel-sync"
@@ -1825,14 +2272,20 @@ async function handleSyncPapersImported(examId: string) {
       />
     </div>
 
-    <!-- 子 Tab 6：校考报告导入与核对（发现 → 关联 → 解析 → 核对四步工作流） -->
+    <!-- 第二阶段（入口 1）：校考报告导入与核对（发现 → 关联 → 解析 → 核对四步工作流） -->
     <div
       v-else
       id="exam-panel-report"
       role="tabpanel"
       aria-labelledby="exam-tab-report"
     >
-      <SchoolExamReportCenter :client="client" :subject="subject" :notify="notify" />
+      <SchoolExamReportCenter
+        :client="client"
+        :subject="subject"
+        :notify="notify"
+        @open-scores="activeTab = 'scores'"
+        @open-papers-drafts="openPapersDraftsFromReport"
+      />
     </div>
   </section>
 </template>
