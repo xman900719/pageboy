@@ -1,0 +1,8 @@
+{
+  "name": "pageboy-dev",
+  "version": "1.6.0",
+  "description": "书童 (Pageboy) 核心开发插件：集成工程红线 PreToolUse Hook、CodeGraph MCP 与全栈验证/前端 iPadOS 模拟机验收/校考课标渐进式 Skills。",
+  "author": {
+    "name": "Pageboy Engineering"
+  }
+}

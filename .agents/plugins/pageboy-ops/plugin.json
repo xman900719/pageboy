@@ -1,0 +1,9 @@
+{
+  "name": "pageboy-ops",
+  "version": "1.6.0",
+  "description": "书童 (Pageboy) 生产与灾备运维插件（默认禁用）：集成 Cloudflare MCP 与标签化部署回滚/R2 异地联合备份恢复演练 Skill。",
+  "disabled": true,
+  "author": {
+    "name": "Pageboy Operations"
+  }
+}
