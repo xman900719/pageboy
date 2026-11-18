@@ -302,3 +302,191 @@ def test_load_vision_config_strips_anthropic_suffix(monkeypatch):
     cfg = parser.load_vision_config(require_key=True)
     assert cfg is not None
     assert cfg.base_url == "https://api.deepseek.com"
+
+
+def test_auto_associate_five_subjects_and_top3_guarantee(monkeypatch):
+    """覆盖 5 学科 Tier 1 关键词命中与 Tier 3 先验补齐，保证每题均产出 3 个有效候选。"""
+    monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    chinese_catalog = [
+        {"code": "chinese_cand.base.phonetics", "name": "字音辨析", "is_elective": False},
+        {"code": "chinese_cand.base.character_orthography", "name": "字形书写", "is_elective": False},
+        {"code": "chinese_cand.base.idiom_vocabulary", "name": "词语与成语运用", "is_elective": False},
+        {"code": "chinese_cand.poetry.dictation", "name": "古诗文名句默写", "is_elective": False},
+    ]
+    english_catalog = [
+        {"code": "english_cand.pronoun.types", "name": "代词", "is_elective": False},
+        {"code": "english_cand.tense.present_perfect", "name": "现在完成时", "is_elective": False},
+        {"code": "english_cand.syntax.object_clause", "name": "宾语从句", "is_elective": False},
+        {"code": "english_cand.reading.facts_inference", "name": "阅读理解", "is_elective": False},
+    ]
+    physics_catalog = [
+        {"code": "physics_cand.light.propagate_reflect", "name": "光传播与反射", "is_elective": False},
+        {"code": "physics_cand.force.buoyancy", "name": "浮力", "is_elective": False},
+        {"code": "physics_cand.energy.ohm_law", "name": "欧姆定律", "is_elective": False},
+        {"code": "physics_cand.exp.inquiry_methods", "name": "实验探究方法", "is_elective": False},
+    ]
+
+    math_assoc = parser.auto_associate_school_items(
+        subject="math",
+        knowledge_catalog=_MATH_CATALOG,
+        items=[
+            {"question_label": "第1题", "question_type": "单选题", "max_points": 2.0, "stem_text": "下列抛物线顶点对称轴正确的是"},
+            {"question_label": "第10题", "question_type": "填空题", "max_points": 2.0, "stem_text": ""},
+        ],
+        use_ai=False,
+    )
+    assert math_assoc[0]["knowledge_id"] == "math.func.quadratic"
+    assert math_assoc[0]["draft_confidence"] == "auto_matched"
+    assert len(math_assoc[0]["draft_knowledge_candidates"]) == 3
+    assert math_assoc[1]["draft_confidence"] == "type_inferred"
+    assert len(math_assoc[1]["draft_knowledge_candidates"]) == 3
+
+    cn_assoc = parser.auto_associate_school_items(
+        subject="chinese",
+        knowledge_catalog=chinese_catalog,
+        items=[{"question_label": "第7题", "question_type": "默写", "max_points": 6.0, "stem_text": "古诗文默写补全"}],
+        use_ai=False,
+    )
+    assert cn_assoc[0]["knowledge_id"] == "chinese_cand.poetry.dictation"
+    assert len(cn_assoc[0]["draft_knowledge_candidates"]) == 3
+
+    en_assoc = parser.auto_associate_school_items(
+        subject="english",
+        knowledge_catalog=english_catalog,
+        items=[{"question_label": "第11题", "question_type": "单项选择", "max_points": 1.0, "stem_text": ""}],
+        use_ai=False,
+    )
+    assert en_assoc[0]["knowledge_id"] == "english_cand.syntax.object_clause"
+    assert len(en_assoc[0]["draft_knowledge_candidates"]) == 3
+
+    phy_assoc = parser.auto_associate_school_items(
+        subject="physics",
+        knowledge_catalog=physics_catalog,
+        items=[{"question_label": "第14题", "question_type": "多选题", "max_points": 2.0, "stem_text": ""}],
+        use_ai=False,
+    )
+    assert phy_assoc[0]["knowledge_id"] == "physics_cand.force.buoyancy"
+    assert len(phy_assoc[0]["draft_knowledge_candidates"]) == 3
+
+    eth_assoc = parser.auto_associate_school_items(
+        subject="ethics",
+        knowledge_catalog=[],
+        items=[{"question_label": "第18题", "question_type": "材料分析", "max_points": 8.0, "stem_text": ""}],
+        use_ai=False,
+    )
+    assert eth_assoc[0]["knowledge_id"] == "ethics.general"
+    assert [c["knowledge_id"] for c in eth_assoc[0]["draft_knowledge_candidates"]] == [
+        "ethics.general",
+        "ethics.law_citizenship",
+        "ethics.national_values",
+    ]
+
+
+def test_auto_associate_tier2_ai_and_unavailable_fallback(monkeypatch):
+    """未强命中本地关键词的有题干题目触发 Tier 2 DeepSeek 语义匹配；上游不可用时优雅回退 Tier 3。"""
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "sk-test")
+
+    def fake_ok(cfg, **kw):
+        return {
+            "items": [
+                {
+                    "idx": 0,
+                    "candidates": [
+                        {"knowledge_id": "math.geo.triangle", "reason": "涉及几何线段与角度关系"},
+                        {"knowledge_id": "math.func.quadratic", "reason": "次优候选"},
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(parser, "_post_deepseek_json", fake_ok)
+    rows = parser.auto_associate_school_items(
+        subject="math",
+        knowledge_catalog=_MATH_CATALOG,
+        items=[{"question_label": "第19题", "question_type": "解答题", "max_points": 5.0, "stem_text": "如图在平面图形中点P满足给定条件求证"}],
+        use_ai=True,
+    )
+    assert rows[0]["method"] == "ai_matched"
+    assert rows[0]["knowledge_id"] == "math.geo.triangle"
+    assert len(rows[0]["draft_knowledge_candidates"]) == 3
+
+    def fake_fail(cfg, **kw):
+        raise parser.VisionParserUnavailableError("VISION_PARSER_TIMEOUT")
+
+    monkeypatch.setattr(parser, "_post_deepseek_json", fake_fail)
+    rows_fb = parser.auto_associate_school_items(
+        subject="math",
+        knowledge_catalog=_MATH_CATALOG,
+        items=[{"question_label": "第19题", "question_type": "解答题", "max_points": 5.0, "stem_text": "如图在平面图形中点P满足给定条件求证"}],
+        use_ai=True,
+    )
+    assert rows_fb[0]["method"] == "type_inferred"
+    assert len(rows_fb[0]["draft_knowledge_candidates"]) == 3
+
+
+def test_reflection_anti_perfunctory_local_and_ai_audit(monkeypatch):
+    """防敷衍硬规则拦截套话/字数不足/重复刷屏，DeepSeek 语义审阅可追问打回并在无网时降级。"""
+    # 1. 字数不足
+    assert parser.validate_reflection_not_perfunctory("不会", "下次注意") is not None
+    # 2. 连续重复字符与灌水
+    assert parser.validate_reflection_not_perfunctory("111111111111111", "aaaaaaaaaaaaaaa") is not None
+    # 3. 敷衍套话剥离后实质内容不足
+    assert parser.validate_reflection_not_perfunctory("太粗心了没看清看错了", "下次一定注意认真审题多做练习") is not None
+    # 4. 两栏复制粘贴雷同
+    same = "一元二次方程求根公式分母漏乘二导致结果出错"
+    assert parser.validate_reflection_not_perfunctory(same, same) is not None
+    # 5. 具体实质分析通过本地校验
+    good_stuck = "解分式方程时两边同乘最简公分母后忘记检验增根 x=2"
+    good_fix = "以后每道分式方程解出未知数后，必须代回原分母验证不为零再作答"
+    assert parser.validate_reflection_not_perfunctory(good_stuck, good_fix) is None
+
+    # 6. 结构化编解码与退回重写保留原文
+    encoded = parser.format_structured_reflection_note(good_stuck, good_fix)
+    parsed = parser.parse_structured_reflection_note(encoded, "method", is_lost=True)
+    assert parsed["reflection_status"] == "completed"
+    assert parsed["stuck_point"] == good_stuck
+    assert parsed["fix_strategy"] == good_fix
+
+    returned = parser.format_returned_reflection_note("请补充说明为什么 x=2 是增根", encoded)
+    parsed_ret = parser.parse_structured_reflection_note(returned, None, is_lost=True)
+    assert parsed_ret["reflection_status"] == "needs_revision"
+    assert parsed_ret["return_reason"] == "请补充说明为什么 x=2 是增根"
+    assert parsed_ret["stuck_point"] == good_stuck
+
+    # 7. AI 语义打回与超时降级
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        parser,
+        "_post_deepseek_json",
+        lambda cfg, **kw: {"passed": False, "coach_feedback": "请写明具体哪一步公式代错？"},
+    )
+    passed, feedback, mode = parser.audit_reflection_with_deepseek(
+        subject="math",
+        topic="分式方程",
+        question_label="第12题",
+        stem_excerpt=None,
+        error_category="method",
+        stuck_point=good_stuck,
+        fix_strategy=good_fix,
+    )
+    assert passed is False
+    assert "公式" in (feedback or "")
+
+    def fake_timeout(cfg, **kw):
+        raise parser.VisionParserUnavailableError("VISION_PARSER_TIMEOUT")
+
+    monkeypatch.setattr(parser, "_post_deepseek_json", fake_timeout)
+    passed_fb, _, mode_fb = parser.audit_reflection_with_deepseek(
+        subject="math",
+        topic="分式方程",
+        question_label="第12题",
+        stem_excerpt=None,
+        error_category="method",
+        stuck_point=good_stuck,
+        fix_strategy=good_fix,
+    )
+    assert passed_fb is True
+    assert mode_fb == "local_rules_fallback"

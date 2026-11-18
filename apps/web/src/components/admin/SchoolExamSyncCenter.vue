@@ -409,7 +409,7 @@ async function runMatch(manual: boolean) {
     await loadCenter(paper.id)
     setNotice(
       manual
-        ? '已记录人工匹配；请继续导入原卷，再核对成绩与草稿。'
+        ? '已记录人工匹配；请继续导入原卷，再核对成绩与逐题明细。'
         : result.match
           ? `匹配结果：${getMatchMeta(result.match.state).label}。`
           : '已重新执行匹配。',
@@ -514,7 +514,7 @@ function startPolling(jobId: string) {
         const blocked = latest.result?.totals.subjects_blocked ?? 0
         const message = blocked > 0
           ? `采集完成，但有 ${blocked} 科因身份未唯一匹配而停止入账，请人工处理。`
-          : '采集任务结束：逐题信息已作为待核对草稿保存。'
+          : '采集任务结束：逐题信息已作为待核对明细保存。'
         collectionError.value = blocked > 0 ? message : ''
         props.notify(message, blocked > 0 ? 'caution' : 'success')
         await loadReview(currentExamId.value)
@@ -1013,7 +1013,7 @@ onBeforeUnmount(() => {
             <b>低频与核对红线</b>
             <ul>
               <li>单账号、单会话、串行；每次最多下载 3 场未同步场次，遇验证码或 401/403/429 立即熔断停止。</li>
-              <li>新建或更新的总分与逐题草稿均保持待人工核对，绝不直接写入能力画像。</li>
+              <li>新建或更新的总分与待核对明细均保持待人工核对，绝不直接写入能力画像。</li>
             </ul>
           </div>
 
@@ -1045,7 +1045,7 @@ onBeforeUnmount(() => {
             <p class="muted tiny" style="margin: 4px 0 0;">
               {{
                 syncReadiness.all_complete
-                  ? '各场次均已具备日期、全科成绩、逐题草稿、答题卡及班/年排名与最高分；点击下方按钮仅检查 k12100 首页是否有新增场次，已完整场次不会重复下载。'
+                  ? '各场次均已具备日期、全科成绩、待核对明细、答题卡及班/年排名与最高分；点击下方按钮仅检查 k12100 首页是否有新增场次，已完整场次不会重复下载。'
                   : '建议先点右侧按钮从本地已存 PDF 直接补全排名与最高分，无需重新登录或重复下载。'
               }}
             </p>
@@ -1092,7 +1092,7 @@ onBeforeUnmount(() => {
             <div class="exam-sync-mini-stats">
               <div><b>{{ reportSummary.homeExams }}</b><span>首页场次（跳过 {{ reportSummary.skippedExisting }}）</span></div>
               <div><b>{{ reportSummary.created }} / {{ reportSummary.updated + reportSummary.filled }}</b><span>新建科次 / 更新补全</span></div>
-              <div><b>{{ reportSummary.draftsChanged }} 题</b><span>草稿变更（切图 {{ reportSummary.cardsSynced }} 页）</span></div>
+              <div><b>{{ reportSummary.draftsChanged }} 题</b><span>待核明细变更（切图 {{ reportSummary.cardsSynced }} 页）</span></div>
             </div>
 
             <div v-if="lastReportResult.home_exams.length" class="exam-sync-home-list">
@@ -1221,7 +1221,7 @@ onBeforeUnmount(() => {
                       班排 {{ ex.class_rank ? `#${ex.class_rank}` : '—' }} · 年排 {{ ex.grade_rank ? `#${ex.grade_rank}` : '—' }} · 班最高 {{ ex.class_highest !== null && ex.class_highest !== undefined ? fmtPoints(ex.class_highest) : '—' }} · 年最高 {{ ex.grade_highest !== null && ex.grade_highest !== undefined ? fmtPoints(ex.grade_highest) : '—' }}
                     </small>
                     <small class="muted tiny">
-                      草稿 {{ ex.draft_count }} / 已确认 {{ ex.confirmed_item_count }} 题 · 附件 {{ ex.attachment_count }} 份
+                      待核对 {{ ex.draft_count }} / 已确认 {{ ex.confirmed_item_count }} 题 · 附件 {{ ex.attachment_count }} 份
                     </small>
                     <div class="exam-sync-action-row" style="margin-top: 4px;">
                       <button
@@ -1263,7 +1263,7 @@ onBeforeUnmount(() => {
               <div><dt>科目</dt><dd>{{ currentResultRow.subject_label || formatPaperSubject(selectedPaper) }}</dd></div>
               <div><dt>总分</dt><dd>{{ fmtPoints(currentResultRow.earned_points) }} / {{ fmtPoints(currentResultRow.max_points) }} · {{ currentResultRow.confirmed_by_user ? '已核对' : '待核对' }}</dd></div>
               <div><dt>答题卡</dt><dd>新上传 {{ currentResultRow.attachments_uploaded }} 份</dd></div>
-              <div><dt>逐题草稿</dt><dd>{{ currentResultRow.drafts_created }} 题待人工确认</dd></div>
+              <div><dt>待核对明细</dt><dd>{{ currentResultRow.drafts_created }} 题待人工确认</dd></div>
             </dl>
             <p v-if="currentResultRow.warning" class="exam-sync-banner caution">{{ currentResultRow.warning }}</p>
           </div>
@@ -1281,7 +1281,7 @@ onBeforeUnmount(() => {
             <div class="exam-sync-bundle">
               <div>
                 <b>离线采集包导入</b>
-                <p class="muted tiny">合法导出的脱敏 JSON；服务端二次 PII 清洗并强制草稿门禁。</p>
+                <p class="muted tiny">合法导出的脱敏 JSON；服务端二次 PII 清洗并强制待核对门禁。</p>
               </div>
               <input
                 ref="bundleInputRef"
@@ -1319,7 +1319,7 @@ active_job={{ isJobActive }}</pre>
 
       <!-- 第四步：核对入档（总分锁定 & 本人排名统一于单卡内） -->
       <template #step-4>
-        <div v-if="reviewLoading" class="card exam-sync-empty">正在读取成绩、草稿与本人排名…</div>
+        <div v-if="reviewLoading" class="card exam-sync-empty">正在读取成绩、待核对明细与本人排名…</div>
         <article v-else class="card" aria-label="第四步：核对入档">
           <div class="card-head">
             <div>
@@ -1342,7 +1342,7 @@ active_job={{ isJobActive }}</pre>
             </div>
             <div>
               <b>{{ reviewCoverage.draftItems }} 题</b>
-              <span>待核对逐题草稿</span>
+              <span>待核对明细</span>
             </div>
             <div>
               <b>{{ reviewCoverage.attachments }} 份</b>
@@ -1441,10 +1441,10 @@ active_job={{ isJobActive }}</pre>
           <div class="handoff-box">
             <div>
               <strong>入档核对就绪</strong>
-              <span>若有逐题草稿，请前往「原卷与草稿校对」校对入账后再看错误分析。</span>
+              <span>若有待核对明细，请前往「原卷与明细核对」确认入账后再看错误分析。</span>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <button type="button" class="primary small" @click="openTab('papers')">去校对逐题草稿 →</button>
+              <button type="button" class="primary small" @click="openTab('papers')">去逐题明细核对台 →</button>
               <button type="button" class="ghost small" @click="openTab('scores')">查看总分台账</button>
               <button type="button" class="ghost small" @click="openTab('analysis')">错误分析</button>
             </div>
@@ -1454,7 +1454,7 @@ active_job={{ isJobActive }}</pre>
     </StepFlowWorkspace>
 
     <footer class="exam-sync-footer stage-wrap">
-      <p>待核对草稿、未锁定总分和本人排名都不会写入学生端能力画像。所有自动获取都受账号授权、平台规则与低频边界约束。</p>
+      <p>待核对明细、未锁定总分和本人排名都不会写入学生端能力画像。所有自动获取都受账号授权、平台规则与低频边界约束。</p>
       <span class="chip subtle">ST-EXAM-AUTOSYNC-01</span>
     </footer>
   </section>

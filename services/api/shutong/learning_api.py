@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from . import ai_tutor
 from . import models as m
+from . import private_files as files
 from .auth import require_student
 from .database import get_db
 from .guidance import (
@@ -17,7 +19,16 @@ from .guidance import (
     MODEL_VERSION,
     compose_practice_plan,
     compute_knowledge_mastery,
+    question_label_sort_key,
     summarize_growth,
+)
+from .school_paper_parser import (
+    audit_reflection_with_deepseek,
+    extract_embedded_text,
+    format_structured_reflection_note,
+    parse_paper_skeleton_from_text,
+    parse_structured_reflection_note,
+    validate_reflection_not_perfunctory,
 )
 from .schemas import (
     GrowthStatusOut,
@@ -27,6 +38,10 @@ from .schemas import (
     PracticeSessionCreateIn,
     PracticeSessionItemPlanOut,
     PracticeSessionOut,
+    SchoolExamSubject,
+    StudentSchoolReflectionItemOut,
+    StudentSchoolReflectionsResponseOut,
+    StudentSchoolReflectionSubmitIn,
     Subject,
     TutorMessageIn,
     TutorSessionOut,
@@ -1076,4 +1091,210 @@ def knowledge_graph(
         summary_counts=growth["summary_counts"],
         nodes=mastery_items,
         edges=edges,
+    )
+
+
+_ETHICS_STUDENT_TOPICS = {
+    "ethics.general": "道法综合主题",
+    "ethics.law_citizenship": "法治与公民权利义务",
+    "ethics.national_values": "家国情怀与核心价值观",
+}
+_SCHOOL_SUBJECTS_ORDER = ("math", "chinese", "english", "physics", "ethics")
+
+
+def _resolve_student_school_topic(subject: str, knowledge_id: str, name_map: dict[str, str]) -> str:
+    """将校考内部知识点编码安全映射为面向学生的自然语言考点名称，绝不泄露内部编码。"""
+    kid = str(knowledge_id or "").strip()
+    if kid in _ETHICS_STUDENT_TOPICS:
+        return _ETHICS_STUDENT_TOPICS[kid]
+    if not kid or kid == "unmapped":
+        return "校考待分类考点"
+    if kid in name_map:
+        return name_map[kid]
+    mapped_codes = resolve_question_to_candidate_codes(subject, [kid])
+    for code in mapped_codes:
+        if code in name_map:
+            return name_map[code]
+    return get_topic_label(kid)
+
+
+def _extract_exam_stem_map(
+    db: Session, exam_id: str, owner: str, subject: str, nodes: list[dict]
+) -> dict[str, str]:
+    """按题号读取已归档原卷的内嵌文字摘要（不触发慢速 OCR）。"""
+    attachments = db.execute(
+        select(m.SchoolPaperAttachment).where(
+            m.SchoolPaperAttachment.school_exam_id == exam_id,
+            m.SchoolPaperAttachment.owner_id == owner,
+        )
+    ).scalars().all()
+    ordered = sorted(attachments, key=lambda a: (1 if "答题卡" in a.filename else 0, a.created_at, a.id))
+    for att in ordered:
+        try:
+            data = files.blob_path(att.storage_key).read_bytes()
+            text = extract_embedded_text(data, att.media_type)
+        except Exception:
+            text = ""
+        if not text:
+            continue
+        by_num: dict[str, str] = {}
+        for parsed in parse_paper_skeleton_from_text(text, subject, nodes, attachment_id=att.id):
+            m_num = re.search(r"(\d+)", str(parsed.get("question_label") or ""))
+            stem = str(parsed.get("stem") or "").strip()
+            if m_num and stem and m_num.group(1) not in by_num:
+                by_num[m_num.group(1)] = stem[:260]
+        if by_num:
+            return by_num
+    return {}
+
+
+@router.get("/api/student/school-exam-reflections", response_model=StudentSchoolReflectionsResponseOut)
+def list_student_school_exam_reflections(
+    subject: SchoolExamSubject | None = None,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """列出学生本人已确认校考失分小题及复盘状态（严格隔离内部 knowledge_id）。"""
+    rows = db.execute(
+        select(m.SchoolExamItem, m.SchoolExam)
+        .join(m.SchoolExam, m.SchoolExam.id == m.SchoolExamItem.school_exam_id)
+        .where(
+            m.SchoolExam.learner_id == student,
+            m.SchoolExamItem.confirmed_by_user.is_(True),
+            m.SchoolExamItem.max_points > 0,
+            m.SchoolExamItem.earned_points < m.SchoolExamItem.max_points,
+        )
+    ).all()
+
+    pending_counts: dict[str, int] = {sub: 0 for sub in _SCHOOL_SUBJECTS_ORDER}
+    filtered_rows: list[tuple[m.SchoolExamItem, m.SchoolExam, dict]] = []
+
+    for item, exam in rows:
+        parsed = parse_structured_reflection_note(item.error_note, item.error_category, is_lost=True)
+        if parsed["reflection_status"] in {"pending", "needs_revision"}:
+            pending_counts[exam.subject] = pending_counts.get(exam.subject, 0) + 1
+        if subject is None or exam.subject == subject:
+            filtered_rows.append((item, exam, parsed))
+
+    nodes_cache: dict[str, tuple[list[dict], dict[str, str]]] = {}
+    stem_cache: dict[str, dict[str, str]] = {}
+    out_items: list[StudentSchoolReflectionItemOut] = []
+
+    filtered_rows.sort(
+        key=lambda pair: (
+            -(pair[1].exam_date.toordinal() if pair[1].exam_date else 0),
+            pair[1].id,
+            question_label_sort_key(pair[0].question_label),
+        )
+    )
+
+    for item, exam, parsed in filtered_rows:
+        if exam.subject not in nodes_cache:
+            nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
+            nodes_cache[exam.subject] = (nodes, {n["code"]: n["name"] for n in nodes})
+        nodes, name_map = nodes_cache[exam.subject]
+        if exam.id not in stem_cache:
+            stem_cache[exam.id] = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
+        m_num = re.search(r"(\d+)", str(item.question_label or ""))
+        stem_excerpt = stem_cache[exam.id].get(m_num.group(1)) if m_num else None
+
+        out_items.append(
+            StudentSchoolReflectionItemOut(
+                item_id=item.id,
+                exam_id=exam.id,
+                subject=exam.subject,
+                exam_title=exam.title,
+                exam_date=str(exam.exam_date),
+                question_label=item.question_label,
+                topic=_resolve_student_school_topic(exam.subject, item.knowledge_id, name_map),
+                earned_points=item.earned_points,
+                max_points=item.max_points,
+                lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
+                stem_excerpt=stem_excerpt,
+                reflection_status=parsed["reflection_status"],
+                error_category=item.error_category,
+                stuck_point=parsed["stuck_point"],
+                fix_strategy=parsed["fix_strategy"],
+                return_reason=parsed["return_reason"],
+            )
+        )
+
+    return StudentSchoolReflectionsResponseOut(
+        items=out_items,
+        pending_counts_by_subject=pending_counts,
+        total_pending=sum(pending_counts.values()),
+    )
+
+
+@router.post("/api/student/school-exam-reflections/{item_id}", response_model=StudentSchoolReflectionItemOut)
+def submit_student_school_exam_reflection(
+    item_id: str,
+    payload: StudentSchoolReflectionSubmitIn,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """学生端提交校考失分题错因分类与双栏防敷衍复盘（本地硬规则 + DeepSeek 语义把关）。"""
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    exam = db.get(m.SchoolExam, item.school_exam_id)
+    if exam is None or exam.learner_id != student:
+        raise HTTPException(status_code=404, detail="item not found")
+    if not item.confirmed_by_user:
+        raise HTTPException(status_code=409, detail="SCHOOL_ITEM_NOT_CONFIRMED")
+    if item.earned_points >= item.max_points:
+        raise HTTPException(status_code=422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
+
+    # Stage 1: 本地反敷衍硬规则校验
+    local_err = validate_reflection_not_perfunctory(payload.stuck_point, payload.fix_strategy)
+    if local_err is not None:
+        raise HTTPException(status_code=422, detail=f"REFLECTION_TOO_PERFUNCTORY: {local_err}")
+
+    nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
+    name_map = {n["code"]: n["name"] for n in nodes}
+    topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
+    stem_map = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
+    m_num = re.search(r"(\d+)", str(item.question_label or ""))
+    stem_excerpt = stem_map.get(m_num.group(1)) if m_num else None
+
+    # Stage 2: DeepSeek 语义审阅官把关（未配置或超时时平滑降级为本地严规放行）
+    passed, coach_feedback, audit_mode = audit_reflection_with_deepseek(
+        subject=exam.subject,
+        topic=topic,
+        question_label=item.question_label,
+        stem_excerpt=stem_excerpt,
+        error_category=payload.error_category,
+        stuck_point=payload.stuck_point,
+        fix_strategy=payload.fix_strategy,
+    )
+    if not passed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"REFLECTION_AI_COACH_REJECTED: {coach_feedback or '请进一步补充具体出错步骤与改进对策。'}",
+        )
+
+    item.error_category = payload.error_category
+    item.error_note = format_structured_reflection_note(payload.stuck_point, payload.fix_strategy)
+    db.commit()
+    db.refresh(item)
+
+    parsed = parse_structured_reflection_note(item.error_note, item.error_category, is_lost=True)
+    return StudentSchoolReflectionItemOut(
+        item_id=item.id,
+        exam_id=exam.id,
+        subject=exam.subject,
+        exam_title=exam.title,
+        exam_date=str(exam.exam_date),
+        question_label=item.question_label,
+        topic=topic,
+        earned_points=item.earned_points,
+        max_points=item.max_points,
+        lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
+        stem_excerpt=stem_excerpt,
+        reflection_status=parsed["reflection_status"],
+        error_category=item.error_category,
+        stuck_point=parsed["stuck_point"],
+        fix_strategy=parsed["fix_strategy"],
+        return_reason=parsed["return_reason"],
+        ai_audit_mode=audit_mode,
     )

@@ -754,3 +754,297 @@ def test_sync_drafts_enrichment_and_replace_guardrails(client, auth, student_aut
     assert resynced.status_code == 200
     assert resynced.json()["skipped_labels"] == ["第1题"]
     assert resynced.json()["created_items"][0]["earned_points"] == 2.0
+
+
+def test_school_exam_items_natural_order_in_detail_and_analysis(client, auth):
+    exam_id = make_exam(client, auth, title="虚构测试数据：题号自然排序校验", earned_points=80, max_points=100)
+    resp = post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            item("10", earned_points=1.0, max_points=2.0),
+            item("1", earned_points=2.0, max_points=2.0),
+            item("第2题", earned_points=0.0, max_points=2.0),
+            item("18(2)", earned_points=2.0, max_points=4.0),
+            item("18(1)", earned_points=3.0, max_points=3.0),
+        ],
+    )
+    assert resp.status_code == 201
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth)
+    assert detail.status_code == 200
+    assert [it["question_label"] for it in detail.json()["items"]] == [
+        "1",
+        "第2题",
+        "10",
+        "18(1)",
+        "18(2)",
+    ]
+
+    ana = client.get(f"/api/school-exams/{exam_id}/error-analysis", headers=auth)
+    assert ana.status_code == 200
+    assert ana.json()["by_category"][0]["question_labels"] == [
+        "第2题",
+        "10",
+        "18(2)",
+    ]
+
+
+def test_school_exam_auto_associate_preserves_confirmed_and_existing_items(client, auth):
+    exam_id = make_exam(client, auth, subject="math", title="虚构测试数据：自动关联端点保护测试", earned_points=60, max_points=100)
+    resp = post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            item("第1题", knowledge_id="math_cand.num.rational", earned_points=2.0, max_points=2.0),
+            item("第2题", knowledge_id="math_cand.alg.poly", earned_points=1.0, max_points=2.0),
+            item("第10题", knowledge_id="unmapped", earned_points=0.0, max_points=2.0),
+        ],
+    )
+    assert resp.status_code == 201
+
+    from shutong.database import get_db
+    from shutong.main import app
+    from shutong import models as m
+    from sqlalchemy import select
+
+    session = next(app.dependency_overrides[get_db]())
+    try:
+        rows = {
+            r.question_label: r
+            for r in session.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)).scalars().all()
+        }
+        rows["第1题"].confirmed_by_user = True
+        rows["第1题"].scoring_origin = "manual_entry"
+        rows["第2题"].confirmed_by_user = False
+        rows["第2题"].scoring_origin = "ocr_draft"
+        rows["第10题"].confirmed_by_user = False
+        rows["第10题"].scoring_origin = "ocr_draft"
+        rows["第10题"].draft_reason = "分析报告册第13页；题型=填空题"
+        session.commit()
+    finally:
+        session.close()
+
+    res = client.post(
+        f"/api/school-exams/{exam_id}/items/auto-associate",
+        json={"use_ai": False, "overwrite_existing": False},
+        headers=auth,
+    )
+    assert res.status_code == 200, res.text
+    summary = res.json()
+    assert summary["skipped_confirmed"] == 1
+    assert summary["updated"] == 2
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_lbl = {it["question_label"]: it for it in detail["items"]}
+    # 已确认第 1 题绝不被改写
+    assert by_lbl["第1题"]["confirmed_by_user"] is True
+    assert by_lbl["第1题"]["knowledge_id"] == "math_cand.num.rational"
+    # 未确认但已有知识点的第 2 题保持既有 knowledge_id，仅补全 3 个候选
+    assert by_lbl["第2题"]["confirmed_by_user"] is False
+    assert by_lbl["第2题"]["knowledge_id"] == "math_cand.alg.poly"
+    assert len(by_lbl["第2题"]["draft_knowledge_candidates"]) == 3
+    # 原 unmapped 第 10 题被自动关联且保持未确认
+    assert by_lbl["第10题"]["confirmed_by_user"] is False
+    assert by_lbl["第10题"]["knowledge_id"] not in {"", "unmapped"}
+    assert len(by_lbl["第10题"]["draft_knowledge_candidates"]) == 3
+
+
+def test_student_reflection_workflow_anti_perfunctory_and_admin_return(client, auth, student_auth, monkeypatch):
+    """学生端完成错因与双栏防敷衍复盘，管理端只读查看并支持退回重写。"""
+    monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    exam_id = make_exam(client, auth, subject="math", title="虚构测试数据：学生端错题复盘闭环", earned_points=88, max_points=100)
+    resp = post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            item("第1题", knowledge_id="math_cand.num.rational", earned_points=2.0, max_points=2.0),
+            item("第8题", knowledge_id="math_cand.eq.fractional", earned_points=0.0, max_points=3.0),
+        ],
+    )
+    assert resp.status_code == 201
+
+    # 学生端仅看到已确认的失分题第 8 题，且响应严禁包含内部 knowledge_id
+    list_res = client.get("/api/student/school-exam-reflections?subject=math", headers=student_auth)
+    assert list_res.status_code == 200, list_res.text
+    list_body = list_res.json()
+    assert list_body["total_pending"] == 1
+    assert list_body["pending_counts_by_subject"]["math"] == 1
+    assert len(list_body["items"]) == 1
+    lost_item = list_body["items"][0]
+    assert lost_item["question_label"] == "第8题"
+    assert lost_item["reflection_status"] == "pending"
+    assert "knowledge_id" not in lost_item
+    assert "math_cand" not in lost_item["topic"]
+
+    # 敷衍填写被 422 拦截
+    bad_res = client.post(
+        f"/api/student/school-exam-reflections/{lost_item['item_id']}",
+        json={
+            "error_category": "reading",
+            "stuck_point": "太粗心了没看清",
+            "fix_strategy": "下次一定注意认真审题",
+        },
+        headers=student_auth,
+    )
+    assert bad_res.status_code == 422
+    assert "REFLECTION_TOO_PERFUNCTORY" in bad_res.json()["detail"]
+
+    # 具体实质复盘提交成功
+    ok_res = client.post(
+        f"/api/student/school-exam-reflections/{lost_item['item_id']}",
+        json={
+            "error_category": "method",
+            "stuck_point": "去分母乘以最简公分母后忘记检验增根 x=2 导致多选",
+            "fix_strategy": "解分式方程得出根后必须立即代回原方程各分母验证不为零",
+        },
+        headers=student_auth,
+    )
+    assert ok_res.status_code == 200, ok_res.text
+    assert ok_res.json()["reflection_status"] == "completed"
+    assert ok_res.json()["error_category"] == "method"
+
+    # 管理端只读详情可见结构化复盘字段
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    q8 = next(it for it in detail["items"] if it["question_label"] == "第8题")
+    assert q8["reflection_status"] == "completed"
+    assert "增根" in q8["stuck_point"]
+
+    # 管理端退回重写后重回学生端待复盘队列
+    ret_res = client.post(
+        f"/api/school-exams/{exam_id}/items/{lost_item['item_id']}/return-reflection",
+        json={"reason": "请补充说明验根的具体代入过程"},
+        headers=auth,
+    )
+    assert ret_res.status_code == 200, ret_res.text
+    assert ret_res.json()["reflection_status"] == "needs_revision"
+    assert ret_res.json()["return_reason"] == "请补充说明验根的具体代入过程"
+
+    list_after = client.get("/api/student/school-exam-reflections?subject=math", headers=student_auth).json()
+    assert list_after["total_pending"] == 1
+    assert list_after["items"][0]["reflection_status"] == "needs_revision"
+    assert list_after["items"][0]["return_reason"] == "请补充说明验根的具体代入过程"
+    assert "增根" in list_after["items"][0]["stuck_point"]
+
+
+def test_auto_associate_upgrades_type_inferred_when_paper_attached(client, auth, monkeypatch) -> None:
+    """报告生成的 type_inferred 草稿在上传原卷后，不传 overwrite 也应自动升级为 AI/关键词匹配结果，且不覆盖已确认项。"""
+    exam_id = make_exam(client, auth, title="虚构测试数据：先验升级测试", earned_points=88)
+
+    # 插入一条未确认的 type_inferred 草稿与一条已确认项
+    seeded = post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            {
+                "question_label": "第1题",
+                "knowledge_id": "math.number_sense",
+                "earned_points": 2.0,
+                "max_points": 3.0,
+                "scoring_origin": "ocr_draft",
+                "draft_confidence": "low",
+                "draft_knowledge_candidates": [
+                    {"knowledge_id": "math.number_sense", "title": "数感", "reason": "题型先验"},
+                    {"knowledge_id": "math.arithmetic", "title": "运算", "reason": "题型先验"},
+                    {"knowledge_id": "math.equations", "title": "方程", "reason": "题型先验"},
+                ],
+            },
+            {
+                "question_label": "第2题",
+                "knowledge_id": "math.number_sense",
+                "earned_points": 3.0,
+                "max_points": 3.0,
+                "scoring_origin": "manual_entry",
+                "draft_confidence": "low",
+            },
+        ],
+    )
+    assert seeded.status_code == 201, seeded.text
+
+    from sqlalchemy import select
+    from shutong import models as m
+    from shutong.main import app, get_db
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        for row in db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)).scalars():
+            row.draft_confidence = "type_inferred"
+        db.commit()
+    finally:
+        db_gen.close()
+
+    # 上传一份含第1、2题题干的 docx 原卷
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "word/document.xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            "<w:p><w:r><w:t>1. 解一元二次方程 x^2 - 5x + 6 = 0。</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>2. 计算 (-2) + 3 的值。</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    up = client.post(
+        f"/api/school-exams/{exam_id}/paper",
+        params={"filename": "paper.docx"},
+        content=buf.getvalue(),
+        headers={
+            **auth,
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+    )
+    assert up.status_code == 201, up.text
+
+    from shutong import school_paper_parser as parser
+
+    called: list[bool] = []
+
+    def fake_auto_associate(*, subject, knowledge_catalog, items, use_ai=True):
+        called.append(use_ai)
+        return [
+            {
+                "knowledge_id": "math.equations",
+                "draft_knowledge_candidates": [
+                    {"knowledge_id": "math.equations", "title": "方程与不等式", "reason": "AI 语义匹配"},
+                    {"knowledge_id": "math.arithmetic", "title": "数与式运算", "reason": "次选"},
+                    {"knowledge_id": "math.functions", "title": "函数", "reason": "备选"},
+                ],
+                "draft_confidence": "ai_recommended",
+                "method": "ai_recommended",
+                "basis_note": "AI 语义匹配",
+            }
+            for _ in items
+        ]
+
+    monkeypatch.setattr(parser, "auto_associate_school_items", fake_auto_associate)
+
+    res = client.post(
+        f"/api/school-exams/{exam_id}/items/auto-associate",
+        json={"use_ai": True, "overwrite_existing": False},
+        headers=auth,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["updated"] == 1
+    assert res.json()["skipped_confirmed"] == 1
+    assert called == [True]
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_label = {it["question_label"]: it for it in detail["items"]}
+    assert by_label["第1题"]["knowledge_id"] == "math.equations"
+    assert by_label["第1题"]["draft_confidence"] == "ai_recommended"
+    assert by_label["第2题"]["knowledge_id"] == "math.number_sense"
+
+
+

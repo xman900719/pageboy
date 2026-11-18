@@ -1594,12 +1594,28 @@ def generate_item_drafts(
     report: m.SchoolExamReport,
     update_unconfirmed_drafts: bool = False,
 ) -> dict[str, Any]:
-    """把报告逐题表转成台账 ocr_draft；知识点留待人工映射，不确认、不进画像。"""
+    """把报告逐题表转成台账 ocr_draft，并自动生成 Top-3 候选与初始关联知识点（绝不确认、不进画像）。"""
+    from .main import _resolve_school_knowledge_meta
+    from .school_paper_parser import auto_associate_school_items, normalize_question_label
+
     links = {str(link.get("subject")): str(link.get("exam_id")) for link in (report.linked_exam_ids or [])}
     created = 0
     updated = 0
     skipped = 0
     unmapped_subjects: list[str] = []
+    catalog_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def _assoc_for(subject: str, label: str, qtype: str | None, max_score: float) -> dict[str, Any]:
+        if subject not in catalog_cache:
+            _has, nodes, _names, _aliases = _resolve_school_knowledge_meta(db, subject, set())
+            catalog_cache[subject] = nodes
+        return auto_associate_school_items(
+            subject=subject,
+            knowledge_catalog=catalog_cache[subject],
+            items=[{"question_label": label, "question_type": qtype, "max_points": max_score}],
+            use_ai=False,
+        )[0]
+
     for question in report.questions or []:
         subject = str(question.get("subject") or "")
         exam_id = links.get(subject)
@@ -1614,6 +1630,7 @@ def generate_item_drafts(
             continue
         max_score = question.get("max_score")
         score = question.get("score")
+        qtype = str(question.get("question_type") or "").strip() or None
         exists = db.execute(
             select(m.SchoolExamItem).where(
                 m.SchoolExamItem.school_exam_id == exam_id,
@@ -1630,14 +1647,31 @@ def generate_item_drafts(
             ):
                 new_earned = float(score)
                 new_max = float(max_score)
-                if new_earned <= new_max and (
+                score_changed = new_earned <= new_max and (
                     abs(float(exists.earned_points) - new_earned) > 0.01
                     or abs(float(exists.max_points) - new_max) > 0.01
-                ):
-                    exists.earned_points = new_earned
-                    exists.max_points = new_max
-                    exists.draft_confidence = str(question.get("confidence") or exists.draft_confidence or "medium")
-                    exists.draft_reason = f"分析报告册第{question.get('page')}页；题型={question.get('question_type') or '未知'}"
+                )
+                needs_assoc = (
+                    not exists.knowledge_id
+                    or exists.knowledge_id == "unmapped"
+                    or not isinstance(exists.draft_knowledge_candidates, list)
+                    or len(exists.draft_knowledge_candidates) < 3
+                )
+                if score_changed or needs_assoc:
+                    if score_changed:
+                        exists.earned_points = new_earned
+                        exists.max_points = new_max
+                        exists.draft_confidence = str(question.get("confidence") or exists.draft_confidence or "medium")
+                        exists.draft_reason = f"分析报告册第{question.get('page')}页；题型={qtype or '未知'}"
+                    if needs_assoc:
+                        assoc = _assoc_for(subject, normalize_question_label(label), qtype, new_max)
+                        if not exists.knowledge_id or exists.knowledge_id == "unmapped":
+                            exists.knowledge_id = assoc["knowledge_id"]
+                            exists.draft_confidence = assoc["draft_confidence"]
+                            if assoc.get("basis_note") and assoc["basis_note"] not in (exists.draft_reason or ""):
+                                exists.draft_reason = f"分析报告册第{question.get('page')}页；题型={qtype or '未知'}；{assoc['basis_note']}"
+                        if not isinstance(exists.draft_knowledge_candidates, list) or len(exists.draft_knowledge_candidates) < 3:
+                            exists.draft_knowledge_candidates = assoc["draft_knowledge_candidates"]
                     updated += 1
                     continue
             skipped += 1
@@ -1645,17 +1679,23 @@ def generate_item_drafts(
         if max_score is None:
             skipped += 1
             continue
+        max_val = float(max_score)
+        assoc = _assoc_for(subject, normalize_question_label(label), qtype, max_val)
+        base_reason = f"分析报告册第{question.get('page')}页；题型={qtype or '未知'}"
+        if assoc.get("basis_note"):
+            base_reason = f"{base_reason}；{assoc['basis_note']}"
         db.add(
             m.SchoolExamItem(
                 school_exam_id=exam_id,
                 question_label=label,
-                knowledge_id="unmapped",
+                knowledge_id=assoc["knowledge_id"],
                 earned_points=float(score or 0),
-                max_points=float(max_score),
+                max_points=max_val,
                 scoring_origin="ocr_draft",
                 confirmed_by_user=False,
-                draft_confidence=str(question.get("confidence") or "medium"),
-                draft_reason=f"分析报告册第{question.get('page')}页；题型={question.get('question_type') or '未知'}",
+                draft_confidence=assoc["draft_confidence"] or str(question.get("confidence") or "type_inferred"),
+                draft_reason=base_reason[:500],
+                draft_knowledge_candidates=assoc["draft_knowledge_candidates"],
             )
         )
         created += 1
@@ -1741,6 +1781,7 @@ def ai_map_report_items(db: Session, *, report: m.SchoolExamReport) -> dict[str,
         if not isinstance(mappings, list):
             failures.append(subject)
             continue
+        from .school_paper_parser import ensure_three_candidates
         valid = {str(n["code"]): str(n.get("name") or n["code"]) for n in nodes if n.get("code")}
         for entry in mappings:
             if not isinstance(entry, dict):
@@ -1754,7 +1795,13 @@ def ai_map_report_items(db: Session, *, report: m.SchoolExamReport) -> dict[str,
                 continue
             row.knowledge_id = code
             row.draft_confidence = "ai_matched"
-            row.draft_knowledge_candidates = [{"knowledge_id": code, "title": valid[code], "reason": "DeepSeek 基于题干语义与知识点库匹配"}]
+            row.draft_knowledge_candidates = ensure_three_candidates(
+                [{"knowledge_id": code, "title": valid[code], "reason": "DeepSeek 基于题干语义与知识点库匹配"}],
+                subject=subject,
+                knowledge_catalog=nodes,
+                question_label=row.question_label,
+                max_points=row.max_points,
+            )
             row.draft_reason = (row.draft_reason or "") + "；知识点由 DeepSeek 文本匹配，待人工确认"
             mapped += 1
     db.commit()

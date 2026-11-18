@@ -15,6 +15,8 @@ export type SchoolDraftConfidence =
   | 'external_sync'
   | 'auto_matched'
   | 'ai_matched'
+  | 'ai_recommended'
+  | 'type_inferred'
 
 export interface DraftKnowledgeCandidate {
   knowledge_id: string
@@ -321,6 +323,8 @@ export interface SchoolPaperAttachment {
   created_at: string
 }
 
+export type ReflectionStatus = 'not_required' | 'pending' | 'completed' | 'needs_revision'
+
 export interface SchoolExamItem {
   id: string
   question_label: string
@@ -333,10 +337,40 @@ export interface SchoolExamItem {
   confirmed_by_user: boolean
   error_category?: SchoolErrorCategory | null
   error_note?: string | null
+  reflection_status?: ReflectionStatus
+  stuck_point?: string
+  fix_strategy?: string
+  return_reason?: string | null
   draft_source_attachment_id?: string | null
   draft_confidence?: SchoolDraftConfidence | null
   draft_reason?: string | null
   draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
+}
+
+export interface StudentSchoolReflectionItem {
+  item_id: string
+  exam_id: string
+  subject: SchoolSubject
+  exam_title: string
+  exam_date: string
+  question_label: string
+  topic: string
+  earned_points: number
+  max_points: number
+  lost_points: number
+  stem_excerpt?: string | null
+  reflection_status: ReflectionStatus
+  error_category?: SchoolErrorCategory | null
+  stuck_point: string
+  fix_strategy: string
+  return_reason?: string | null
+  ai_audit_mode?: string | null
+}
+
+export interface StudentSchoolReflectionsPayload {
+  items: StudentSchoolReflectionItem[]
+  pending_counts_by_subject: Record<string, number>
+  total_pending: number
 }
 
 export interface SchoolExamItemInput {
@@ -1128,11 +1162,31 @@ export interface Client {
       replaceUnconfirmedDrafts?: boolean
     },
   ): Promise<ParseDraftsResult>
+  autoAssociateSchoolExamItems(
+    examId: string,
+    input?: { useAi?: boolean; overwriteExisting?: boolean },
+  ): Promise<{
+    updated: number
+    tier1_matched: number
+    tier2_ai: number
+    tier3_inferred: number
+    skipped_confirmed: number
+  }>
   updateSchoolExamItemAnalysis(
     examId: string,
     itemId: string,
     input: { errorCategory: SchoolErrorCategory | null; errorNote: string | null },
   ): Promise<SchoolExamItem>
+  returnSchoolExamItemReflection(
+    examId: string,
+    itemId: string,
+    reason: string,
+  ): Promise<SchoolExamItem>
+  schoolExamReflections(subject?: SchoolSubject): Promise<StudentSchoolReflectionsPayload>
+  submitSchoolExamReflection(
+    itemId: string,
+    input: { errorCategory: SchoolErrorCategory; stuckPoint: string; fixStrategy: string },
+  ): Promise<StudentSchoolReflectionItem>
   schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
   schoolExamReports(): Promise<SchoolExamReport[]>
   scanSchoolExamReports(): Promise<SchoolExamReportScanResult>
@@ -1432,11 +1486,44 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         mask_student_header: maskStudentHeader,
         replace_unconfirmed_drafts: replaceUnconfirmedDrafts,
       }),
+    autoAssociateSchoolExamItems: (examId, input = {}) =>
+      call<{
+        updated: number
+        tier1_matched: number
+        tier2_ai: number
+        tier3_inferred: number
+        skipped_confirmed: number
+      }>(`/api/school-exams/${encodeURIComponent(examId)}/items/auto-associate`, 'POST', {
+        use_ai: input.useAi ?? true,
+        overwrite_existing: input.overwriteExisting ?? false,
+      }),
     updateSchoolExamItemAnalysis: (examId, itemId, { errorCategory, errorNote }) =>
       call<SchoolExamItem>(
         `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/analysis`,
         'POST',
         { error_category: errorCategory, error_note: errorNote },
+      ),
+    returnSchoolExamItemReflection: (examId, itemId, reason) =>
+      call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/return-reflection`,
+        'POST',
+        { reason },
+      ),
+    schoolExamReflections: subject =>
+      call<StudentSchoolReflectionsPayload>(
+        subject
+          ? `/api/student/school-exam-reflections?subject=${encodeURIComponent(subject)}`
+          : '/api/student/school-exam-reflections',
+      ),
+    submitSchoolExamReflection: (itemId, { errorCategory, stuckPoint, fixStrategy }) =>
+      call<StudentSchoolReflectionItem>(
+        `/api/student/school-exam-reflections/${encodeURIComponent(itemId)}`,
+        'POST',
+        {
+          error_category: errorCategory,
+          stuck_point: stuckPoint,
+          fix_strategy: fixStrategy,
+        },
       ),
     schoolExamErrorAnalysis: examId =>
       call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),

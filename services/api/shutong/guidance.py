@@ -432,6 +432,21 @@ _SCHOOL_CATEGORY_ORDER: dict[str, int] = {
 }
 _SCHOOL_CATEGORY_ORDER["uncategorized"] = len(SCHOOL_ERROR_CATEGORIES)
 
+
+def question_label_sort_key(label: str) -> tuple[int, tuple[int, ...], str]:
+    """按题号中的数字序列自然升序排序（如 1, 2, ..., 10），无数字项排在末尾。"""
+    nums: list[int] = []
+    buf: list[str] = []
+    for ch in label or "":
+        if "0" <= ch <= "9":
+            buf.append(ch)
+        elif buf:
+            nums.append(int("".join(buf)))
+            buf.clear()
+    if buf:
+        nums.append(int("".join(buf)))
+    return (0 if nums else 1, tuple(nums), label or "")
+
 SCHOOL_ERROR_CATEGORY_LABELS: dict[str, str] = {
     "concept": "概念/公式不清",
     "calculation": "运算/粗心失误",
@@ -741,7 +756,7 @@ def analyze_school_exam_errors(
                 "item_count": entry["item_count"],
                 "lost_points": lost_rounded,
                 "share_of_itemized_loss": share,
-                "question_labels": sorted(entry["question_labels"]),
+                "question_labels": sorted(entry["question_labels"], key=question_label_sort_key),
             }
         )
     by_category.sort(
@@ -812,7 +827,7 @@ def analyze_school_exam_errors(
                 "exam_observed_rate": obs_rate,
                 "share_of_itemized_loss": share,
                 "categories": cats,
-                "question_labels": sorted(kt["question_labels"]),
+                "question_labels": sorted(kt["question_labels"], key=question_label_sort_key),
                 "notes": kt["notes"],
                 "practice_status": p_status,
                 "practice_observed_rate": p_rate,
@@ -839,7 +854,7 @@ def analyze_school_exam_errors(
         }
         for it in lost_items_raw
     ]
-    lost_items_out.sort(key=lambda x: (-x["lost_points"], x["question_label"]))
+    lost_items_out.sort(key=lambda x: (-x["lost_points"], question_label_sort_key(x["question_label"])))
 
     # 4. 首要错因与综述文案
     tagged_cats = [c for c in by_category if c["category"] != "uncategorized"]

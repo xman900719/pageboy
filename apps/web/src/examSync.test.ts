@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareQuestionLabel,
   deriveReviewCoverage,
   formatPaperExamIdentity,
   formatPaperSubject,
+  formatQuestionLabelHeading,
   formatRankValue,
   getMatchMeta,
   getPaperNextStep,
   getReportActionMeta,
+  groupSchoolReflectionsByExam,
+  isSchoolItemFullScore,
+  parseDraftBasisTags,
   summarizeReportJob,
+  summarizeSchoolExamItemScores,
+  validateReflectionDraftLocally,
 } from './examSync'
 import type { K12100ReportJobResult, SchoolExamDetail, SchoolExamPaper, SchoolExamRanksPayload } from './api'
 
@@ -208,5 +215,129 @@ describe('examSync 四步状态与核对覆盖', () => {
     expect(summary.draftsChanged).toBe(21)
     expect(summary.hasIssues).toBe(true)
     expect(summarizeReportJob(null).hasIssues).toBe(false)
+  })
+
+  it('校考小题按题号自然升序排列、纯数字题号规范化且分值对账精确', () => {
+    const raw = ['10', '第2题', '1', '18(2)', '18(1)', '附加题']
+    expect([...raw].sort(compareQuestionLabel)).toEqual(['1', '第2题', '10', '18(1)', '18(2)', '附加题'])
+    expect(formatQuestionLabelHeading('1')).toBe('第 1 题')
+    expect(formatQuestionLabelHeading('第10题')).toBe('第10题')
+    expect(isSchoolItemFullScore(2, 2)).toBe(true)
+    expect(isSchoolItemFullScore(1.5, 2)).toBe(false)
+
+    const scoreSum = summarizeSchoolExamItemScores(
+      detail({
+        earned_points: 4,
+        max_points: 4,
+        confirmed_by_user: true,
+        items: [
+          {
+            id: 'i1',
+            question_label: '1',
+            knowledge_id: 'math.arithmetic',
+            earned_points: 2,
+            max_points: 2,
+            scoring_origin: 'ocr_draft',
+            confirmed_by_user: true,
+          },
+          {
+            id: 'i2',
+            question_label: '2',
+            knowledge_id: 'unmapped',
+            earned_points: 2,
+            max_points: 2,
+            scoring_origin: 'ocr_draft',
+            confirmed_by_user: false,
+          },
+        ],
+      }),
+    )
+    expect(scoreSum.totalEarned).toBe(4)
+    expect(scoreSum.totalMax).toBe(4)
+    expect(scoreSum.correctPendingCount).toBe(1)
+    expect(scoreSum.lostPendingCount).toBe(0)
+    expect(scoreSum.earnedDiff).toBe(0)
+    expect(scoreSum.maxDiff).toBe(0)
+  })
+
+  it('parseDraftBasisTags 将识别依据拆解为来源/题型/匹配方式微标签', () => {
+    expect(parseDraftBasisTags('分析报告册第13页；题型=单选题；单选题第1题考纲先验', 'type_inferred')).toEqual([
+      { kind: 'source', label: '报告册P13' },
+      { kind: 'qtype', label: '单选题' },
+      { kind: 'match', label: '单选题第1题考纲先验' },
+    ])
+    expect(parseDraftBasisTags('从原卷文字层提取题号与分值', 'auto_matched')).toEqual([
+      { kind: 'source', label: '原卷文字层' },
+      { kind: 'match', label: '关键词匹配' },
+    ])
+    expect(parseDraftBasisTags(null, null)).toEqual([])
+  })
+
+  it('validateReflectionDraftLocally 拦截套话与刷屏并放行具体复盘', () => {
+    expect(validateReflectionDraftLocally('太粗心了没看清', '下次一定注意认真审题')).not.toBeNull()
+    expect(validateReflectionDraftLocally('1111111111111', 'aaaaaaaaaaaaa')).not.toBeNull()
+    expect(
+      validateReflectionDraftLocally(
+        '解分式方程时两边同乘最简公分母后忘记检验增根 x=2',
+        '解出未知数后必须立即代回原分母验证不为零再作答',
+      ),
+    ).toBeNull()
+  })
+
+  it('groupSchoolReflectionsByExam 按校考台账场次分组并汇总状态计数', () => {
+    const groups = groupSchoolReflectionsByExam([
+      {
+        item_id: 'i1',
+        exam_id: 'e2',
+        subject: 'math',
+        exam_title: '十月月考',
+        exam_date: '2026-10-20',
+        question_label: '第1题',
+        topic: '有理数',
+        earned_points: 0,
+        max_points: 2,
+        lost_points: 2,
+        reflection_status: 'pending',
+        stuck_point: '',
+        fix_strategy: '',
+      },
+      {
+        item_id: 'i2',
+        exam_id: 'e1',
+        subject: 'math',
+        exam_title: '九月练习',
+        exam_date: '2026-09-18',
+        question_label: '第5题',
+        topic: '二次方程',
+        earned_points: 1,
+        max_points: 3,
+        lost_points: 2,
+        reflection_status: 'completed',
+        stuck_point: 'abc',
+        fix_strategy: 'def',
+      },
+      {
+        item_id: 'i3',
+        exam_id: 'e2',
+        subject: 'math',
+        exam_title: '十月月考',
+        exam_date: '2026-10-20',
+        question_label: '第2题',
+        topic: '整式',
+        earned_points: 0,
+        max_points: 2,
+        lost_points: 2,
+        reflection_status: 'needs_revision',
+        stuck_point: '',
+        fix_strategy: '',
+      },
+    ])
+    expect(groups).toHaveLength(2)
+    expect(groups[0].examId).toBe('e2')
+    expect(groups[0].pendingCount).toBe(2)
+    expect(groups[0].needsRevisionCount).toBe(1)
+    expect(groups[0].items.map(i => i.item_id)).toEqual(['i1', 'i3'])
+    expect(groups[1].examId).toBe('e1')
+    expect(groups[1].completedCount).toBe(1)
   })
 })

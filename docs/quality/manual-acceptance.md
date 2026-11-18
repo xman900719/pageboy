@@ -110,6 +110,10 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 6** | [06-frontend-isolation.md](checklists/06-frontend-isolation.md) | 前端管理与使用功能物理强隔离、学生端纯净无审核与校考表单、管理端综合工作台、外网 Cloudflare 隧道 403 阻断 | 依赖【主题 1~5 通过】 | **[x] 已通过**（2026-11-06 测试人点选放行） |
 | **主题 7** | [07-p01-isolation.md](checklists/07-p01-isolation.md) | P0-1 权限与知识展示隔离边界验收（双凭据互斥拦截、学生端纯自然语言建议、无内部编码泄露、管理端审核完备） | 依赖【主题 1~6 通过】 | **[x] 已通过**（2026-11-07 测试人点选放行） |
 | **主题 8** | [08-k12100-report-sync.md](checklists/08-k12100-report-sync.md) | 全科校考同步第 3 步一键下载 k12100 总分报告并新建/更新/补全考试档案、答案草稿、答题卡及增量跳过 | 依赖【主题 5 通过】 | **[x] 已通过（2026-11-18）** |
+| **主题 10** | [10-school-exam-pending-items-workbench.md](checklists/10-school-exam-pending-items-workbench.md) | 逐题明细核对台三栏纵向堆叠布局、题号自然排序、分数只读、满分隐藏错因与术语统一 | 依赖【主题 8 通过】 | **[x] 已通过（2026-11-18）** |
+| **主题 11** | [11-school-exam-auto-knowledge-assoc.md](checklists/11-school-exam-auto-knowledge-assoc.md) | 逐题 Top-3 候选考点全覆盖、所属知识点三层自动关联与方式一微标签/芯片展示 | 依赖【主题 10 通过】 | **[x] 已通过（2026-11-18）** |
+| **主题 12** | [12-student-wrong-reflection-anti-perfunctory.md](checklists/12-student-wrong-reflection-anti-perfunctory.md) | 学生端「校考错题复盘」台账目录钻取单场、防敷衍质检、管理端只读查看与退回重写 | 依赖【主题 11 通过】 | **[x] 已通过（2026-11-18）** |
+| **主题 13** | [13-school-exam-stage1-stage2-reorg.md](checklists/13-school-exam-stage1-stage2-reorg.md) | 管理端校考第一、二阶段重组（方案一 · 上传原卷归入第一阶段、移除 Step 1 底部入口与报告中心冗余 DeepSeek 按钮） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
 
 ---
 

@@ -1,5 +1,16 @@
 components:
   schemas:
+    AdminReturnReflectionIn:
+      description: 管理端退回学生重写复盘的理由载荷。
+      properties:
+        reason:
+          default: 请进一步写明具体出错步骤与可执行的改进方法
+          maxLength: 200
+          minLength: 2
+          title: Reason
+          type: string
+      title: AdminReturnReflectionIn
+      type: object
     AttachmentOut:
       properties:
         byte_size:
@@ -1158,6 +1169,45 @@ components:
       - subject
       - target_year
       title: RunIn
+      type: object
+    SchoolExamAutoAssociateIn:
+      description: 按三层混合管线为校考待核对明细补全所属知识点与 Top-3 候选考点。
+      properties:
+        overwrite_existing:
+          default: false
+          title: Overwrite Existing
+          type: boolean
+        use_ai:
+          default: true
+          title: Use Ai
+          type: boolean
+      title: SchoolExamAutoAssociateIn
+      type: object
+    SchoolExamAutoAssociateOut:
+      description: 校考待核对明细自动关联结果摘要。
+      properties:
+        skipped_confirmed:
+          title: Skipped Confirmed
+          type: integer
+        tier1_matched:
+          title: Tier1 Matched
+          type: integer
+        tier2_ai:
+          title: Tier2 Ai
+          type: integer
+        tier3_inferred:
+          title: Tier3 Inferred
+          type: integer
+        updated:
+          title: Updated
+          type: integer
+      required:
+      - updated
+      - tier1_matched
+      - tier2_ai
+      - tier3_inferred
+      - skipped_confirmed
+      title: SchoolExamAutoAssociateOut
       type: object
     SchoolExamConfirmIn:
       description: 人工补充并确认待核对学校考试总分（确认后不可改写）。
@@ -2379,6 +2429,153 @@ components:
           - type: 'null'
           title: Review Status
       title: SourceStatusIn
+      type: object
+    StudentSchoolReflectionItemOut:
+      description: 面向学生端的校考失分复盘条目（严禁泄露内部 knowledge_id）。
+      properties:
+        ai_audit_mode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Audit Mode
+        earned_points:
+          title: Earned Points
+          type: number
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        exam_date:
+          title: Exam Date
+          type: string
+        exam_id:
+          title: Exam Id
+          type: string
+        exam_title:
+          title: Exam Title
+          type: string
+        fix_strategy:
+          default: ''
+          title: Fix Strategy
+          type: string
+        item_id:
+          title: Item Id
+          type: string
+        lost_points:
+          title: Lost Points
+          type: number
+        max_points:
+          title: Max Points
+          type: number
+        question_label:
+          title: Question Label
+          type: string
+        reflection_status:
+          enum:
+          - not_required
+          - pending
+          - completed
+          - needs_revision
+          title: Reflection Status
+          type: string
+        return_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Return Reason
+        stem_excerpt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Stem Excerpt
+        stuck_point:
+          default: ''
+          title: Stuck Point
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          - ethics
+          title: Subject
+          type: string
+        topic:
+          title: Topic
+          type: string
+      required:
+      - item_id
+      - exam_id
+      - subject
+      - exam_title
+      - exam_date
+      - question_label
+      - topic
+      - earned_points
+      - max_points
+      - lost_points
+      - reflection_status
+      title: StudentSchoolReflectionItemOut
+      type: object
+    StudentSchoolReflectionSubmitIn:
+      description: 学生端提交校考失分题结构化错因分类与防敷衍复盘。
+      properties:
+        error_category:
+          enum:
+          - concept
+          - calculation
+          - reading
+          - method
+          - norm
+          - other
+          title: Error Category
+          type: string
+        fix_strategy:
+          maxLength: 300
+          minLength: 1
+          title: Fix Strategy
+          type: string
+        stuck_point:
+          maxLength: 300
+          minLength: 1
+          title: Stuck Point
+          type: string
+      required:
+      - error_category
+      - stuck_point
+      - fix_strategy
+      title: StudentSchoolReflectionSubmitIn
+      type: object
+    StudentSchoolReflectionsResponseOut:
+      description: 学生端校考错题复盘列表及全科待复盘计数。
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/StudentSchoolReflectionItemOut'
+          title: Items
+          type: array
+        pending_counts_by_subject:
+          additionalProperties:
+            type: integer
+          title: Pending Counts By Subject
+          type: object
+        total_pending:
+          title: Total Pending
+          type: integer
+      required:
+      - items
+      - pending_counts_by_subject
+      - total_pending
+      title: StudentSchoolReflectionsResponseOut
       type: object
     TaxonomyReleaseIn:
       properties:
@@ -5704,6 +5901,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add School Exam Items
+  /api/school-exams/{exam_id}/items/auto-associate:
+    post:
+      description: 按三层混合管线为校考待核对明细补全所属知识点与 Top-3 候选考点；只写草稿，绝不自动确认。
+      operationId: auto_associate_school_exam_items_api_school_exams__exam_id__items_auto_associate_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SchoolExamAutoAssociateIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolExamAutoAssociateOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Auto Associate School Exam Items
   /api/school-exams/{exam_id}/items/confirm-batch:
     post:
       description: 批量人工确认本场校考草稿：任一条校验失败则整批回滚，绝不部分提交。
@@ -5868,6 +6106,50 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Discard School Exam Item
+  /api/school-exams/{exam_id}/items/{item_id}/return-reflection:
+    post:
+      description: 管理端退回学生的校考失分复盘，要求重写；绝不改写已核对得分与知识点（INV-04）。
+      operationId: return_school_exam_item_reflection_api_school_exams__exam_id__items__item_id__return_reflection_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReturnReflectionIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Return School Exam Item Reflection
   /api/school-exams/{exam_id}/paper:
     post:
       description: 原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。
@@ -6097,6 +6379,90 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Sync School Exam Drafts
+  /api/student/school-exam-reflections:
+    get:
+      description: 列出学生本人已确认校考失分小题及复盘状态（严格隔离内部 knowledge_id）。
+      operationId: list_student_school_exam_reflections_api_student_school_exam_reflections_get
+      parameters:
+      - in: query
+        name: subject
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - math
+            - chinese
+            - english
+            - physics
+            - ethics
+            type: string
+          - type: 'null'
+          title: Subject
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentSchoolReflectionsResponseOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Student School Exam Reflections
+      tags:
+      - learning
+  /api/student/school-exam-reflections/{item_id}:
+    post:
+      description: 学生端提交校考失分题错因分类与双栏防敷衍复盘（本地硬规则 + DeepSeek 语义把关）。
+      operationId: submit_student_school_exam_reflection_api_student_school_exam_reflections__item_id__post
+      parameters:
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentSchoolReflectionSubmitIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentSchoolReflectionItemOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Submit Student School Exam Reflection
+      tags:
+      - learning
   /api/student/verify:
     get:
       operationId: verify_student_api_student_verify_get
