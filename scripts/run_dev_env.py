@@ -485,6 +485,9 @@ def start_env() -> int:
     print("==================================================================")
     print("提示：点击页面右上角「退出」仍可回到令牌门进行人工测试。")
     print("停止命令：uv run python scripts/run_dev_env.py stop")
+    audit_script = REPO_ROOT / "scripts" / "audit_dev_school_exams.py"
+    if audit_script.is_file():
+        subprocess.run([_api_python(), str(audit_script)], check=False)
     return 0
 
 
@@ -549,6 +552,9 @@ def status_env() -> int:
     print(f"后端 API (127.0.0.1:{API_PORT}): {'🟢 在线' if api_live else '🔴 离线'}")
     print(f"前端 Vite dev (127.0.0.1:{WEB_PORT}): {'🟢 在线' if web_live else '🔴 离线'}")
     print("==================================================================")
+    audit_script = REPO_ROOT / "scripts" / "audit_dev_school_exams.py"
+    if audit_script.is_file():
+        subprocess.run([_api_python(), str(audit_script)], check=False)
     return 0 if (dev_env_ok and web_env_ok and api_live and web_live) else 1
 
 

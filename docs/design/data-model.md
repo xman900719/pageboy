@@ -99,4 +99,7 @@ R2 卷头只识别五项：`academic_year + grade + exam_type + subject + exam_d
 
 - 迁移 `0015`（`school_exam_reports`）：本地多学科分析报告册扫描、解析与场次关联结果；`(learner_id, sha256)` 唯一，支持补录学科/身份与人工确认后回写关联场次待确认总分（不覆盖已人工锁定成绩），生成逐题 `ocr_draft` 仍待人工核对后方可进入能力证据。
 - 迁移 `0016`（`school_exam_report_attachments`）：从报告册拆页渲染的私有答题卡 PNG 索引；`(report_id, subject, page_number)` 唯一，`storage_key` 不进 API 响应，支持人工旋转与确认后同步至对应场次私有附件。
-- 回退：`0016` 与 `0015` 可依次降级回 `0014`，将删除报告册及答题卡页索引表；生产不得无备份降级。
+- 迁移 `0017`（`school_exam_reports.external_exam_id` / `exam_date`）：记录从 k12100 下载报告时取得的平台场次 ID（建索引用于增量跳过已同步场次）与首页考试日期字符串（`YYYY-MM-DD` 或 `YYYY-MM`）。
+- 迁移 `0018`（排名最高分与单场唯一去重）：为 `school_exams` 新增 `class_highest`/`grade_highest`，为 `school_exam_rank_snapshots` 新增 `highest_score`，为 `school_exam_reports` 新增 `total_class_highest`/`total_grade_highest` 与部分唯一索引 `uq_school_exam_report_owner_ext_id`（同场分析报告无论本地收件箱或 k12100 重下均合并为单条规范记录）。
+- 迁移 `0019`（规范场次唯一键与附件防重）：为 `school_exam_reports` 新增 `canonical_exam_key`（按学年、规范年级、考试类型、学期窗口/月考年月/序号生成）及部分唯一索引 `uq_school_exam_report_owner_canonical_key`；为 `school_paper_attachments` 新增 `(school_exam_id, sha256)` 唯一约束 `uq_school_paper_attachment_exam_sha`，物理阻断跨通道同场报告重插与同考重复附件写入。
+- 回退：`0019` → `0018` → `0017` → `0016` → `0015` 可依次降级回 `0014`；生产不得无备份降级。

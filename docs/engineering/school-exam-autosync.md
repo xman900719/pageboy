@@ -1,7 +1,7 @@
 # 校考试卷自动发现、严格匹配与本人排名（ST-EXAM-AUTOSYNC-01）
 
-> 状态（R2 修正）：五项卷头模型（含单一 `exam_date`）、五字段严格匹配、真实版式 OCR 回归、本人排名归属校验、paper-scoped 采集闭环已实现并有自动化测试。
-> **真实学校卷源与真实 k12100 平台联调仍为 `BLOCKED / NOT_VERIFIED`**：仓库没有已审核的学校月考/期中/期末卷源及授权方式；本机也没有可使用的真实账号验收条件。本文不会把模拟数据测试表述为真实平台验证。
+> 状态（R3 增量）：在 R2 五项卷头与严格匹配基础上，新增 k12100「总分」分析报告册自动下载与全科考试档案补全（`k12100_report_sync.py`、`--mode reports`、迁移 `0017`、`POST /api/school-exams/k12100-sync/report-jobs`）。
+> **真实平台与本地环境状态**：已在宿主机通过真实 k12100 会话对「总分 → 报告打印 → 下载PDF」路径与首页 `queryStudentExamDataList` 字段完成只读探测（Phase 0）；「全科校考同步」第 3 步真实联调及 iPadOS 模拟机验收需由 Owner 人工核验放行后方可确认。仓库不入库任何真实私卷、真实学校/学生 PII 或账号凭据。
 
 ## 1. 目标与边界
 
@@ -163,3 +163,24 @@ scripts/check_env_isolation.sh
 ```
 
 详细需求映射、命令退出码与限制见 Review 包中的 `tests/TEST_MATRIX.md`、`tests/TEST_COMMANDS.md` 与 `REAL_WORLD_VALIDATION.md`。
+
+## 13. R3 增量：一键下载 k12100「总分」报告并补全档案
+
+### 13.1 实测交互链路（Phase 0 Probe）
+
+1. **首页列表（`#/jointStudentAnalysisReport/list`）**：接口 `queryStudentExamDataList` 返回 `examData[]`，其中 `examData._id` 为平台考试 ID、`examData.examDate` 为真实考试日期（`YYYY-MM-DD`，不同于 `analysisTime` 发布时间）、`gradeName`/`gradeCode` 为年级、`schoolYearCode` 为学年度、`examName` 为场次名称、`examType` 配合 `examTypeData` 为大类标签、`examSubjectVoList` 首项 `isTotal=1` 为「总分」入口。
+2. **报告下载路径**：点击「总分」入口进入 `#/studentAnalysisReport/reportDetails/scrolReport` → 点击左侧「报告打印」（`button.mm_btn:has-text("报告打印")`）→ 进入 `#/studentAnalysisReport/reportDetails/studentReport` → 点击「下载PDF」（`button.download_btn`）触发浏览器 `blob:` PDF 下载。
+
+### 13.2 身份字段来源与日期规则
+
+- **考试日期（`exam_date`）**：从 k12100 首页 `examDate` / `examTime` / 卡片文本按平台实际格式提取。完整日（`YYYY-MM-DD`）精确入库；若平台给出年月（`YYYY-MM`），`SchoolExamReport.exam_date` 保留 `YYYY-MM`、`SchoolExam.exam_date` 与手工建档保持一致锚定当月 1 日。仅当 k12100 完全无日期时阻断自动建档（`awaiting_exam_date`），绝不以抓取当天日期填充。
+- **学年度 / 年级 / 考试类型 / 学科**：主来源为下载的分析报告册本地解析；当报告封面 OCR 缺失年级、学年度或类型时，由 k12100 首页元数据补齐；标准类型（`monthly`/`midterm`/`final`/`unified_practice`）写入规范 `exam_type_label` 以与第 2 步卷头匹配器兼容，具体次序（如「统一练习一」）保留在 `title`/`series_title`。
+- **试卷录入保留**：第 1、2 步（私有收件箱扫描、五字段卷头匹配、私有附件入档）保持原功能不变；第 3 步不再要求先匹配试卷即可直接运行报告同步，新建/补全后的档案反过来供第 2 步严格匹配。
+
+### 13.3 写入、更新、答案草稿与冲突红线
+
+- **新建 / 更新 / 补全与分科核对隔离**：无匹配且有可解析日期时新建 `SchoolExam`（`source_kind="k12100"`，`confirmed_by_user=False`）；已有唯一未锁定档案时更新总分并补全空身份字段；已人工锁定总分且分值不同返回 `locked_conflict`；非空身份字段冲突返回 `identity_conflict`，均不覆盖原值；多候选返回 `ambiguous`。**确认某一学科总分或确认整份报告均严格分科独立，绝不自动连带锁定同一场次其他未人工核对的学科总分**。
+- **全科与各科排名、班级/年级最高分全量同步**：解析并支持折行“年级最高分/得分率”续表与 OCR 水平行，同步写入 `SchoolExam.class_highest`/`grade_highest`、`SchoolExamReport.total_class_highest`/`total_grade_highest`，并通过 `persist_rank_entries` 将各科（`subject_scope=<subject>`）与全科总分（`subject_scope="total"`）班排/年排/最高分写入 `SchoolExamRankSnapshot`（不进入 `guidance.py` 能力画像）。
+- **答案与逐题草稿、去重单次持久化**：调用 `generate_item_drafts(..., update_unconfirmed_drafts=True)` 与本地知识点匹配：新增 `ocr_draft` 或更新未人工确认的 `ocr_draft` 得分（保留已有知识点映射）；`confirmed_by_user=True` 或 `manual_entry` 绝对跳过。`register_report_bytes` 按 `sha256`、`external_exam_id` 与规范考试身份将同场不同时间戳/不同来源报告合并为唯一记录，`sync_answer_cards_to_ledger` 按图像哈希去重并清理旧版错位页号附件，绝不重复持久化同场考试或同图答题卡。
+- **下载前完整性预检、断点持久与熔断**：启动下载前先执行 `hydrate_incomplete_local_reports` 合并重复记录并从本地已存 PDF 无网补全缺失排名/最高分/答题卡，随后将 `external_exam_ids` 与 `complete_identities` 一并交给浏览器核对；若首页全部场次均已完整同步，直接在首页结束并零下载返回。遇验证码、401/403/429 立即熔断且零写入；每下完 1 份 PDF 原子写回 `--output`，中途退出仍将此前已落盘有效 PDF 解析入库，`GET /api/school-exams/sync-center` 持久展示 `synced_reports` 与 `sync_readiness`。
+- **迁移 `0017`–`0019`**：`0017` 为 `school_exam_reports` 新增 `external_exam_id`/`exam_date`；`0018` 新增各科/总分最高分列、排名快照 `highest_score` 及 `uq_school_exam_report_owner_ext_id` 部分唯一索引；`0019` 新增 `canonical_exam_key` 部分唯一索引 `uq_school_exam_report_owner_canonical_key` 与 `uq_school_paper_attachment_exam_sha` 唯一约束，且以 `school_exam_matcher.py` 作为读写共用的身份/去重单一真源、配合 `scripts/audit_dev_school_exams.py` 只读不变量体检与 `build_answer_card_attachments`/`sync_answer_cards_to_ledger` 期望态删余对账防止跨科错配与重扫建重。

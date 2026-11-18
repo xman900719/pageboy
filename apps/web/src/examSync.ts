@@ -1,4 +1,6 @@
 import type {
+  K12100ReportJobResult,
+  K12100ReportSubjectAction,
   SchoolExamDetail,
   SchoolExamPaper,
   SchoolExamRanksPayload,
@@ -15,6 +17,8 @@ export interface MatchMeta {
 
 export const MATCH_STATE_META: Record<string, MatchMeta> = {
   EXACT_MATCH: { label: '唯一精确匹配', tone: 'good', action: '可进入获取信息' },
+  MATCHED: { label: '全科已关联', tone: 'good', action: '已关联校考档案' },
+  PARTIAL_MATCH: { label: '部分学科已关联', tone: 'wait', action: '可补建缺失学科档案' },
   MANUAL_CONFIRMED: { label: '人工确认匹配', tone: 'good', action: '可进入获取信息' },
   AMBIGUOUS: { label: '多个候选', tone: 'wait', action: '需要人工选择' },
   CONFLICT: { label: '身份字段冲突', tone: 'bad', action: '必须人工核对' },
@@ -118,5 +122,77 @@ export function deriveReviewCoverage(
     attachments: detail.attachments.length,
     rankScopes: ranks?.ranks.map(rank => rank.scope) ?? [],
     missingRankScopes: ranks?.missing_scopes ?? ['class', 'grade', 'school', 'region'],
+  }
+}
+
+export interface ReportActionMeta {
+  label: string
+  tone: 'good' | 'mid' | 'wait' | 'bad' | 'subtle'
+}
+
+export const REPORT_ACTION_META: Record<K12100ReportSubjectAction['action'], ReportActionMeta> = {
+  created: { label: '新建待核对', tone: 'good' },
+  updated: { label: '更新待核对', tone: 'mid' },
+  filled: { label: '补全信息', tone: 'good' },
+  unchanged: { label: '已最新', tone: 'subtle' },
+  locked_conflict: { label: '锁分冲突', tone: 'bad' },
+  identity_conflict: { label: '身份冲突', tone: 'bad' },
+  awaiting_exam_date: { label: '缺日期未建档', tone: 'wait' },
+  ambiguous: { label: '多候选歧义', tone: 'wait' },
+  skipped: { label: '已跳过', tone: 'subtle' },
+}
+
+export function getReportActionMeta(action: string | null | undefined): ReportActionMeta {
+  return REPORT_ACTION_META[(action ?? '') as K12100ReportSubjectAction['action']] ?? {
+    label: action || '未知',
+    tone: 'subtle',
+  }
+}
+
+export interface ReportJobSummary {
+  homeExams: number
+  skippedExisting: number
+  downloaded: number
+  created: number
+  updated: number
+  filled: number
+  conflicts: number
+  awaitingOrAmbiguous: number
+  draftsChanged: number
+  cardsSynced: number
+  hasIssues: boolean
+}
+
+export function summarizeReportJob(result: K12100ReportJobResult | null | undefined): ReportJobSummary {
+  if (!result) {
+    return {
+      homeExams: 0,
+      skippedExisting: 0,
+      downloaded: 0,
+      created: 0,
+      updated: 0,
+      filled: 0,
+      conflicts: 0,
+      awaitingOrAmbiguous: 0,
+      draftsChanged: 0,
+      cardsSynced: 0,
+      hasIssues: false,
+    }
+  }
+  const t = result.totals
+  const conflicts = (t.locked_conflicts ?? 0) + (t.identity_conflicts ?? 0)
+  const awaitingOrAmbiguous = (t.awaiting_exam_date ?? 0) + (t.ambiguous_exams ?? 0)
+  return {
+    homeExams: t.home_exams ?? 0,
+    skippedExisting: t.skipped_existing ?? 0,
+    downloaded: t.downloaded ?? 0,
+    created: t.created_exams ?? 0,
+    updated: t.updated_exams ?? 0,
+    filled: t.filled_exams ?? 0,
+    conflicts,
+    awaitingOrAmbiguous,
+    draftsChanged: (t.drafts_created ?? 0) + (t.drafts_updated ?? 0),
+    cardsSynced: t.cards_synced ?? 0,
+    hasIssues: conflicts > 0 || awaitingOrAmbiguous > 0 || (t.failures ?? 0) > 0,
   }
 }

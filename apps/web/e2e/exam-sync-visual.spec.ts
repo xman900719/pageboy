@@ -346,7 +346,7 @@ test('V1 桌面：冲突、429 停止与核对入档界面证据', async ({ brow
     totalConfirmed: false,
     examId,
   })
-  await failed.getByRole('button', { name: /获取信息/ }).click()
+  await failed.getByRole('button', { name: /k12100 报告同步/ }).click()
   await expect(failed.getByRole('region', { name: '全科校考同步中心' })).toContainText('429')
   await stabilize(failed)
   await failed.screenshot({ path: path.join(outputDir, 'sync-center-desktop-stop.png'), fullPage: true })

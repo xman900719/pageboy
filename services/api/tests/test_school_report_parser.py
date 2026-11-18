@@ -80,3 +80,43 @@ def test_pii_is_redacted_from_excerpt_and_title():
     for name in ("张三", "李四", "王五", "20250101", "朝阳1班"):
         assert name not in report.text_excerpt
         assert name not in (report.identity.title or "")
+
+
+def test_wrapped_continuation_score_table_and_total_highest():
+    wrapped = """—— 第 1 页 ——
+2026-2027学年秋学期统一练习一
+朝阳1班匿名分析报告册
+报告时间: 2026年10月12日 10:00:00
+
+—— 第 2 页 ——
+总分成绩分析
+成绩单
+科目 满分 班级 得分 班排 年排 实考人数 班级最高分
+语文 100 朝阳1班 63 17 548 677 84
+数学 100 朝阳1班 70 14 433 677 86
+英语 100 朝阳1班 71 17 510 675 93
+物理 70 朝阳1班 36 21 582 678 62
+道德与法治 50 朝阳1班 33 12 487 684 40
+总分 370 朝阳1班 240 15 538 674 312
+成绩单
+科目 年级最高分 得分率
+语文 96 63%
+数学 100 70%
+英语 98 71%
+物理 69 51.43%
+道德与法治 50 66%
+总分 350 64.86%
+"""
+    report = parse_report_text(wrapped, digest="f" * 64)
+    assert report.total_class_rank == 15
+    assert report.total_grade_rank == 538
+    assert report.total_participants == 674
+    assert report.total_class_highest == 312.0
+    assert report.total_grade_highest == 350.0
+    by_subj = {item.subject: item for item in report.subjects}
+    assert by_subj["chinese"].class_highest == 84.0
+    assert by_subj["chinese"].grade_highest == 96.0
+    assert by_subj["chinese"].score_rate == 63.0
+    assert by_subj["math"].grade_highest == 100.0
+    assert by_subj["physics"].participants == 678
+    assert by_subj["physics"].grade_highest == 69.0

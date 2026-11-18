@@ -165,7 +165,32 @@ def test_report_scan_is_idempotent_and_owner_scoped(client, tmp_path, monkeypatc
     finally:
         session.close()
     math_exams = client.get("/api/school-exams?subject=math", headers=ADMIN_AUTH).json()
-    assert any(item["earned_points"] == 69 and item["max_points"] == 100 and item["confirmed_by_user"] for item in math_exams)
+    math_row = next(item for item in math_exams if item["earned_points"] == 69 and item["max_points"] == 100)
+    # Bug 1 红线：人工确认报告仅写入待核对总分与排名基准，绝不自动连带锁定任一学科总分
+    assert math_row["confirmed_by_user"] is False
+    for subj in ("english", "physics", "ethics"):
+        subj_rows = client.get(f"/api/school-exams?subject={subj}", headers=ADMIN_AUTH).json()
+        assert all(item["confirmed_by_user"] is False for item in subj_rows)
+    # 单独确认数学总分后，其余 3 科仍必须保持待核对
+    confirm_math = client.post(
+        f"/api/school-exams/{math_row['id']}/confirm",
+        json={"earned_points": 69, "confirmed_by_user": True},
+        headers=ADMIN_AUTH,
+    )
+    assert confirm_math.status_code == 200 and confirm_math.json()["confirmed_by_user"] is True
+    for subj in ("english", "physics", "ethics"):
+        subj_rows = client.get(f"/api/school-exams?subject={subj}", headers=ADMIN_AUTH).json()
+        assert all(item["confirmed_by_user"] is False for item in subj_rows)
+    # 排名与最高分快照同步校验
+    ranks_resp = client.get(f"/api/school-exams/{math_row['id']}/ranks", headers=ADMIN_AUTH)
+    assert ranks_resp.status_code == 200
+    rk = ranks_resp.json()
+    assert rk["class_highest"] == 85
+    assert rk["grade_highest"] == 97
+    assert {(r["scope"], r["rank_value"], r["highest_score"]) for r in rk["ranks"]} == {
+        ("class", 13, 85.0),
+        ("grade", 434, 97.0),
+    }
 
 
 def test_subject_scan_skips_analysis_report(tmp_path, client, monkeypatch):

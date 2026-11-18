@@ -109,6 +109,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 5** | [05-admin-and-formulas.md](checklists/05-admin-and-formulas.md) | 审核台 `v-model` 表单录入、**附件本地文件浏览与试卷规范指引**、**知识点配置化本地化**、KaTeX 复杂公式专业排版、非规范 `$` 纯文本安全回退 | 依赖【主题 1~4 通过】 | **[x] 已通过**（2026-11-02 测试人点选放行） |
 | **主题 6** | [06-frontend-isolation.md](checklists/06-frontend-isolation.md) | 前端管理与使用功能物理强隔离、学生端纯净无审核与校考表单、管理端综合工作台、外网 Cloudflare 隧道 403 阻断 | 依赖【主题 1~5 通过】 | **[x] 已通过**（2026-11-06 测试人点选放行） |
 | **主题 7** | [07-p01-isolation.md](checklists/07-p01-isolation.md) | P0-1 权限与知识展示隔离边界验收（双凭据互斥拦截、学生端纯自然语言建议、无内部编码泄露、管理端审核完备） | 依赖【主题 1~6 通过】 | **[x] 已通过**（2026-11-07 测试人点选放行） |
+| **主题 8** | [08-k12100-report-sync.md](checklists/08-k12100-report-sync.md) | 全科校考同步第 3 步一键下载 k12100 总分报告并新建/更新/补全考试档案、答案草稿、答题卡及增量跳过 | 依赖【主题 5 通过】 | **[x] 已通过（2026-11-18）** |
 
 ---
 

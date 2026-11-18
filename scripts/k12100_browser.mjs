@@ -9,6 +9,7 @@
  * 4. 不向标准输出/快照文件写入姓名、考号、密码或授权令牌等敏感字段。
  */
 
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -28,6 +29,7 @@ const PLAYWRIGHT_CORE = path.join(REPO_ROOT, 'apps', 'web', 'node_modules', 'pla
 const TARGET_LOGIN_URL = 'https://www.k12100.com/#/login'
 const TARGET_REPORT_LIST_URL = 'https://www.k12100.com/studenting/#/jointStudentAnalysisReport/list'
 const MAX_CARD_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_REPORT_PDF_BYTES = 35 * 1024 * 1024
 
 const SENSITIVE_KEY_RE =
   /^(student_?name|real_?name|user_?name|nick_?name|xm|student_?id|xuehao|exam_?no|kaohao|seat_?no|class_?name|school_?name|phone|mobile|tel|id_?card|password|pwd|token|access_?token|refresh_?token|cookie|姓名|学生姓名|学号|考号|座位号|班级|学校|手机号|身份证|studName|studentName|stuName|className|schoolName|studId|studentId|stuCode|studentNo|studentCode|classIdCode|schoolId|schoolRank|classRank|examRank|regionRank|examRankRate|schoolRankRate|groupClassRanks|examNum|actualExamNum|subjectLeader|createdBy)$/i
@@ -56,6 +58,9 @@ function parseArgs(argv) {
     probeBrowseSeconds: 20,
     fetchCardImages: false,
     headless: false,
+    probeTarget: '',
+    skipFile: '',
+    downloadDir: '',
   }
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i]
@@ -86,6 +91,15 @@ function parseArgs(argv) {
     } else if (key === '--probe-browse-seconds' && val) {
       const n = Number(val)
       args.probeBrowseSeconds = Number.isFinite(n) ? Math.max(0, Math.min(300, Math.floor(n))) : 20
+      i += 1
+    } else if (key === '--probe-target' && val) {
+      args.probeTarget = String(val).trim()
+      i += 1
+    } else if (key === '--skip-file' && val) {
+      args.skipFile = String(val).trim()
+      i += 1
+    } else if (key === '--download-dir' && val) {
+      args.downloadDir = String(val).trim()
       i += 1
     } else if (key === '--fetch-card-images') {
       args.fetchCardImages = true
@@ -532,6 +546,659 @@ async function collectExamPackets(page, state, args) {
   }
 }
 
+async function probeTotalReport(page, context, state, args) {
+  state.collectBucket = []
+  const responseMeta = []
+  const popupPages = []
+  const downloads = []
+
+  const attachPageWatchers = targetPage => {
+    targetPage.on('download', async dl => {
+      const entry = {
+        suggestedFilename: dl.suggestedFilename(),
+        url: dl.url().split('?')[0],
+        savedPath: null,
+        byteSize: 0,
+        isPdf: false,
+      }
+      try {
+        fs.mkdirSync(args.probeDir, { recursive: true, mode: 0o700 })
+        const dest = path.join(args.probeDir, 'probe_downloaded_report.bin')
+        await dl.saveAs(dest)
+        fs.chmodSync(dest, 0o600)
+        const stat = fs.statSync(dest)
+        const head = Buffer.alloc(8)
+        const fd = fs.openSync(dest, 'r')
+        fs.readSync(fd, head, 0, 8, 0)
+        fs.closeSync(fd)
+        entry.savedPath = dest
+        entry.byteSize = stat.size
+        entry.isPdf = head.subarray(0, 5).toString('latin1') === '%PDF-'
+      } catch (err) {
+        entry.error = err?.message || String(err)
+      }
+      downloads.push(entry)
+    })
+  }
+  attachPageWatchers(page)
+  context.on('page', newPage => {
+    popupPages.push({ url: newPage.url() })
+    attachPageWatchers(newPage)
+    newPage.on('response', resp => {
+      const url = resp.url()
+      if (!url.includes('k12100.com')) return
+      responseMeta.push({
+        source: 'popup',
+        url: url.split('?')[0],
+        status: resp.status(),
+        contentType: resp.headers()['content-type'] || '',
+        contentDisposition: resp.headers()['content-disposition'] || '',
+      })
+    })
+  })
+  page.on('response', resp => {
+    const url = resp.url()
+    if (!url.includes('k12100.com')) return
+    const ct = resp.headers()['content-type'] || ''
+    const cd = resp.headers()['content-disposition'] || ''
+    if (!ct.includes('json') || cd) {
+      responseMeta.push({
+        source: 'main',
+        url: url.split('?')[0],
+        status: resp.status(),
+        contentType: ct,
+        contentDisposition: cd,
+      })
+    }
+  })
+
+  await page.goto(TARGET_REPORT_LIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.locator('.list_item').first().waitFor({ state: 'visible', timeout: 25000 })
+  await humanPause(1800, 2800)
+
+  const homeCardSummary = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('.list_item'))
+      .slice(0, 5)
+      .map((card, idx) => ({
+        index: idx,
+        lines: (card.innerText || '')
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)
+          .slice(0, 12),
+        courses: Array.from(card.querySelectorAll('.course_img, [class*="course"], button, a')).map(el => ({
+          tag: el.tagName,
+          className: el.className,
+          text: (el.textContent || '').trim(),
+          alt: el.getAttribute('alt') || '',
+          title: el.getAttribute('title') || '',
+          src: (el.getAttribute('src') || '').split('/').pop(),
+        })),
+      }))
+  })
+
+  const homeXhrs = state.xhrRecords
+    .filter(r => /exam|list|report|student/i.test(r.url))
+    .map(r => ({ endpoint: r.url.split('/').pop(), url: r.url, data: r.data }))
+
+  // 点开第一场下的「总分」入口
+  state.collectBucket = []
+  const firstCard = page.locator('.list_item').first()
+  let clickedEntry = null
+  const totalCandidates = [
+    firstCard.locator('.course_img').filter({ hasText: '总分' }),
+    firstCard.locator('.course_img[alt*="总分"], .course_img[title*="总分"]'),
+    firstCard.locator('text=总分'),
+  ]
+  for (const loc of totalCandidates) {
+    if ((await loc.count()) > 0) {
+      const target = loc.first()
+      clickedEntry = await target.evaluate(el => ({
+        tag: el.tagName,
+        className: el.className,
+        text: (el.textContent || '').trim(),
+        alt: el.getAttribute('alt') || '',
+      }))
+      await humanClick(target)
+      break
+    }
+  }
+  if (!clickedEntry && (await firstCard.locator('.course_img').count()) > 0) {
+    const firstCourse = firstCard.locator('.course_img').first()
+    clickedEntry = await firstCourse.evaluate(el => ({
+      fallbackFirstCourse: true,
+      tag: el.tagName,
+      className: el.className,
+      text: (el.textContent || '').trim(),
+    }))
+    await humanClick(firstCourse)
+  }
+
+  await humanPause(3500, 5000)
+  const activePage = context.pages()[context.pages().length - 1] || page
+  await activePage.waitForLoadState('domcontentloaded').catch(() => {})
+  await humanPause(1500, 2200)
+
+  const detailDom = await activePage.evaluate(() => ({
+    url: location.href,
+    title: document.title,
+    buttonsAndLinks: Array.from(document.querySelectorAll('a, button, [role="button"], .el-button, span, div'))
+      .filter(el => {
+        const t = (el.textContent || '').trim()
+        return t.length > 0 && t.length <= 30 && /下载|导出|报告|PDF|打印|总分|成绩/i.test(t)
+      })
+      .slice(0, 40)
+      .map(el => ({
+        tag: el.tagName,
+        className: String(el.className || '').slice(0, 80),
+        text: (el.textContent || '').trim(),
+        href: el.getAttribute('href') || '',
+      })),
+    iframes: Array.from(document.querySelectorAll('iframe, embed, object')).map(el => ({
+      tag: el.tagName,
+      src: (el.getAttribute('src') || el.getAttribute('data') || '').slice(0, 120),
+    })),
+  }))
+
+  const detailXhrsBeforeDownload = state.collectBucket.map(b => ({ endpoint: b.endpoint, url: b.url, data: b.data }))
+
+  // 点「报告打印」按钮，观察跳转/弹窗/下载按钮与 XHR
+  state.collectBucket = []
+  let printClickInfo = null
+  const printBtn = activePage.locator('button:has-text("报告打印"), .mm_btn:has-text("报告打印")').first()
+  if ((await printBtn.count()) > 0) {
+    printClickInfo = await printBtn.evaluate(el => ({
+      tag: el.tagName,
+      className: String(el.className || ''),
+      text: (el.textContent || '').trim(),
+    }))
+    await humanClick(printBtn)
+    await humanPause(3500, 5000)
+  }
+
+  const afterPrintPage = context.pages()[context.pages().length - 1] || activePage
+  await afterPrintPage.waitForLoadState('domcontentloaded').catch(() => {})
+  const printDom = await afterPrintPage.evaluate(() => ({
+    url: location.href,
+    textPreview: (document.body?.innerText || '').slice(0, 1000),
+    buttonsAndLinks: Array.from(document.querySelectorAll('a, button, [role="button"], .el-button, input[type="checkbox"], label'))
+      .map(el => ({
+        tag: el.tagName,
+        className: String(el.className || '').slice(0, 80),
+        text: (el.textContent || '').trim().slice(0, 60),
+        href: el.getAttribute('href') || '',
+      }))
+      .filter(item => item.text)
+      .slice(0, 60),
+  }))
+  const printXhrs = state.collectBucket.map(b => ({ endpoint: b.endpoint, url: b.url, data: b.data }))
+
+  // 若出现下载/生成PDF/导出报告按钮，轻点一次并等待下载或 XHR（最多 25 秒）
+  state.collectBucket = []
+  let downloadClickInfo = null
+  const dlLocators = [
+    afterPrintPage.locator('button:has-text("下载"), button:has-text("生成"), button:has-text("导出报告"), button:has-text("打印"), a:has-text("下载")'),
+  ]
+  for (const loc of dlLocators) {
+    const count = await loc.count()
+    for (let i = 0; i < count; i += 1) {
+      const btn = loc.nth(i)
+      const txt = ((await btn.textContent().catch(() => '')) || '').trim()
+      if (txt === '报告打印') continue
+      const visible = await btn.isVisible().catch(() => false)
+      if (!visible) continue
+      downloadClickInfo = {
+        text: txt,
+        className: await btn.getAttribute('class').catch(() => ''),
+      }
+      await humanClick(btn)
+      const waitEnd = Date.now() + 25000
+      while (Date.now() < waitEnd && downloads.length === 0 && !state.circuitBreaker) {
+        await sleep(800)
+      }
+      break
+    }
+    if (downloadClickInfo) break
+  }
+
+  fs.mkdirSync(args.probeDir, { recursive: true, mode: 0o700 })
+  const outPath = path.join(args.probeDir, 'total_report_probe.json')
+  const payload = {
+    status: state.circuitBreaker ? 'circuit_breaker' : 'probed',
+    reason: state.circuitBreaker || 'ok',
+    captured_at: new Date().toISOString(),
+    home_cards_count: homeCardSummary.length,
+    home_cards: homeCardSummary,
+    home_xhrs: homeXhrs,
+    clicked_entry: clickedEntry,
+    detail_dom: detailDom,
+    detail_xhrs_before_download: detailXhrsBeforeDownload,
+    print_click: printClickInfo,
+    print_dom: printDom,
+    print_xhrs: printXhrs,
+    download_click: downloadClickInfo,
+    download_xhrs: state.collectBucket.map(b => ({ endpoint: b.endpoint, url: b.url, data: b.data })),
+    non_json_responses: responseMeta,
+    popups: popupPages,
+    downloads,
+  }
+  fs.writeFileSync(outPath, JSON.stringify(payload, null, 2), { mode: 0o600 })
+  return { ...payload, probe_file: outPath }
+}
+
+function readSkipPayload(skipFile) {
+  if (!skipFile || !fs.existsSync(skipFile)) return { skipSet: new Set(), completeIdentities: [] }
+  try {
+    const raw = JSON.parse(fs.readFileSync(skipFile, 'utf-8'))
+    const ids = Array.isArray(raw?.external_exam_ids) ? raw.external_exam_ids : []
+    const identities = Array.isArray(raw?.complete_identities) ? raw.complete_identities : []
+    return {
+      skipSet: new Set(ids.map(v => String(v || '').trim()).filter(Boolean)),
+      completeIdentities: identities.filter(item => item && typeof item === 'object'),
+    }
+  } catch {
+    return { skipSet: new Set(), completeIdentities: [] }
+  }
+}
+
+function normGradeShort(raw) {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  return { 初三: '9', 九年级: '9', 初二: '8', 八年级: '8', 初一: '7', 七年级: '7' }[text] || text
+}
+
+function normAcademicYear(raw) {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const full = text.match(/(20\d{2})\s*[-—~]\s*(20\d{2})/)
+  if (full) return `${full[1]}-${full[2]}`
+  const short = text.match(/(\d{2})\s*[-—~]\s*(\d{2})/)
+  if (short && Number(short[2]) === Number(short[1]) + 1) return `20${short[1]}-20${short[2]}`
+  return text
+}
+
+function normExamTypeAndSeq(rawType, examName) {
+  const joined = `${String(rawType || '').trim()} ${String(examName || '').trim()}`
+  if (/统一练习/.test(joined)) {
+    const seqMap = { 一: 1, 1: 1, 二: 2, 2: 2, 三: 3, 3: 3 }
+    const m = joined.match(/统一练习\s*([一二三123])/)
+    return { examType: 'unified_practice', examSequence: m ? (seqMap[m[1]] ?? null) : null }
+  }
+  if (/期中/.test(joined)) return { examType: 'midterm', examSequence: null }
+  if (/期末/.test(joined)) return { examType: 'final', examSequence: null }
+  if (/月考/.test(joined)) return { examType: 'monthly', examSequence: null }
+  return { examType: '', examSequence: null }
+}
+
+function findMatchingCompleteIdentity(homeExam, completeIdentities) {
+  const year = normAcademicYear(homeExam.academic_year) || normAcademicYear(homeExam.exam_name)
+  const grade = normGradeShort(homeExam.grade) || normGradeShort((homeExam.exam_name || '').match(/初[一二三]|[七八九]年级/)?.[0] || '')
+  const { examType, examSequence } = normExamTypeAndSeq(homeExam.exam_type, homeExam.exam_name)
+  const homeYm = String(homeExam.exam_date || '').slice(0, 7)
+  if (!year || !grade || !examType) return null
+  return (
+    completeIdentities.find(entry => {
+      if (entry.academic_year !== year || entry.grade !== grade || entry.exam_type !== examType) return false
+      if (examType === 'unified_practice' || entry.exam_sequence != null || examSequence != null) {
+        if ((entry.exam_sequence ?? null) !== (examSequence ?? null)) return false
+      }
+      if (entry.exam_date_ym && homeYm && entry.exam_date_ym !== homeYm) return false
+      return true
+    }) || null
+  )
+}
+
+function normalizeHomeDateText(raw) {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  const full = text.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/)
+  if (full) {
+    return `${full[1]}-${String(Number(full[2])).padStart(2, '0')}-${String(Number(full[3])).padStart(2, '0')}`
+  }
+  const month = text.match(/(20\d{2})[-/.年](\d{1,2})(?!\d)/)
+  if (month) {
+    return `${month[1]}-${String(Number(month[2])).padStart(2, '0')}`
+  }
+  return ''
+}
+
+function extractHomeExams(xhrRecords, cardDomList) {
+  const listRecord = [...xhrRecords].reverse().find(r => String(r.url || '').endsWith('/queryStudentExamDataList'))
+  const payload = listRecord?.data?.data || {}
+  const examTypeMap = new Map()
+  for (const item of Array.isArray(payload.examTypeData) ? payload.examTypeData : []) {
+    if (item && item.examType !== undefined && item.examName) {
+      examTypeMap.set(String(item.examType), String(item.examName).trim())
+    }
+  }
+  const rawList = Array.isArray(payload.examData) ? payload.examData : []
+  if (rawList.length > 0) {
+    return rawList.map((entry, idx) => {
+      const ex = entry?.examData && typeof entry.examData === 'object' ? entry.examData : entry || {}
+      const subjects = Array.isArray(ex.examSubjectVoList) ? ex.examSubjectVoList : []
+      const totalIdx = subjects.findIndex(s => Number(s?.isTotal) === 1 || String(s?.subjectName || '').trim() === '总分')
+      const domFallback = cardDomList[idx] || {}
+      const domText = (domFallback.lines || []).join(' ')
+      const domDateMatch = domText.match(/考试时间[:：]?\s*([^\s]+)/)
+      const domGradeMatch = domText.match(/年级[:：]?\s*([^\s]+)/)
+      const examDate = normalizeHomeDateText(ex.examDate || ex.examTime || (domDateMatch ? domDateMatch[1] : '') || domText)
+      return {
+        card_index: idx,
+        external_exam_id: String(ex._id || ex.examId || ex.id || '').trim(),
+        exam_name: String(ex.examName || domFallback.lines?.[1] || domFallback.lines?.[0] || '').trim(),
+        exam_date: examDate,
+        grade: String(ex.gradeName || ex.gradeCode || (domGradeMatch ? domGradeMatch[1] : '') || '').trim(),
+        academic_year: String(ex.schoolYearCode || ex.academicYear || '').trim(),
+        exam_type: examTypeMap.get(String(ex.examType ?? '')) || String(domFallback.lines?.[0] || '').trim(),
+        total_course_index: totalIdx >= 0 ? totalIdx : 0,
+      }
+    })
+  }
+  return cardDomList.map((card, idx) => {
+    const lines = card.lines || []
+    const joined = lines.join(' ')
+    const dateMatch = joined.match(/考试时间[:：]?\s*([^\s]+)/)
+    const gradeMatch = joined.match(/年级[:：]?\s*([^\s]+)/)
+    const yearMatch = joined.match(/(20\d{2})\s*[-—]\s*(20\d{2})|(\d{2})\s*[-—]\s*(\d{2})学年/)
+    let academicYear = ''
+    if (yearMatch) {
+      academicYear = yearMatch[1] ? `${yearMatch[1]}-${yearMatch[2]}` : `20${yearMatch[3]}-20${yearMatch[4]}`
+    }
+    return {
+      card_index: idx,
+      external_exam_id: '',
+      exam_name: lines.find(l => l.includes('考试') || l.includes('练习') || l.includes('学年')) || lines[0] || '',
+      exam_date: normalizeHomeDateText(dateMatch ? dateMatch[1] : joined),
+      grade: gradeMatch ? gradeMatch[1] : '',
+      academic_year: academicYear,
+      exam_type: lines[0] || '',
+      total_course_index: 0,
+    }
+  })
+}
+
+async function ensureOnReportList(page) {
+  if (!String(page.url() || '').includes('/jointStudentAnalysisReport/list')) {
+    await page.goto(TARGET_REPORT_LIST_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  }
+  await page.locator('.list_item').first().waitFor({ state: 'visible', timeout: 25000 })
+  await humanPause(1600, 2600)
+}
+
+async function downloadTotalReports(page, context, state, args) {
+  const { skipSet, completeIdentities } = readSkipPayload(args.skipFile)
+  const downloadDir = args.downloadDir || path.join(resolveDefaultK12100Dir(), 'tmp_reports')
+  fs.mkdirSync(downloadDir, { recursive: true, mode: 0o700 })
+  try {
+    fs.chmodSync(downloadDir, 0o700)
+  } catch {
+    // 忽略不支持 chmod 的文件系统
+  }
+
+  await ensureOnReportList(page)
+  if (isLoginUrl(page.url())) {
+    return { status: 'login_required', reason: '会话已失效，需重新登录', home_exams: [], downloads: [], failures: [] }
+  }
+  const ch0 = await detectPageChallenge(page)
+  if (ch0 || state.circuitBreaker) {
+    return { status: 'circuit_breaker', reason: state.circuitBreaker || ch0, home_exams: [], downloads: [], failures: [] }
+  }
+
+  // 等待首页列表 XHR 落桶（首次跳转时可能与登录重定向并发）
+  const xhrDeadline = Date.now() + 6000
+  while (Date.now() < xhrDeadline) {
+    if (state.xhrRecords.some(r => String(r.url || '').endsWith('/queryStudentExamDataList'))) break
+    await sleep(300)
+  }
+
+  const cardDomList = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.list_item')).map(card => ({
+      lines: (card.innerText || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .slice(0, 12),
+    })),
+  )
+
+  const homeExamsRaw = extractHomeExams(state.xhrRecords, cardDomList)
+  const homeExams = homeExamsRaw.map(item => {
+    const matchedById = Boolean(item.external_exam_id && skipSet.has(item.external_exam_id))
+    const matchedIdentity = matchedById ? null : findMatchingCompleteIdentity(item, completeIdentities)
+    return {
+      ...item,
+      already_synced: Boolean(matchedById || matchedIdentity),
+      matched_report_id: matchedIdentity?.report_id || null,
+    }
+  })
+  if (homeExams.length === 0) {
+    return {
+      status: 'collected',
+      reason: 'K12100_NO_EXAMS',
+      home_exams: [],
+      downloads: [],
+      failures: [],
+    }
+  }
+
+  const targets = homeExams.filter(item => !item.already_synced).slice(0, clampMaxExams(args.maxExams))
+  if (targets.length === 0) {
+    return {
+      status: 'collected',
+      captured_at: new Date().toISOString(),
+      reason: `首页共 ${homeExams.length} 场，全部已有完整同步记录，未进入详情页或触发任何下载`,
+      home_exams: homeExams,
+      downloads: [],
+      failures: [],
+    }
+  }
+  const downloads = []
+  const failures = []
+  let lastStatus = 'collecting'
+  let lastReason = `首页共 ${homeExams.length} 场，准备下载 ${targets.length} 场`
+  let finalWritten = false
+
+  function flushProgress(status, reason) {
+    lastStatus = status
+    if (reason) lastReason = reason
+    if (!args.output) return
+    const payload = {
+      status,
+      captured_at: new Date().toISOString(),
+      reason: reason || '',
+      home_exams: homeExams,
+      downloads,
+      failures,
+    }
+    const tmpOut = `${args.output}.tmp`
+    try {
+      fs.writeFileSync(tmpOut, JSON.stringify(payload, null, 2), { mode: 0o600 })
+      try {
+        fs.chmodSync(tmpOut, 0o600)
+      } catch {
+        // 忽略不支持 chmod 的文件系统
+      }
+      fs.renameSync(tmpOut, args.output)
+    } catch {
+      try {
+        fs.writeFileSync(args.output, JSON.stringify(payload, null, 2), { mode: 0o600 })
+      } catch {
+        // 忽略局部写盘异常
+      }
+    }
+  }
+
+  flushProgress('collecting', lastReason)
+
+  try {
+    for (let i = 0; i < targets.length; i += 1) {
+      const target = targets[i]
+      if (state.circuitBreaker) break
+      if (i > 0) {
+        await ensureOnReportList(page)
+        if (isLoginUrl(page.url())) {
+          finalWritten = true
+          return { status: 'login_required', reason: '翻页回列表时会话失效', home_exams: homeExams, downloads, failures }
+        }
+        const ch = await detectPageChallenge(page)
+        if (ch || state.circuitBreaker) {
+          finalWritten = true
+          return { status: 'circuit_breaker', reason: state.circuitBreaker || ch, home_exams: homeExams, downloads, failures }
+        }
+      }
+
+      let card = page.locator('.list_item').nth(target.card_index)
+      if (target.exam_name) {
+        const byName = page.locator('.list_item').filter({ hasText: target.exam_name })
+        if ((await byName.count()) === 1) {
+          card = byName.first()
+        } else if ((await byName.count()) > 1 && target.exam_date) {
+          const byDate = byName.filter({ hasText: target.exam_date })
+          if ((await byDate.count()) >= 1) card = byDate.first()
+        }
+      }
+
+      const coursesCount = await card.locator('.course_img').count()
+      if (coursesCount === 0) {
+        failures.push({
+          external_exam_id: target.external_exam_id,
+          exam_name: target.exam_name,
+          code: 'K12100_TOTAL_ENTRY_MISSING',
+          reason: '未找到场次下的总分入口',
+        })
+        flushProgress('collecting', `已下载 ${downloads.length} 份（${target.exam_name || '场次'}缺少总分入口）`)
+        continue
+      }
+      const courseIdx = target.total_course_index >= 0 && target.total_course_index < coursesCount ? target.total_course_index : 0
+      await humanClick(card.locator('.course_img').nth(courseIdx))
+      await humanPause(2000, 3200)
+
+      const detailPage = context.pages()[context.pages().length - 1] || page
+      await detailPage.waitForLoadState('domcontentloaded').catch(() => {})
+      const totalTab = detailPage.locator('.tag_item').filter({ hasText: '总分' }).first()
+      if ((await totalTab.count()) > 0) {
+        const cls = (await totalTab.getAttribute('class').catch(() => '')) || ''
+        if (!cls.includes('active')) {
+          await humanClick(totalTab)
+          await humanPause(1400, 2200)
+        }
+      }
+
+      const printBtn = detailPage.locator('button.mm_btn:has-text("报告打印"), button:has-text("报告打印")').first()
+      try {
+        await printBtn.waitFor({ state: 'visible', timeout: 20000 })
+      } catch {
+        failures.push({
+          external_exam_id: target.external_exam_id,
+          exam_name: target.exam_name,
+          code: 'K12100_REPORT_PRINT_MISSING',
+          reason: '总分页面未出现“报告打印”按钮',
+        })
+        flushProgress('collecting', `已下载 ${downloads.length} 份（${target.exam_name || '场次'}缺少报告打印按钮）`)
+        continue
+      }
+
+      state.collectBucket = []
+      await humanClick(printBtn)
+      await humanPause(2500, 4000)
+
+      const printPage = context.pages()[context.pages().length - 1] || detailPage
+      await printPage.locator('.el-loading-mask').waitFor({ state: 'hidden', timeout: 25000 }).catch(() => {})
+      const dlBtn = printPage.locator('button.download_btn, button:has-text("下载PDF")').first()
+      try {
+        await dlBtn.waitFor({ state: 'visible', timeout: 25000 })
+      } catch {
+        failures.push({
+          external_exam_id: target.external_exam_id,
+          exam_name: target.exam_name,
+          code: 'K12100_DOWNLOAD_BUTTON_MISSING',
+          reason: '报告打印页未出现“下载PDF”按钮',
+        })
+        flushProgress('collecting', `已下载 ${downloads.length} 份（${target.exam_name || '场次'}缺少下载PDF按钮）`)
+        continue
+      }
+      await humanPause(1200, 2200)
+
+      const chBeforeDl = await detectPageChallenge(printPage)
+      if (chBeforeDl || state.circuitBreaker) {
+        finalWritten = true
+        return {
+          status: 'circuit_breaker',
+          reason: state.circuitBreaker || chBeforeDl,
+          home_exams: homeExams,
+          downloads,
+          failures,
+        }
+      }
+
+      try {
+        const [download] = await Promise.all([
+          printPage.waitForEvent('download', { timeout: 60000 }),
+          humanClick(dlBtn),
+        ])
+        const destPath = path.join(downloadDir, `report_${i}_${target.external_exam_id || 'exam'}.pdf`)
+        await download.saveAs(destPath)
+        fs.chmodSync(destPath, 0o600)
+        const stat = fs.statSync(destPath)
+        const bytes = fs.readFileSync(destPath)
+        const isPdf = stat.size > 0 && stat.size <= MAX_REPORT_PDF_BYTES && bytes.subarray(0, 5).toString('latin1') === '%PDF-'
+        if (!isPdf) {
+          fs.unlinkSync(destPath)
+          failures.push({
+            external_exam_id: target.external_exam_id,
+            exam_name: target.exam_name,
+            code: 'K12100_REPORT_NOT_PDF',
+            reason: `下载结果不是合法 PDF 或超出 ${MAX_REPORT_PDF_BYTES} 字节限制`,
+          })
+          flushProgress('collecting', `已下载 ${downloads.length} 份（${target.exam_name || '场次'}校验失败）`)
+          continue
+        }
+        const digest = crypto.createHash('sha256').update(bytes).digest('hex')
+        const safeName = `${(target.exam_name || '校考').replace(/[/\\:*?"<>|]+/g, '_')}_分析报告册.pdf`
+        downloads.push({
+          external_exam_id: target.external_exam_id,
+          exam_name: target.exam_name,
+          exam_date: target.exam_date,
+          grade: target.grade,
+          academic_year: target.academic_year,
+          exam_type: target.exam_type,
+          file: destPath,
+          suggested_filename: safeName,
+          byte_size: stat.size,
+          sha256: digest,
+        })
+        flushProgress('collecting', `已下载 ${downloads.length}/${targets.length} 份分析报告`)
+      } catch (err) {
+        failures.push({
+          external_exam_id: target.external_exam_id,
+          exam_name: target.exam_name,
+          code: 'K12100_REPORT_DOWNLOAD_FAILED',
+          reason: err?.message || '下载报告超时或失败',
+        })
+        flushProgress('collecting', `已下载 ${downloads.length} 份（${target.exam_name || '场次'}下载失败）`)
+      }
+    }
+
+    finalWritten = true
+    return {
+      status: state.circuitBreaker ? 'circuit_breaker' : 'collected',
+      captured_at: new Date().toISOString(),
+      reason: state.circuitBreaker || `首页共 ${homeExams.length} 场，本次处理 ${targets.length} 场，成功下载 ${downloads.length} 份报告`,
+      home_exams: homeExams,
+      downloads,
+      failures,
+    }
+  } catch (err) {
+    lastStatus = 'interrupted'
+    lastReason = err?.message || '浏览器下载过程中断'
+    throw err
+  } finally {
+    if (!finalWritten && args.output && (homeExams.length > 0 || downloads.length > 0 || failures.length > 0)) {
+      flushProgress(lastStatus, lastReason)
+    }
+  }
+}
+
 function clampMaxExams(val) {
   return Math.max(1, Math.min(3, Math.floor(Number(val) || 1)))
 }
@@ -630,7 +1297,23 @@ async function main() {
       return
     }
 
+    if (args.mode === 'reports') {
+      const result = await downloadTotalReports(page, context, state, args)
+      if (args.output) fs.writeFileSync(args.output, JSON.stringify(result, null, 2), { mode: 0o600 })
+      else process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+      if (result.status === 'login_required') process.exitCode = 2
+      else if (result.status === 'circuit_breaker') process.exitCode = 3
+      return
+    }
+
     if (args.mode === 'probe') {
+      if (args.probeTarget === 'total-report') {
+        const result = await probeTotalReport(page, context, state, args)
+        if (args.output) fs.writeFileSync(args.output, JSON.stringify(result, null, 2), { mode: 0o600 })
+        else process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+        if (result.status === 'circuit_breaker') process.exitCode = 3
+        return
+      }
       if (args.probeBrowseSeconds > 0) {
         console.error(
           `[书童探测] 登录成功！请在接下来 ${args.probeBrowseSeconds} 秒内像平时一样手工点开 1~2 场考试成绩与错题详情页面，系统仅静默记录脱敏后的结构快照…`
