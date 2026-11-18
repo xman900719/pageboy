@@ -16,6 +16,8 @@ import {
   formatReleaseChineseName,
   getDomainLabel,
   getKnowledgeLabel,
+  getKnowledgeNodeLevelLabel,
+  getLegacyMappingActionLabel,
   getOperatorLabel,
   getReleaseStatusLabel,
 } from '../../config/knowledge'
@@ -30,13 +32,6 @@ type ReviewTabId = 'review' | 'clauses' | 'mapping' | 'releases'
 type NodeFilterId = 'all' | 'pending' | 'approved'
 type ReviewStepId = 'pick' | 'trace' | 'audit'
 type ReleaseStepId = 'publish' | 'snapshots'
-
-// 三级知识节点中文层级标识
-const LEVEL_LABELS: Record<number, string> = {
-  1: '一级领域',
-  2: '二级主题',
-  3: '三级考点',
-}
 
 const props = defineProps<{
   client: ApiClient
@@ -53,18 +48,6 @@ const reviewerInputRef = ref<HTMLInputElement | null>(null)
 const hasAutoSelectedFilter = ref(false)
 // 默认隐藏底层英文技术编码，按配置决定是否允许一键展开排障
 const showTechnicalCodes = ref<boolean>(LOCALE_PREFS.showTechnicalCodesByDefault)
-
-// 新旧考点动作分类本地化映射字典
-const LEGACY_ACTION_LABELS: Record<string, string> = {
-  retained: '保留',
-  renamed: '重命名',
-  split: '合理拆分',
-  merged: '合并',
-  new: '新课标增设',
-  added: '新课标增设',
-  deprecated: '已停用',
-  pending_human_review: '待人工核定',
-}
 
 // 学科官方课程标准原件依据说明（去除英文代码）
 const SUBJECT_CURRICULUM_DOCS: Record<Subject, string> = {
@@ -286,7 +269,7 @@ const reviewContext = computed<StepFlowContext | null>(() => {
         ? 'bad'
         : 'wait'
   return {
-    eyebrow: LEVEL_LABELS[node.level ?? 3] ?? '知识节点',
+    eyebrow: getKnowledgeNodeLevelLabel(node.level),
     title: node.name,
     statusText,
     statusTone,
@@ -754,7 +737,7 @@ watch(activeTab, tab => {
                 @click="selectedNodeCode = cand.code"
               >
                 <div class="cand-header">
-                  <span class="cand-level-tag">{{ LEVEL_LABELS[cand.level ?? 3] ?? '知识节点' }}</span>
+                  <span class="cand-level-tag">{{ getKnowledgeNodeLevelLabel(cand.level) }}</span>
                   <span :class="['status-pill', cand.review_status]">
                     {{ cand.review_status === 'approved' ? '已通过' : cand.review_status === 'rejected' ? '已驳回' : '待人工审核' }}
                   </span>
@@ -853,7 +836,7 @@ watch(activeTab, tab => {
                   <div class="legacy-card-head">
                     <span class="legacy-name">{{ m.legacy_name || getKnowledgeLabel(m.legacy_code) }}</span>
                     <code v-if="showTechnicalCodes">{{ m.legacy_code }}</code>
-                    <span :class="['action-tag', m.action]">{{ LEGACY_ACTION_LABELS[m.action] ?? m.action }}</span>
+                    <span :class="['action-tag', m.action]">{{ getLegacyMappingActionLabel(m.action) }}</span>
                   </div>
                   <p class="legacy-reason"><b>映射理由：</b>{{ m.mapping_reason }}</p>
                   <p class="legacy-compat"><b>兼容保障：</b>{{ m.compatibility_assurance }}</p>
@@ -1123,7 +1106,7 @@ watch(activeTab, tab => {
                   <td>
                     <div class="pill-name">{{ m.legacy_name || getKnowledgeLabel(m.legacy_code) }}</div>
                     <div style="margin-top:4px;">
-                      <span :class="['action-tag', m.action]">{{ LEGACY_ACTION_LABELS[m.action] ?? m.action }}</span>
+                      <span :class="['action-tag', m.action]">{{ getLegacyMappingActionLabel(m.action) }}</span>
                     </div>
                     <div v-if="showTechnicalCodes" style="margin-top:4px;"><code>{{ m.legacy_code }}</code></div>
                   </td>
@@ -1275,23 +1258,11 @@ watch(activeTab, tab => {
   gap: 10px;
   flex-wrap: wrap;
 }
-.sub-head {
-  color: var(--ink-2, #5C5346);
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
-}
 .head-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
-}
-.status-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.85rem;
 }
 .stats-panel-head {
   display: flex;
@@ -1306,31 +1277,8 @@ watch(activeTab, tab => {
   font-weight: 700;
   color: var(--ink, #2C2623);
 }
-.status-badges-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem;
-}
-.badge {
-  padding: 0.24rem 0.65rem;
-  border-radius: 999px;
-  font-weight: 600;
-}
-.badge.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border: 1px solid var(--amber-line, #E8B878); }
-.badge.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border: 1px solid var(--green-line, #8FC1A3); }
-.badge.total { background: #FFFFFF; color: var(--ink-2, #5C5346); border: 1px solid var(--line, #E6DEC8); }
-.badge.clauses { background: var(--teal-soft, #EDF4F8); color: var(--teal, #265D75); border: 1px solid var(--teal-line, #9BB5D6); }
 .badge.elective { background: var(--teal-soft, #EDF4F8); color: var(--teal, #265D75); border: 1px solid var(--teal-line, #9BB5D6); }
 .badge.standard { background: var(--surface-subtle, #F3ECE1); color: var(--ink-2, #5C5346); border: 1px solid var(--line, #E6DEC8); }
-.audit-note {
-  color: var(--red, #B23324);
-  font-weight: 600;
-  font-size: 0.82rem;
-}
-.audit-note.audit-ok {
-  color: var(--green, #2A6F4E);
-}
 .filter-bar {
   display: flex;
   align-items: center;
@@ -1382,9 +1330,10 @@ watch(activeTab, tab => {
   line-height: 1.6;
 }
 .candidate-scroll-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
   max-height: 620px;
   overflow-y: auto;
   padding-right: 2px;
@@ -1487,9 +1436,10 @@ button.candidate-item.selected {
   list-style: none;
   padding: 0 4px 0 0;
   margin: 0.5rem 0 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
   max-height: clamp(240px, 42vh, 410px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1567,9 +1517,10 @@ button.candidate-item.selected {
   border-radius: 10px;
 }
 .legacy-trace-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
   margin-top: 0.5rem;
   max-height: clamp(180px, 28vh, 280px);
   overflow-y: auto;
@@ -1910,9 +1861,10 @@ button.candidate-item.selected {
   font-size: 0.85rem;
 }
 .release-scroll-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  align-items: stretch;
   max-height: clamp(280px, 50vh, 480px);
   overflow-y: auto;
   padding-right: 4px;
@@ -1961,6 +1913,12 @@ button.candidate-item.selected {
   margin-top: 0.4rem;
 }
 @media (max-width: 900px) {
+  .candidate-scroll-list,
+  .clause-card-list,
+  .legacy-trace-list,
+  .release-scroll-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .candidate-scroll-list {
     max-height: 360px;
   }
@@ -1976,6 +1934,14 @@ button.candidate-item.selected {
   }
   .release-scroll-list {
     max-height: clamp(240px, 44vh, 380px);
+  }
+}
+@media (max-width: 640px) {
+  .candidate-scroll-list,
+  .clause-card-list,
+  .legacy-trace-list,
+  .release-scroll-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

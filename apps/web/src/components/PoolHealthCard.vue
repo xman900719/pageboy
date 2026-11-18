@@ -84,9 +84,9 @@ function unseenRatio(published: number, unseen: number): number {
         </button>
       </div>
     </div>
-    <p v-if="data.knowledge.length === 0" class="muted">暂无可体检的已发布知识点。</p>
+    <p v-if="data.knowledge.length === 0" class="muted">暂无可统计的已发布知识点。</p>
     <p v-else-if="visibleKnowledge.length === 0" class="muted">当前筛选条件下没有对应知识点。</p>
-    <ul v-else class="pool-card-grid" tabindex="0" aria-label="知识点余量体检网格">
+    <ul v-else class="pool-card-grid" tabindex="0" aria-label="知识点余量网格">
       <li
         v-for="entry in visibleKnowledge"
         :key="entry.knowledge_id"

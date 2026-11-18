@@ -2,7 +2,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import {
   describeError,
-  SUBJECTS,
   SUBJECT_LABELS,
   type ApiClient,
   type PoolHealth,
@@ -58,12 +57,10 @@ function setSubTab(next: LedgerSubTab) {
 const sources = ref<SourceDetail[] | null>(null)
 const loadError = ref('')
 const selectedId = ref<string | null>(null)
-const subjectFilter = ref<'all' | Subject>('all')
 const sourceStep = ref<SourceStepId>('pick')
 const sourcePickMode = ref<'list' | 'create'>('list')
 const detailPaneRef = ref<HTMLElement | null>(null)
 const newTitle = ref('')
-const newSubject = ref<Subject>(props.subject)
 const newRights = ref<RightsStatus>('unknown')
 const creating = ref(false)
 const formError = ref('')
@@ -74,12 +71,15 @@ const poolLoading = ref(false)
 
 const filteredSources = computed(() => {
   if (!sources.value) return []
-  if (subjectFilter.value === 'all') return sources.value
-  return sources.value.filter(s => s.source.subject === subjectFilter.value)
+  return sources.value.filter(s => s.source.subject === props.subject)
 })
 
 const unverifiedCount = computed(
-  () => (sources.value ?? []).filter(s => !s.source.verified).length,
+  () => filteredSources.value.filter(s => !s.source.verified).length,
+)
+
+const verifiedCount = computed(
+  () => filteredSources.value.filter(s => s.source.verified).length,
 )
 
 const emptyPoolCount = computed(
@@ -87,7 +87,7 @@ const emptyPoolCount = computed(
 )
 
 const selected = computed(
-  () => sources.value?.find(s => s.id === selectedId.value) ?? null,
+  () => filteredSources.value.find(s => s.id === selectedId.value) ?? null,
 )
 
 const latestReview = computed(() => {
@@ -107,7 +107,7 @@ const ledgerStages = computed<StageGroup[]>(() => [
         badge: sources.value
           ? unverifiedCount.value > 0
             ? `${unverifiedCount.value} 待审`
-            : `${sources.value.length} 份`
+            : `${filteredSources.value.length} 份`
           : undefined,
         wait: unverifiedCount.value > 0,
         done: Boolean(selected.value?.source.verified),
@@ -139,11 +139,11 @@ const ledgerStages = computed<StageGroup[]>(() => [
   },
   {
     id: 'stage-4',
-    title: '第四阶段 · 体检补缺',
+    title: '第四阶段 · 余量补缺',
     tabs: [
       {
         id: 'health',
-        title: '题库余量体检',
+        title: '题库余量盘点',
         badge: poolHealth.value
           ? emptyPoolCount.value > 0
             ? `${emptyPoolCount.value} 缺口`
@@ -170,7 +170,7 @@ const sourceSteps = computed<StepDefinition[]>(() => [
     id: 'pick',
     title: '1. 选定或新建题源',
     subtitle: selected.value ? '已选定当前题源' : '先从台账选择或新建',
-    badge: sources.value ? `${sources.value.length} 份` : undefined,
+    badge: sources.value ? `${filteredSources.value.length} 份` : undefined,
     done: selected.value !== null,
     prereqMet: true,
   },
@@ -213,11 +213,12 @@ async function refresh() {
     const list = await props.client.adminSources()
     sources.value = list
     loadError.value = ''
+    const subjectList = list.filter(s => s.source.subject === props.subject)
     selectedId.value =
-      selectedId.value !== null && list.some(s => s.id === selectedId.value)
+      selectedId.value !== null && subjectList.some(s => s.id === selectedId.value)
         ? selectedId.value
-        : (list[0]?.id ?? null)
-    if (list.length === 0) {
+        : (subjectList[0]?.id ?? null)
+    if (subjectList.length === 0) {
       sourcePickMode.value = 'create'
     }
   } catch (e) {
@@ -265,8 +266,7 @@ watch(
 
 watch(
   () => props.subject,
-  nextSubj => {
-    newSubject.value = nextSubj
+  () => {
     void loadPoolHealth()
   },
 )
@@ -281,13 +281,12 @@ async function createSource() {
   try {
     const created = await props.client.addSource({
       title: newTitle.value.trim(),
-      subject: newSubject.value,
+      subject: props.subject,
       rightsStatus: newRights.value,
     })
     props.notify(`题源已登记（${created.id.slice(0, 8)}…）。下一步：上传附件或完成来源人工审核。`, 'success')
     newTitle.value = ''
     await refresh()
-    subjectFilter.value = 'all'
     sourcePickMode.value = 'list'
     await selectSourceAndAdvance(created.id, 'detail')
   } catch (e) {
@@ -300,20 +299,55 @@ async function createSource() {
 
 <template>
   <div class="admin-workspace">
+    <!-- 顶部信息汇总卡（与知识点审核工作台同款紧凑摘要条） -->
+    <div class="slim-tool-bar" role="region" aria-label="题库工作台总览">
+      <div class="slim-tool-main">
+        <div class="slim-tool-title-row">
+          <h2>{{ SUBJECT_LABELS[subject] }}题库工作台</h2>
+          <div class="status-badges-row status-banner" role="region" aria-label="题库状态统计">
+            <span class="badge pending">待审核: {{ unverifiedCount }}</span>
+            <span class="badge approved">已审题源: {{ verifiedCount }}</span>
+            <span class="badge total">题源总数: {{ filteredSources.length }}</span>
+            <span :class="['badge', emptyPoolCount > 0 ? 'pending' : 'clauses']">
+              零余量缺口: {{ emptyPoolCount }}
+            </span>
+          </div>
+        </div>
+        <div class="sub-head">
+          <span>当前科目：{{ SUBJECT_LABELS[subject] }} · 仅显示与所选科目相关的题源台账、附件解析、审题入池与余量盘点</span>
+          <span
+            v-if="filteredSources.length > 0 && unverifiedCount === 0 && emptyPoolCount === 0"
+            class="audit-note audit-ok"
+          >
+            当前科目题源已全部审核，题库未见题余量充足。
+          </span>
+          <span v-else-if="emptyPoolCount > 0" class="audit-note">
+            当前存在 {{ emptyPoolCount }} 个零余量知识点，建议在「题库余量盘点」中及时补录新题。
+          </span>
+          <span v-else-if="unverifiedCount > 0" class="audit-note">
+            尚有 {{ unverifiedCount }} 份题源待完成来源人工审核，未审核题源不得发布题目。
+          </span>
+        </div>
+      </div>
+
+      <div class="slim-tool-actions">
+        <HelpBubble compact title="人工审核流水线" label="流程与红线">
+          <p>{{ ADMIN_PIPELINE_NOTE }}</p>
+        </HelpBubble>
+        <button type="button" class="ghost small" @click="handleSourceAndPoolRefresh">
+          刷新
+        </button>
+      </div>
+    </div>
+
     <!-- 四阶段分组子 Tab 导航 -->
     <StageTabStrip
       :groups="ledgerStages"
       :model-value="activeSubTab"
-      region-label="题库与体检四阶段工作区"
+      region-label="题库四阶段工作区"
       id-prefix="ledger"
       @update:model-value="setSubTab($event as LedgerSubTab)"
-    >
-      <template #tools>
-        <HelpBubble title="人工审核流水线" label="流程与红线">
-          <p>{{ ADMIN_PIPELINE_NOTE }}</p>
-        </HelpBubble>
-      </template>
-    </StageTabStrip>
+    />
 
     <!-- 阶段 1：题源与来源审核（方式 A 严格锁步单卡） -->
     <div
@@ -345,10 +379,10 @@ async function createSource() {
             <div class="card-head">
               <div>
                 <h2>
-                  第 1 步 · 选定或新建题源
-                  <span v-if="sources" class="muted tiny">({{ filteredSources.length }} / {{ sources.length }})</span>
+                  第 1 步 · 选定或新建{{ SUBJECT_LABELS[subject] }}题源
+                  <span v-if="sources" class="muted tiny">({{ filteredSources.length }})</span>
                 </h2>
-                <p class="card-sub">先确定本次要处理的题源档案，再推进至概览与来源人工审核。</p>
+                <p class="card-sub">先确定本次要处理的{{ SUBJECT_LABELS[subject] }}题源档案，再推进至概览与来源人工审核。</p>
               </div>
               <div class="card-head-tools">
                 <div class="mode-switch" role="group" aria-label="台账或新建切换">
@@ -357,7 +391,7 @@ async function createSource() {
                     :class="['mode-switch-btn', sourcePickMode === 'list' ? 'active' : '']"
                     @click="sourcePickMode = 'list'"
                   >
-                    已有题源台账 ({{ sources?.length ?? 0 }})
+                    已有题源台账 ({{ filteredSources.length }})
                   </button>
                   <button
                     type="button"
@@ -374,30 +408,11 @@ async function createSource() {
             </div>
 
             <template v-if="sourcePickMode === 'list'">
-              <div v-if="sources && sources.length > 0" class="ledger-filter-row" role="group" aria-label="按学科筛选题源">
-                <button
-                  type="button"
-                  :class="subjectFilter === 'all' ? 'chip-btn selected' : 'chip-btn'"
-                  @click="subjectFilter = 'all'"
-                >
-                  全部 ({{ sources.length }})
-                </button>
-                <button
-                  v-for="id in SUBJECTS"
-                  :key="id"
-                  type="button"
-                  :class="subjectFilter === id ? 'chip-btn selected' : 'chip-btn'"
-                  @click="subjectFilter = id"
-                >
-                  {{ SUBJECT_LABELS[id] }} ({{ sources.filter(s => s.source.subject === id).length }})
-                </button>
-              </div>
-
               <p v-if="sources === null" class="muted">
                 {{ loadError === '' ? '题源加载中…' : `题源加载失败：${loadError}` }}
               </p>
               <div v-else-if="filteredSources.length === 0" class="muted">
-                <p>当前筛选条件下还没有题源：可切换筛选或点击右上角「＋ 登记新题源」。</p>
+                <p>当前科目（{{ SUBJECT_LABELS[subject] }}）下还没有题源：可点击右上角「＋ 登记新题源」。</p>
                 <button type="button" class="primary small" @click="sourcePickMode = 'create'">
                   ＋ 登记新题源
                 </button>
@@ -460,11 +475,7 @@ async function createSource() {
                 </label>
                 <label>
                   科目
-                  <select v-model="newSubject">
-                    <option v-for="id in SUBJECTS" :key="id" :value="id">
-                      {{ SUBJECT_LABELS[id] }}
-                    </option>
-                  </select>
+                  <input :value="SUBJECT_LABELS[subject]" disabled />
                 </label>
                 <label class="wide">
                   版权状态
@@ -482,7 +493,7 @@ async function createSource() {
               <p v-if="formError" class="form-error">{{ formError }}</p>
               <div class="card-footer-flow">
                 <button
-                  v-if="sources && sources.length > 0"
+                  v-if="filteredSources.length > 0"
                   type="button"
                   class="ghost small"
                   @click="sourcePickMode = 'list'"
@@ -644,7 +655,7 @@ async function createSource() {
               {{ selected.source.verified ? '已人工审核' : '未审核' }}
             </span>
           </div>
-          <div v-if="sources && sources.length > 1" class="matrix-context-actions">
+          <div v-if="filteredSources.length > 1" class="matrix-context-actions">
             <label style="margin: 0; font-size: 0.78rem; display: flex; align-items: center; gap: 6px;">
               <span class="muted tiny">切换题源</span>
               <select
@@ -653,7 +664,7 @@ async function createSource() {
                 style="width: auto; margin: 0; padding: 5px 10px; font-size: 0.8rem;"
                 @change="selectSource(($event.target as HTMLSelectElement).value)"
               >
-                <option v-for="s in sources" :key="s.id" :value="s.id">
+                <option v-for="s in filteredSources" :key="s.id" :value="s.id">
                   {{ s.source.title }}（{{ SUBJECT_LABELS[s.source.subject] }}）
                 </option>
               </select>
@@ -696,7 +707,7 @@ async function createSource() {
               {{ selected.source.verified ? '已人工审核' : '未审核' }}
             </span>
           </div>
-          <div v-if="sources && sources.length > 1" class="matrix-context-actions">
+          <div v-if="filteredSources.length > 1" class="matrix-context-actions">
             <label style="margin: 0; font-size: 0.78rem; display: flex; align-items: center; gap: 6px;">
               <span class="muted tiny">切换题源</span>
               <select
@@ -705,7 +716,7 @@ async function createSource() {
                 style="width: auto; margin: 0; padding: 5px 10px; font-size: 0.8rem;"
                 @change="selectSource(($event.target as HTMLSelectElement).value)"
               >
-                <option v-for="s in sources" :key="s.id" :value="s.id">
+                <option v-for="s in filteredSources" :key="s.id" :value="s.id">
                   {{ s.source.title }}（{{ SUBJECT_LABELS[s.source.subject] }}）
                 </option>
               </select>
@@ -732,20 +743,20 @@ async function createSource() {
       </section>
     </div>
 
-    <!-- 阶段 4：题库余量体检 -->
+    <!-- 阶段 4：题库余量盘点 -->
     <div
       v-else
       id="ledger-panel-health"
       role="tabpanel"
       aria-labelledby="ledger-tab-health"
     >
-      <section class="card stage-wrap" aria-label="题库体检">
+      <section class="card stage-wrap" aria-label="题库余量">
         <div class="card-head">
-          <h2>题库余量体检（{{ SUBJECT_LABELS[subject] }}）</h2>
+          <h2>题库余量盘点（{{ SUBJECT_LABELS[subject] }}）</h2>
           <div class="card-head-tools">
-            <HelpBubble title="题库体检口径说明" label="体检口径">
+            <HelpBubble title="题库余量口径说明" label="余量口径">
               <ul>
-                <li><strong>体检范围：</strong>反映当前科目各知识点的已发布题目储备量、未见题余量与已曝光消耗次。</li>
+                <li><strong>统计范围：</strong>反映当前科目各知识点的已发布题目储备量、未见题余量与已曝光消耗次。</li>
                 <li><strong>未见题重要性：</strong>阶段诊断仅抽取从未曝光过的新题；若某一知识点提示「零余量」，请点击「去补录新题」及时扩充题源。</li>
                 <li v-if="poolHealth?.disclaimer"><strong>口径备注：</strong>{{ poolHealth.disclaimer }}</li>
               </ul>
@@ -761,19 +772,13 @@ async function createSource() {
           :hide-disclaimer="true"
           @fill-gap="handleFillGap"
         />
-        <p v-else class="muted">{{ poolLoading ? '加载中…' : '题库体检加载失败。' }}</p>
+        <p v-else class="muted">{{ poolLoading ? '加载中…' : '题库余量加载失败。' }}</p>
       </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ledger-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 4px;
-}
 .source-list-scroll {
   max-height: 440px;
   overflow-y: auto;
@@ -844,22 +849,34 @@ async function createSource() {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 .overview-att-list li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 0.83rem;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft, #f1ebe1);
+  border-radius: 8px;
+  background: var(--card-warm, #fbf9f5);
 }
 @media (max-width: 900px) {
   .source-list-scroll {
     max-height: 320px;
   }
   .source-meta-grid {
+    grid-template-columns: 1fr;
+  }
+  .overview-att-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .overview-att-list {
     grid-template-columns: 1fr;
   }
 }
