@@ -190,6 +190,48 @@ export function getStemModeLabel(mode: string | null | undefined): string {
   return map[mode] ?? mode
 }
 
+/** 将分析报告册处理状态映射为中文状态标签 */
+export function getReportStatusLabel(status: string | null | undefined): string {
+  if (!status) return '待处理'
+  const map = localeLabels.reportStatusLabels as Record<string, string>
+  return map[status] ?? status
+}
+
+/** 将分析报告册匹配状态映射为中文描述 */
+export function getReportMatchStateLabel(state: string | null | undefined): string {
+  if (!state) return '待处理'
+  const map = localeLabels.reportMatchStateLabels as Record<string, string>
+  return map[state] ?? state
+}
+
+/** 将报告册学科关联状态映射为中文描述 */
+export function getReportLinkMatchLabel(match: string | null | undefined): string {
+  if (!match) return '待关联'
+  const map = localeLabels.reportLinkMatchLabels as Record<string, string>
+  return map[match] ?? match
+}
+
+/** 将报告册统计口径比对状态映射为中文描述 */
+export function getReportScopeStatusLabel(scope: string | null | undefined): string {
+  if (!scope) return '待核对'
+  const map = localeLabels.reportScopeStatusLabels as Record<string, string>
+  return map[scope] ?? scope
+}
+
+/** 将知识节点层级数字映射为中文层级标识 */
+export function getKnowledgeNodeLevelLabel(level: number | null | undefined): string {
+  const key = String(level ?? 3)
+  const map = localeLabels.knowledgeNodeLevelLabels as Record<string, string>
+  return map[key] ?? '知识节点'
+}
+
+/** 将新旧考点迁移映射动作枚举映射为中文操作标签 */
+export function getLegacyMappingActionLabel(action: string | null | undefined): string {
+  if (!action) return '待核定'
+  const map = localeLabels.legacyMappingActionLabels as Record<string, string>
+  return map[action] ?? action
+}
+
 export interface KnowledgeOption {
   code: string
   label: string

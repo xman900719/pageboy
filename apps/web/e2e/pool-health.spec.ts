@@ -28,9 +28,9 @@ async function expectHonestLanguage(page: Page): Promise<void> {
 
 test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责说明在位', async ({ page }) => {
   await enterAdminSpace(page)
-  await page.getByRole('tab', { name: /题库余量体检/ }).click()
+  await page.getByRole('tab', { name: /题库余量盘点/ }).click()
 
-  const card = page.getByRole('region', { name: '题库体检' })
+  const card = page.getByRole('region', { name: '题库余量' })
   await expect(card).toBeVisible()
 
   // 总量行：三个合理计数（文案锚点，不断言数值——随 J1–J6 消耗而变化）。
@@ -45,8 +45,8 @@ test('J7 题库体检：计数口径如实呈现、知识点行齐全、免责�
   }
 
   // 后端免责声明收纳于顶部「体检口径」说明气泡：不构成分数或能力结论。
-  await card.getByRole('button', { name: /体检口径/ }).click()
-  const dialog = page.getByRole('dialog', { name: '题库体检口径说明' })
+  await card.getByRole('button', { name: /余量口径/ }).click()
+  const dialog = page.getByRole('dialog', { name: '题库余量口径说明' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText('不构成分数或能力结论')
   await dialog.getByRole('button', { name: '关闭说明' }).click()
@@ -97,10 +97,10 @@ test('J7b 题库体检：零余量知识点如实显示「暂无未见题余量�
   expect(expRes.ok()).toBe(true)
 
   await enterAdminSpace(page)
-  await page.getByRole('tab', { name: /题库余量体检/ }).click()
+  await page.getByRole('tab', { name: /题库余量盘点/ }).click()
   await page.getByRole('group', { name: '科目' }).getByRole('button', { name: '英语' }).click()
 
-  const card = page.getByRole('region', { name: '题库体检' })
+  const card = page.getByRole('region', { name: '题库余量' })
   await expect(card).toBeVisible()
 
   // 零余量行必须出现「暂无未见题余量」提示，且页面不得出现「0 分」表述（缺证据不渲染为 0 分）。

@@ -97,7 +97,7 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expect(page.getByRole('region', { name: '校考报告导入与核对' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '知识点审核' }).click()
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '知识点库' }).click()
   await expect(page.getByRole('region', { name: '知识点工作台总览' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })

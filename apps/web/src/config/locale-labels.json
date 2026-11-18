@@ -104,5 +104,47 @@
     "empty_pdf": "原卷文档无文字层",
     "pdf_parse_failed": "原卷文本提取异常（已跳过）",
     "disabled": "未启用原卷提取"
+  },
+  "reportStatusLabels": {
+    "needs_review": "待人工核对",
+    "matched": "已匹配待确认",
+    "confirmed": "已人工确认",
+    "rejected": "已驳回",
+    "pending": "待处理"
+  },
+  "reportMatchStateLabels": {
+    "EXACT_MATCH": "全部学科已关联",
+    "PARTIAL_MATCH": "部分学科已关联（缺卷正常）",
+    "AMBIGUOUS": "多候选，待处理",
+    "NOT_FOUND": "未找到校考档案",
+    "NEEDS_REVIEW": "待人工核对",
+    "MANUAL_CONFIRMED": "已人工确认关联",
+    "CONFLICT": "存在字段冲突",
+    "AWAITING_EXAM_DATE": "待补齐考试日期"
+  },
+  "reportLinkMatchLabels": {
+    "EXACT_MATCH": "报告与校考唯一关联",
+    "SESSION_ONLY": "仅场次关联（报告无该科数据）"
+  },
+  "reportScopeStatusLabels": {
+    "CONSISTENT": "统计口径一致",
+    "DIFFERENT_SCOPE_POSSIBLE": "疑似统计范围不同",
+    "UNEXPLAINED": "差异原因未解释",
+    "NEEDS_REVIEW": "待人工核对"
+  },
+  "knowledgeNodeLevelLabels": {
+    "1": "一级领域",
+    "2": "二级主题",
+    "3": "三级考点"
+  },
+  "legacyMappingActionLabels": {
+    "retained": "保留",
+    "renamed": "重命名",
+    "split": "合理拆分",
+    "merged": "合并",
+    "new": "新课标增设",
+    "added": "新课标增设",
+    "deprecated": "已停用",
+    "pending_human_review": "待人工核定"
   }
 }

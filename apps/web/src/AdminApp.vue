@@ -96,12 +96,17 @@ function signOut() {
     <header v-if="client" class="masthead">
       <div class="masthead-row">
         <div class="wordmark-block">
-          <span class="seal" aria-hidden="true">
-            管
-          </span>
+          <img
+            class="brand-icon"
+            src="/icons/apple-touch-icon.png"
+            alt=""
+            aria-hidden="true"
+            width="44"
+            height="44"
+          />
           <div>
             <span class="wordmark">书童 · 综合管理工作台</span>
-            <span class="tagline">题库与体检 · 学校考试 · 知识点审核</span>
+            <span class="tagline">题库 · 学校考试 · 知识点库</span>
           </div>
         </div>
         <div class="masthead-side">
@@ -153,7 +158,7 @@ function signOut() {
       </nav>
     </header>
 
-    <main v-if="client" class="view" :key="`${view}:${view === 'ledger' ? 'shared' : view === 'exams' ? examSubject : subject}`">
+    <main v-if="client" class="view" :key="`${view}:${view === 'exams' ? examSubject : subject}`">
       <AdminView
         v-if="view === 'ledger'"
         v-model:sub-tab="ledgerSubTab"

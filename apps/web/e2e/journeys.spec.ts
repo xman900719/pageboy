@@ -601,7 +601,7 @@ test('J4c 校考自动草稿：纯文字卷提取题号分值骨架、同屏草�
 
 test('J5 审核台：题源登记→来源人工审核→附件解析→确认导入→草稿审核→发布（人工门禁全程如实）', async ({ page }) => {
   await enterAdminSpace(page)
-  await adminNavTab(page, /题库与体检/).click()
+  await adminNavTab(page, /^题库/).click()
 
   const sourcesPanel = page.locator('#ledger-panel-sources')
   await expect(sourcesPanel.locator('.step-stage-body section.card')).toHaveCount(1)
@@ -811,7 +811,7 @@ test('J7 知识图谱交互展示：SVG 关系图谱、领域筛选、选学排�
 
 test('J8 管理端知识点审核：同步候选→按课标生成审核依据草稿→批量审核→发布版本快照', async ({ page }) => {
   await enterAdminSpace(page)
-  await adminNavTab(page, /知识点审核/).click()
+  await adminNavTab(page, /^知识点库/).click()
 
   await expect(page.getByText('数学权威知识点库审核工作台')).toBeVisible()
   // 默认隐藏英文技术编码与 MOE 标准代码

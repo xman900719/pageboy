@@ -7,6 +7,13 @@ import {
   type SchoolExamReportAttachment,
   type SchoolSubject,
 } from '../../api'
+import {
+  getReportLinkMatchLabel,
+  getReportMatchStateLabel,
+  getReportScopeStatusLabel,
+  getReportStatusLabel,
+  getSubjectLabel,
+} from '../../config/knowledge'
 import type { NoticeTone } from '../Notice.vue'
 import StepFlowWorkspace from './StepFlowWorkspace.vue'
 import type { StepDefinition, StepFlowContext } from './stepFlow'
@@ -52,13 +59,6 @@ const draftsGeneratedHere = ref(false)
 const aiMapping = ref(false)
 const matchUnresolved = ref<string[]>([])
 const matchAmbiguous = ref<string[]>([])
-const SUBJECT_LABELS: Record<string, string> = {
-  chinese: '语文',
-  math: '数学',
-  english: '英语',
-  physics: '物理',
-  ethics: '道德与法治',
-}
 
 const selected = computed(() => reports.value?.find(item => item.id === selectedId.value) ?? null)
 
@@ -105,24 +105,6 @@ const canConfirm = computed(
   () => Boolean(selected.value && isMatchReady.value && selected.value.status !== 'confirmed'),
 )
 
-const MATCH_LABELS: Record<string, string> = {
-  EXACT_MATCH: '全部学科已关联',
-  PARTIAL_MATCH: '部分学科已关联（缺卷正常）',
-  AMBIGUOUS: '多候选，待处理',
-  NOT_FOUND: '未找到校考档案',
-  NEEDS_REVIEW: '待人工核对',
-}
-const LINK_LABELS: Record<string, string> = {
-  EXACT_MATCH: '报告与校考唯一关联',
-  SESSION_ONLY: '仅场次关联（报告无该科数据）',
-}
-const SCOPE_LABELS: Record<string, string> = {
-  CONSISTENT: '统计口径一致',
-  DIFFERENT_SCOPE_POSSIBLE: '疑似统计范围不同',
-  UNEXPLAINED: '差异原因未解释',
-  NEEDS_REVIEW: '待人工核对',
-}
-
 function fmtScore(value: number | null | undefined): string {
   return value === null || value === undefined ? '缺失' : String(value)
 }
@@ -136,7 +118,7 @@ const reportContext = computed<StepFlowContext | null>(() => {
   return {
     eyebrow: '当前报告册',
     title: selected.value.title || selected.value.filename,
-    statusText: `${MATCH_LABELS[selected.value.match_state] || selected.value.match_state} · ${selected.value.status === 'confirmed' ? '已确认' : '待核对'}`,
+    statusText: `${getReportMatchStateLabel(selected.value.match_state)} · ${getReportStatusLabel(selected.value.status)}`,
     statusTone: selected.value.status === 'confirmed' ? 'good' : 'wait',
   }
 })
@@ -153,7 +135,7 @@ const steps = computed<StepDefinition[]>(() => [
   {
     id: 'match',
     title: '2. 关联考试',
-    subtitle: selected.value ? (MATCH_LABELS[selected.value.match_state] || selected.value.match_state) : '补录身份并匹配',
+    subtitle: selected.value ? getReportMatchStateLabel(selected.value.match_state) : '补录身份并匹配',
     badge: selected.value ? `${linkedCount.value} 科` : undefined,
     badgeTone: isMatchReady.value ? 'good' : 'wait',
     done: isMatchReady.value,
@@ -327,7 +309,7 @@ async function generateDrafts() {
     const result = await props.client.generateSchoolExamReportItemDrafts(selected.value.id)
     if (result.created === 0) {
       props.notify(
-        `未生成逐题草稿：${(result.unmapped_subjects || []).map(code => SUBJECT_LABELS[code] || code).join('、') || '没有已关联校考'}。请先补录/关联校考档案。`,
+        `未生成逐题草稿：${(result.unmapped_subjects || []).map(code => getSubjectLabel(code)).join('、') || '没有已关联校考'}。请先补录/关联校考档案。`,
         'caution',
       )
     } else {
@@ -437,7 +419,7 @@ onMounted(() => void load())
                   @click="selectReport(report.id)"
                 >
                   <span class="exam-title">{{ report.title || report.filename }}</span>
-                  <span class="muted tiny">{{ report.pages }} 页 · {{ report.status }} · {{ MATCH_LABELS[report.match_state] || report.match_state }}</span>
+                  <span class="muted tiny">{{ report.pages }} 页 · {{ getReportStatusLabel(report.status) }} · {{ getReportMatchStateLabel(report.match_state) }}</span>
                 </button>
                 <button
                   type="button"
@@ -467,7 +449,7 @@ onMounted(() => void load())
               <p class="card-sub">{{ selected.filename }}</p>
             </div>
             <span :class="['chip', isMatchReady ? 'good' : 'wait']">
-              {{ MATCH_LABELS[selected.match_state] || selected.match_state }}
+              {{ getReportMatchStateLabel(selected.match_state) }}
             </span>
           </div>
 
@@ -490,9 +472,9 @@ onMounted(() => void load())
           <p v-if="selected.linked_exam_ids.length === 0" class="muted">尚未关联任何单科校考档案。</p>
           <ul v-else class="report-linked-list" aria-label="已关联校考">
             <li v-for="link in selected.linked_exam_ids" :key="link.exam_id">
-              <b>{{ SUBJECT_LABELS[link.subject] || link.subject }}</b>
+              <b>{{ getSubjectLabel(link.subject) }}</b>
               <span>{{ link.title }}</span>
-              <small>{{ link.exam_date }} · {{ LINK_LABELS[link.match] || link.match }}</small>
+              <small>{{ link.exam_date }} · {{ getReportLinkMatchLabel(link.match) }}</small>
             </li>
           </ul>
 
@@ -506,7 +488,7 @@ onMounted(() => void load())
               <select v-model="supplementSubject">
                 <option value="">请选择</option>
                 <option v-for="link in sessionOnlySubjects" :key="link.subject" :value="link.subject">
-                  {{ SUBJECT_LABELS[link.subject] || link.subject }}
+                  {{ getSubjectLabel(link.subject) }}
                 </option>
               </select>
             </label>
@@ -521,7 +503,7 @@ onMounted(() => void load())
 
           <div v-if="matchUnresolved.length || (!isMatchReady && selected.match_state === 'NOT_FOUND')" class="gate-alert-banner">
             <span>
-              缺少对应校考档案{{ matchUnresolved.length ? `（${matchUnresolved.map(code => SUBJECT_LABELS[code] || code).join('、')}）` : '' }}。
+              缺少对应校考档案{{ matchUnresolved.length ? `（${matchUnresolved.map(code => getSubjectLabel(code)).join('、')}）` : '' }}。
               请先在「第一阶段 · 总分台账与建档」中补录该科校考，再回来重新执行关联。
             </span>
             <button type="button" class="primary small" @click="emit('open-scores')">
@@ -530,7 +512,7 @@ onMounted(() => void load())
           </div>
 
           <p v-if="matchAmbiguous.length" class="report-scope-note">
-            存在多个同科候选：{{ matchAmbiguous.map(code => SUBJECT_LABELS[code] || code).join('、') }}。请先整理重复档案。
+            存在多个同科候选：{{ matchAmbiguous.map(code => getSubjectLabel(code)).join('、') }}。请先整理重复档案。
           </p>
 
           <div class="card-footer-flow">
@@ -558,7 +540,7 @@ onMounted(() => void load())
               <p class="card-sub">{{ selected.pages }} 页 · 置信度 {{ selected.confidence }}</p>
             </div>
             <span :class="['chip', scopeTone(selected.scope_status)]">
-              {{ SCOPE_LABELS[selected.scope_status] || selected.scope_status }}
+              {{ getReportScopeStatusLabel(selected.scope_status) }}
             </span>
           </div>
 
@@ -582,7 +564,7 @@ onMounted(() => void load())
             </thead>
             <tbody>
               <tr v-for="item in selected.subjects" :key="item.subject">
-                <td>{{ item.name || item.subject }}</td>
+                <td>{{ item.name || getSubjectLabel(item.subject) }}</td>
                 <td>{{ fmtScore(item.score) }} / {{ fmtScore(item.max_score) }}</td>
                 <td>{{ item.class_rank ?? '—' }}</td>
                 <td>{{ item.grade_rank ?? '—' }}</td>
@@ -725,8 +707,14 @@ onMounted(() => void load())
 .report-kv div, .report-total div { border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 8px 10px; }
 .report-kv dt, .report-total dt { font-size: 0.76rem; color: var(--muted); }
 .report-kv dd, .report-total dd { margin: 2px 0 0; font-weight: 600; }
-.report-linked-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
-.report-linked-list li { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line-soft); padding-bottom: 6px; }
+.report-linked-list { list-style: none; padding: 0; margin: 8px 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.report-linked-list li { display: flex; gap: 8px; flex-wrap: wrap; border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; background: var(--card-warm); }
+@media (max-width: 900px) {
+  .report-linked-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .report-linked-list { grid-template-columns: 1fr; }
+}
 .report-subject-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.82rem; }
 .report-subject-table th, .report-subject-table td { text-align: left; border-bottom: 1px solid var(--line-soft); padding: 6px 4px; }
 .report-scope-note { border-left: 3px solid var(--amber-line, #e2c58e); padding: 8px 10px; background: var(--amber-soft); border-radius: var(--radius-s); }

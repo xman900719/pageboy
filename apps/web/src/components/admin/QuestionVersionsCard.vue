@@ -316,10 +316,10 @@ async function publish(version: QuestionVersion) {
           <div class="handoff-box">
             <div>
               <strong>题库入池闭环完成！</strong>
-              <span>可前往「第四阶段 · 题库余量体检」查看各知识点未见题余量。</span>
+              <span>可前往「第四阶段 · 题库余量盘点」查看各知识点未见题余量。</span>
             </div>
             <button type="button" class="primary small" @click="emit('go-health')">
-              前往题库余量体检 →
+              前往题库余量盘点 →
             </button>
           </div>
         </section>

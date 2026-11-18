@@ -104,9 +104,14 @@ function signOut() {
     <header v-if="client" class="masthead">
       <div class="masthead-row">
         <div class="wordmark-block">
-          <span class="seal" aria-hidden="true">
-            书
-          </span>
+          <img
+            class="brand-icon"
+            src="/icons/apple-touch-icon.png"
+            alt=""
+            aria-hidden="true"
+            width="44"
+            height="44"
+          />
           <div>
             <span class="wordmark">书童</span>
             <span class="tagline">目标驱动的中考练习 · 私人学习空间</span>

@@ -66,9 +66,14 @@ async function submit() {
   <main class="gate">
     <section class="card gate-card">
       <div class="gate-head">
-        <span class="seal big" aria-hidden="true">
-          书
-        </span>
+        <img
+          class="brand-icon big"
+          src="/icons/apple-touch-icon.png"
+          alt=""
+          aria-hidden="true"
+          width="48"
+          height="48"
+        />
         <div>
           <span class="wordmark">书童</span>
           <span class="tagline">目标驱动的中考练习 · 私人学习空间</span>

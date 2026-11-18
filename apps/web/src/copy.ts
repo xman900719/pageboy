@@ -19,9 +19,9 @@ export const MASTERY_LABELS: Record<string, string> = {
 export type AdminViewId = 'ledger' | 'exams' | 'knowledge'
 
 export const ADMIN_VIEWS: { id: AdminViewId; label: string; hint: string }[] = [
-  { id: 'ledger', label: '题库与体检', hint: '题源 · 附件 · 审核 · 余量' },
+  { id: 'ledger', label: '题库', hint: '题源 · 附件 · 审核 · 余量' },
   { id: 'exams', label: '学校考试', hint: '台账 · 草稿 · 分析 · 同步' },
-  { id: 'knowledge', label: '知识点审核', hint: '审定 · 课标 · 映射 · 快照' },
+  { id: 'knowledge', label: '知识点库', hint: '审定 · 课标 · 映射 · 快照' },
 ]
 
 export const GAP_LABELS: Record<GapType, string> = {

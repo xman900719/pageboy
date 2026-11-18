@@ -102,6 +102,11 @@ body { margin: 0; min-height: 100vh }
   font-size: 1.15rem; border-radius: 8px; box-shadow: var(--shadow);
 }
 .seal.big { width: 2.8rem; height: 2.8rem; font-size: 1.5rem }
+.brand-icon {
+  display: block; width: 2.4rem; height: 2.4rem; flex: none;
+  border-radius: 10px; object-fit: cover; box-shadow: var(--shadow);
+}
+.brand-icon.big { width: 3rem; height: 3rem; border-radius: 12px }
 .wordmark { font-family: var(--font-display); font-size: 1.7rem; letter-spacing: 0.08em; line-height: 1.2 }
 .tagline { display: block; font-size: 0.78rem; color: var(--ink-3); margin-top: 2px }
 
@@ -413,16 +418,16 @@ input[type='file']::file-selector-button:hover {
 .help-bubble-anchor { position: relative; display: inline-block }
 button.help-trigger {
   display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--teal-line); background: var(--teal-soft); color: var(--teal);
+  border: 1px solid #e6cf8b; background: #fcf4d6; color: #2c2623;
   border-radius: 999px; padding: 6px 13px; font-size: 0.82rem; font-weight: 700;
 }
 button.help-trigger:hover:not(:disabled),
 button.help-trigger[aria-expanded='true'] {
-  background: var(--teal); border-color: var(--teal); color: #fff;
+  background: #f8e8b0; border-color: #d6b656; color: #1a1715;
 }
 .help-dot {
   display: inline-grid; place-items: center; width: 1.15rem; height: 1.15rem;
-  border-radius: 50%; background: #ffffffd6; color: var(--teal); font-size: 0.74rem; font-weight: 800;
+  border-radius: 50%; background: #ffffffeb; color: #2c2623; font-size: 0.74rem; font-weight: 800;
 }
 .help-popover {
   position: absolute; top: calc(100% + 10px); right: 0; width: min(420px, calc(100vw - 40px));
@@ -456,12 +461,12 @@ button.help-close:hover:not(:disabled) {
 .help-popover.align-left::before { left: 26px; right: auto }
 button.help-trigger.compact { padding: 4px 10px; font-size: 0.76rem }
 button.help-trigger.tone-caution {
-  border-color: var(--amber-line); background: var(--amber-soft); color: var(--amber);
+  border-color: #e6cf8b; background: #fcf4d6; color: #2c2623;
 }
-button.help-trigger.tone-caution .help-dot { color: var(--amber) }
+button.help-trigger.tone-caution .help-dot { color: #2c2623 }
 button.help-trigger.tone-caution:hover:not(:disabled),
 button.help-trigger.tone-caution[aria-expanded='true'] {
-  background: var(--amber); border-color: var(--amber); color: #fff;
+  background: #f8e8b0; border-color: #d6b656; color: #1a1715;
 }
 .help-popover.tone-caution { border-color: var(--amber-line); box-shadow: 0 14px 36px -10px #8f4f0d33 }
 .help-popover.tone-caution::before { border-left-color: var(--amber-line); border-top-color: var(--amber-line) }
@@ -900,13 +905,13 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 .goal-form label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--ink-2) }
 .goal-form input { padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font-size: 0.88rem }
 
-/* ---------- 管理端：题库体检卡片流 ---------- */
+/* ---------- 管理端：题库余量卡片流 ---------- */
 .pool-kpi-grid {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 14px;
 }
 .pool-card-grid {
   list-style: none; padding: 0; margin: 0; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
 }
 .pool-node-card {
   border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--card-warm);
@@ -1284,6 +1289,25 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
 .slim-tool-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
 .slim-tool-title-row h2 { margin: 0; font-size: 1rem }
 .slim-tool-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
+.slim-tool-bar .sub-head {
+  color: var(--ink-2, #5C5346); font-size: 0.85rem; margin: 0;
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+.status-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; font-size: 0.85rem;
+}
+.status-badges-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem;
+}
+.badge {
+  padding: 0.24rem 0.65rem; border-radius: 999px; font-weight: 600;
+}
+.badge.pending { background: var(--amber-soft, #FEF5EB); color: var(--amber, #8F4F0D); border: 1px solid var(--amber-line, #E8B878) }
+.badge.approved { background: var(--green-soft, #EBF5EE); color: var(--green, #2A6F4E); border: 1px solid var(--green-line, #8FC1A3) }
+.badge.total { background: #FFFFFF; color: var(--ink-2, #5C5346); border: 1px solid var(--line, #E6DEC8) }
+.badge.clauses { background: var(--teal-soft, #EDF4F8); color: var(--teal, #265D75); border: 1px solid var(--teal-line, #9BB5D6) }
+.audit-note { color: var(--red, #B23324); font-weight: 600; font-size: 0.82rem }
+.audit-note.audit-ok { color: var(--green, #2A6F4E) }
 
 /* ---------- 管理端工作区共用上下文条与徽章 ---------- */
 .admin-workspace { display: flex; flex-direction: column; gap: 12px }
@@ -1325,10 +1349,37 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
   -webkit-overflow-scrolling: touch;
 }
 .version-single-stack { display: flex; flex-direction: column; gap: 14px }
-.version-list--grid {
+.version-list--grid,
+.admin-page .source-list,
+.admin-page .exam-list,
+.admin-page .attachment-list,
+.admin-page .draft-card-list,
+.admin-page .error-cat-list,
+.admin-page .entry-list,
+.admin-page .exam-paper-list,
+.admin-page .exam-sync-persisted-list,
+.admin-page .exam-sync-error-list,
+.admin-page .exam-sync-candidates,
+.admin-page .exam-sync-report-actions,
+.admin-page .exam-sync-ranks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  align-items: stretch;
+}
+.admin-page .source-item,
+.admin-page .exam-list li {
+  align-items: flex-start;
+  align-content: space-between;
+  min-width: 0;
+}
+.admin-page .exam-paper-row {
+  height: 100%;
+  border: 1px solid var(--line-soft);
+  background: var(--card-warm);
+}
+.admin-page .exam-paper-row.selected {
+  border-color: var(--primary-line);
 }
 .k12-result-block .matrix-table-scroll {
   max-height: clamp(240px, 44vh, 420px);
@@ -1356,12 +1407,41 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
   .pool-card-grid {
     max-height: clamp(260px, 46vh, 420px);
   }
-  .version-list--grid {
-    grid-template-columns: 1fr;
+  .version-list--grid,
+  .admin-page .source-list,
+  .admin-page .exam-list,
+  .admin-page .attachment-list,
+  .admin-page .draft-card-list,
+  .admin-page .error-cat-list,
+  .admin-page .entry-list,
+  .admin-page .exam-paper-list,
+  .admin-page .exam-sync-persisted-list,
+  .admin-page .exam-sync-error-list,
+  .admin-page .exam-sync-candidates,
+  .admin-page .exam-sync-report-actions,
+  .admin-page .exam-sync-ranks,
+  .admin-page .pool-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
+  .version-list--grid,
+  .admin-page .source-list,
+  .admin-page .exam-list,
+  .admin-page .attachment-list,
+  .admin-page .draft-card-list,
+  .admin-page .error-cat-list,
+  .admin-page .entry-list,
+  .admin-page .exam-paper-list,
+  .admin-page .exam-sync-persisted-list,
+  .admin-page .exam-sync-error-list,
+  .admin-page .exam-sync-candidates,
+  .admin-page .exam-sync-report-actions,
+  .admin-page .exam-sync-ranks,
+  .pool-card-grid {
+    grid-template-columns: 1fr;
+  }
   .stage-strip.cols-4, .stage-strip.cols-3 {
     grid-template-columns: 1fr;
   }

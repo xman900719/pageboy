@@ -197,6 +197,12 @@ const unconfirmedDrafts = computed(
 const confirmedItems = computed(
   () => selectedDetail.value?.items.filter(it => it.confirmed_by_user) ?? []
 )
+const verifiedExamsCount = computed(
+  () => (exams.value ?? []).filter(e => e.confirmed_by_user).length,
+)
+const pendingExamsCount = computed(
+  () => (exams.value ?? []).filter(e => !e.confirmed_by_user).length,
+)
 
 const isNewItemLost = computed(
   () => itemEarned.value !== '' && itemMax.value !== '' && Number(itemEarned.value) < Number(itemMax.value)
@@ -962,17 +968,39 @@ async function handleSyncPapersImported(examId: string) {
 
 <template>
   <section class="exam-workspace admin-workspace" aria-label="学校考试总分">
-    <!-- 四阶段分组导航条：第一阶段总分建档 → 第二阶段三路入库 → 第三阶段明细查漏 → 第四阶段诊断终点 -->
-    <StageTabStrip
-      :model-value="activeTab"
-      :groups="examStageGroups"
-      region-label="学校考试阶段工作区"
-      id-prefix="exam"
-      @update:model-value="id => (activeTab = id as ExamTabId)"
-    >
-      <template #tools>
-        <span class="chip">{{ SCHOOL_SUBJECT_LABELS[subject] }} · {{ exams?.length ?? 0 }} 场</span>
-        <HelpBubble title="校考录入说明" label="校考录入说明">
+    <!-- 顶部信息汇总卡（与知识点审核工作台同款紧凑摘要条） -->
+    <div class="slim-tool-bar" role="region" aria-label="学校考试工作台总览">
+      <div class="slim-tool-main">
+        <div class="slim-tool-title-row">
+          <h2>{{ SCHOOL_SUBJECT_LABELS[subject] }}学校考试工作台</h2>
+          <div class="status-badges-row status-banner" role="region" aria-label="学校考试状态统计">
+            <span class="badge pending">待核对: {{ pendingExamsCount }}</span>
+            <span class="badge approved">已核对: {{ verifiedExamsCount }}</span>
+            <span class="badge total">场次总数: {{ exams?.length ?? 0 }}</span>
+            <span :class="['badge', unconfirmedDrafts.length > 0 ? 'pending' : 'clauses']">
+              待校对草稿: {{ unconfirmedDrafts.length }} 题
+            </span>
+          </div>
+        </div>
+        <div class="sub-head">
+          <span>当前科目：{{ SCHOOL_SUBJECT_LABELS[subject] }} · 私人校卷原卷与答题卡加密隔离保存，绝不进入公开题库</span>
+          <span
+            v-if="(exams?.length ?? 0) > 0 && pendingExamsCount === 0 && unconfirmedDrafts.length === 0"
+            class="audit-note audit-ok"
+          >
+            当前科目已录场次均已完成人工核对，且无待校对草稿。
+          </span>
+          <span v-else-if="unconfirmedDrafts.length > 0" class="audit-note">
+            当前场次尚有 {{ unconfirmedDrafts.length }} 道解析草稿待人工校对确认。
+          </span>
+          <span v-else-if="pendingExamsCount > 0" class="audit-note">
+            尚有 {{ pendingExamsCount }} 场考试待核对实得总分或确认锁定。
+          </span>
+        </div>
+      </div>
+
+      <div class="slim-tool-actions">
+        <HelpBubble compact title="校考录入说明" label="校考录入说明">
           <ul>
             <li>
               <strong>总分口径：</strong>由家长或管理员依据纸质答卷如实录入；<b>{{ EXAM_NOTE }}</b>
@@ -988,8 +1016,17 @@ async function handleSyncPapersImported(examId: string) {
         <button type="button" class="ghost small" @click="refreshExams()">
           刷新
         </button>
-      </template>
-    </StageTabStrip>
+      </div>
+    </div>
+
+    <!-- 四阶段分组导航条：第一阶段总分建档 → 第二阶段三路入库 → 第三阶段明细查漏 → 第四阶段诊断终点 -->
+    <StageTabStrip
+      :model-value="activeTab"
+      :groups="examStageGroups"
+      region-label="学校考试阶段工作区"
+      id-prefix="exam"
+      @update:model-value="id => (activeTab = id as ExamTabId)"
+    />
 
     <!-- 全局复用：当前学科知识点中文补全列表（供草稿校对与手工补录共用） -->
     <datalist :id="`school-exam-knowledge-list-${subject}`">
