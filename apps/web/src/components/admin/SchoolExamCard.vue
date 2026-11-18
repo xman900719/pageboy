@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   describeError,
   SCHOOL_SUBJECT_LABELS,
@@ -19,8 +19,14 @@ import {
   getSchoolErrorCategoryLabel,
   getSubjectKnowledgeOptions,
   resolveKnowledgeCodeInput,
-  SCHOOL_ERROR_CATEGORY_OPTIONS,
 } from '../../config/knowledge'
+import {
+  compareQuestionLabel,
+  formatQuestionLabelHeading,
+  isSchoolItemFullScore,
+  parseDraftBasisTags,
+  summarizeSchoolExamItemScores,
+} from '../../examSync'
 import HelpBubble from '../HelpBubble.vue'
 import SchoolExamReportCenter from './SchoolExamReportCenter.vue'
 import SchoolExamSyncCenter from './SchoolExamSyncCenter.vue'
@@ -31,10 +37,11 @@ import type { NoticeTone } from '../Notice.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 export type ExamTabId = 'scores' | 'papers' | 'items' | 'analysis' | 'sync' | 'report'
-type ScoreStepId = 'pick' | 'detail'
-type PaperStepId = 'upload' | 'parse' | 'drafts'
+type ScoreStepId = 'pick' | 'detail' | 'upload'
+type PaperStepId = 'parse' | 'drafts'
 type ItemStepId = 'list' | 'add'
 type AnalysisStepId = 'overview' | 'knowledge' | 'history'
+type DraftFilterId = 'all' | 'unmapped' | 'lost' | 'correct' | 'ready'
 
 const DIAGNOSIS_TAG_META: Record<string, { label: string; tone: string }> = {
   double_weak: { label: '双重薄弱 · 优先突破', tone: 'bad' },
@@ -57,8 +64,9 @@ const DRAFT_CONFIDENCE_META: Record<string, { label: string; tone: string }> = {
   low: { label: '低置信 · 请核对分值', tone: 'bad' },
   skeleton_only: { label: '仅题号与分值骨架', tone: 'wait' },
   external_sync: { label: '外部平台抓取', tone: 'mid' },
-  auto_matched: { label: '系统自动匹配 · 待确认', tone: 'mid' },
-  ai_matched: { label: 'DeepSeek 匹配 · 待确认', tone: 'mid' },
+  auto_matched: { label: '关键词关联', tone: 'good' },
+  ai_matched: { label: 'AI 智能关联', tone: 'good' },
+  type_inferred: { label: '考纲先验关联', tone: 'mid' },
 }
 
 function fmtExamMonth(value?: string | null): string {
@@ -112,12 +120,19 @@ const loadingDetail = ref(false)
 const activeTab = ref<ExamTabId>(props.initialTab ?? 'scores')
 const scoreStep = ref<ScoreStepId>('pick')
 const scorePickMode = ref<'list' | 'create'>('list')
-const paperStep = ref<PaperStepId>('upload')
+const paperStep = ref<PaperStepId>('parse')
 const itemStep = ref<ItemStepId>('list')
 const analysisStep = ref<AnalysisStepId>('overview')
 
-// 学科可选中文知识点列表（供手动补录与草稿校对输入提示）
-const subjectKnowledgeOptions = computed(() => getSubjectKnowledgeOptions(props.subject, false))
+// 学科可选中文知识点列表（包含 2022 课标 135 个 *_cand 节点，去重同名标签供下拉补全）
+const subjectKnowledgeOptions = computed(() => {
+  const seenLabels = new Set<string>()
+  return getSubjectKnowledgeOptions(props.subject, true).filter(opt => {
+    if (seenLabels.has(opt.label)) return false
+    seenLabels.add(opt.label)
+    return true
+  })
+})
 
 // 新建校考表单状态
 const examTitle = ref('')
@@ -147,13 +162,12 @@ const itemErrorNote = ref('')
 const savingItem = ref(false)
 const confirmingItemId = ref<string | null>(null)
 
-// 已有小题的行内错因与复盘备注编辑状态
-const editingAnalysisItemId = ref<string | null>(null)
-const editErrorCategory = ref<SchoolErrorCategory | ''>('')
-const editErrorNote = ref('')
-const savingAnalysis = ref(false)
+// 已有小题的退回学生重写复盘状态（管理端只读查看学生复盘，不代填）
+const returningItemId = ref<string | null>(null)
+const returnReasonInput = ref('')
+const returningSaving = ref(false)
 
-// M2 自动解析与草稿校对台状态
+// M2 自动解析与待核对明细核对台状态
 const selectedParseAttachmentIds = ref<string[]>([])
 const lastParseInitExamId = ref<string | null>(null)
 const parseMode = ref<'auto' | 'skeleton_only'>('auto')
@@ -164,12 +178,15 @@ const parseDraftError = ref('')
 const lastParseSummary = ref('')
 const discardingItemId = ref<string | null>(null)
 const batchConfirming = ref(false)
+const autoAssociatingDrafts = ref(false)
+const autoAssociatedExamIds = ref<Set<string>>(new Set())
+const draftFilter = ref<DraftFilterId>('all')
+const draftErrorItemId = ref<string | null>(null)
+const draftListRef = ref<HTMLUListElement | null>(null)
 const draftEdits = ref<
   Record<
     string,
     {
-      earnedPoints: number | ''
-      maxPoints: number | ''
       knowledgeId: string
       errorCategory: SchoolErrorCategory | ''
       errorNote: string
@@ -191,12 +208,17 @@ const answerCardAttachments = computed(
   () => parseableAttachments.value.filter(a => /答题卡|答题纸|answer.?card/i.test(a.filename)),
 )
 const hasAnswerCard = computed(() => answerCardAttachments.value.length > 0)
-const unconfirmedDrafts = computed(
-  () => selectedDetail.value?.items.filter(it => !it.confirmed_by_user) ?? []
+const unconfirmedDrafts = computed(() =>
+  [...(selectedDetail.value?.items.filter(it => !it.confirmed_by_user) ?? [])].sort((x, y) =>
+    compareQuestionLabel(x.question_label, y.question_label),
+  ),
 )
-const confirmedItems = computed(
-  () => selectedDetail.value?.items.filter(it => it.confirmed_by_user) ?? []
+const confirmedItems = computed(() =>
+  [...(selectedDetail.value?.items.filter(it => it.confirmed_by_user) ?? [])].sort((x, y) =>
+    compareQuestionLabel(x.question_label, y.question_label),
+  ),
 )
+const scoreSummary = computed(() => summarizeSchoolExamItemScores(selectedDetail.value))
 const verifiedExamsCount = computed(
   () => (exams.value ?? []).filter(e => e.confirmed_by_user).length,
 )
@@ -239,7 +261,7 @@ const examStageGroups = computed<StageGroup[]>(() => {
   return [
     {
       id: 'exam-stage-1',
-      title: '第一阶段 · 前置立锚',
+      title: '第一阶段 · 建档与材料',
       tabs: [
         {
           id: 'scores',
@@ -252,21 +274,11 @@ const examStageGroups = computed<StageGroup[]>(() => {
     },
     {
       id: 'exam-stage-2',
-      title: '第二阶段 · 材料入库（按需选路）',
+      title: '第二阶段 · 明细提取与核对',
       tabs: [
         {
-          id: 'report',
-          title: '报告导入与核对',
-          badge: '四步',
-        },
-        {
-          id: 'sync',
-          title: '全科校考同步',
-          badge: '四步',
-        },
-        {
           id: 'papers',
-          title: '原卷与草稿校对',
+          title: '原卷提取与明细核对',
           badge: paperDraftBadge,
           wait: draftCount > 0,
           done: Boolean(selectedDetail.value && draftCount === 0 && confirmedItems.value.length > 0),
@@ -311,64 +323,67 @@ const examContext = computed<StepFlowContext | null>(() => {
   }
 })
 
-const scoreSteps = computed<StepDefinition[]>(() => [
-  {
-    id: 'pick',
-    title: '1. 选定或新建校考档案',
-    subtitle: selectedDetail.value ? '已选定场次' : '先从台账选定或建新档',
-    badge: `${exams.value?.length ?? 0} 场`,
-    done: selectedDetail.value !== null,
-    prereqMet: true,
-  },
-  {
-    id: 'detail',
-    title: '2. 总分概览与材料入口',
-    subtitle: selectedDetail.value?.confirmed_by_user ? '总分已锁定' : '核对总分或分流第二阶段',
-    badge: selectedDetail.value?.confirmed_by_user ? '已锁定' : '待核对',
-    badgeTone: selectedDetail.value?.confirmed_by_user ? 'good' : 'wait',
-    done: Boolean(selectedDetail.value?.confirmed_by_user),
-    prereqMet: selectedDetail.value !== null,
-    lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
-  },
-])
+const scoreSteps = computed<StepDefinition[]>(() => {
+  const hasExam = selectedDetail.value !== null
+  const attachCount = selectedDetail.value?.attachments.length ?? 0
+  return [
+    {
+      id: 'pick',
+      title: '1. 选定或新建校考档案',
+      subtitle: selectedDetail.value ? '已选定场次' : '先从台账选定或建新档',
+      badge: `${exams.value?.length ?? 0} 场`,
+      done: hasExam,
+      prereqMet: true,
+    },
+    {
+      id: 'detail',
+      title: '2. 总分概览与材料入口',
+      subtitle: selectedDetail.value?.confirmed_by_user ? '总分已锁定' : '核对总分或进入报告/同步',
+      badge: selectedDetail.value?.confirmed_by_user ? '已锁定' : '待核对',
+      badgeTone: selectedDetail.value?.confirmed_by_user ? 'good' : 'wait',
+      done: Boolean(selectedDetail.value?.confirmed_by_user),
+      prereqMet: hasExam,
+      lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
+    },
+    {
+      id: 'upload',
+      title: '3. 上传私有原卷与答题卡',
+      subtitle: attachCount > 0 ? `已归档 ${attachCount} 份` : '加密隔离归档',
+      badge: `${attachCount} 份`,
+      done: attachCount > 0,
+      prereqMet: hasExam,
+      lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
+    },
+  ]
+})
 
 const paperSteps = computed<StepDefinition[]>(() => {
   const hasExam = selectedDetail.value !== null
-  const hasAttach = (selectedDetail.value?.attachments.length ?? 0) > 0
   const hasParseable = parseableAttachments.value.length > 0
   const hasDraftsOrConfirmed = unconfirmedDrafts.value.length > 0 || confirmedItems.value.length > 0
   return [
     {
-      id: 'upload',
-      title: '1. 上传私有原卷与答题卡',
-      subtitle: hasAttach ? `已归档 ${selectedDetail.value?.attachments.length ?? 0} 份` : '加密隔离归档',
-      badge: `${selectedDetail.value?.attachments.length ?? 0} 份`,
-      done: hasAttach || unconfirmedDrafts.value.length > 0,
-      prereqMet: hasExam,
-      lockReason: '请先在「第一阶段 · 总分台账与建档」选定或新建一场学校考试。',
-    },
-    {
       id: 'parse',
-      title: '2. 自动解析待核对草稿',
-      subtitle: hasParseable ? `可选 ${parseableAttachments.value.length} 份附件` : '须先上传可解析附件',
+      title: '1. 自动提取待核对明细',
+      subtitle: hasParseable ? `可选 ${parseableAttachments.value.length} 份附件` : '须先在第一阶段上传原卷',
       done: hasDraftsOrConfirmed,
       prereqMet: hasExam && hasParseable,
-      lockReason: '请先在第 1 步上传可解析的原卷或答题卡；若已从「报告导入」生成草稿，可直接点击第 3 步校对台。',
+      lockReason: '请先在「第一阶段 · 第 3 步」上传可解析的原卷或答题卡；若已从「报告导入」生成待核对明细，可直接点击第 2 步核对台。',
     },
     {
       id: 'drafts',
-      title: '3. 待核对草稿校对台',
+      title: '2. 逐题明细核对台',
       subtitle:
         unconfirmedDrafts.value.length > 0
           ? `待核对 ${unconfirmedDrafts.value.length} 题`
           : confirmedItems.value.length > 0
-            ? '本页草稿已全部入账'
-            : '待第 2 步或报告生成草稿',
+            ? '本页明细已全部入账'
+            : '待第 1 步或报告生成明细',
       badge: `${unconfirmedDrafts.value.length} 题`,
       badgeTone: unconfirmedDrafts.value.length > 0 ? 'wait' : 'good',
       done: hasExam && unconfirmedDrafts.value.length === 0 && confirmedItems.value.length > 0,
       prereqMet: hasExam && hasDraftsOrConfirmed,
-      lockReason: '当前场次还没有待核对草稿：请先在第 2 步解析原卷，或前往「报告导入与核对」生成逐题草稿。',
+      lockReason: '当前场次还没有待核对明细：请先在第 1 步提取原卷，或从第一阶段「报告导入与核对」生成逐题待核对明细。',
     },
   ]
 })
@@ -460,6 +475,8 @@ function syncDraftStateFromDetail(detail: SchoolExamDetail) {
     lastParseInitExamId.value = detail.id
     parseDraftError.value = ''
     lastParseSummary.value = ''
+    draftFilter.value = 'all'
+    draftErrorItemId.value = null
   } else {
     const existingSet = new Set(validAttachIds)
     const kept = selectedParseAttachmentIds.value.filter(id => existingSet.has(id))
@@ -469,19 +486,83 @@ function syncDraftStateFromDetail(detail: SchoolExamDetail) {
   const nextEdits: typeof draftEdits.value = {}
   for (const it of detail.items) {
     if (it.confirmed_by_user) continue
-    const label = getKnowledgeLabel(it.knowledge_id)
-    const displayKnowledge =
-      label !== it.knowledge_id ? label : (it.knowledge_name || it.knowledge_id)
-    nextEdits[it.id] = draftEdits.value[it.id] ?? {
-      earnedPoints: it.earned_points,
-      maxPoints: it.max_points,
-      knowledgeId: displayKnowledge,
-      errorCategory: it.error_category ?? '',
-      errorNote: it.error_note ?? '',
-    }
+    const isUnmapped = !it.knowledge_id || it.knowledge_id === 'unmapped'
+    const label = isUnmapped ? '' : getKnowledgeLabel(it.knowledge_id)
+    const displayKnowledge = isUnmapped
+      ? ''
+      : label !== it.knowledge_id
+        ? label
+        : (it.knowledge_name || it.knowledge_id)
+    const lost = !isSchoolItemFullScore(it.earned_points, it.max_points)
+    const prev = draftEdits.value[it.id]
+    nextEdits[it.id] = prev
+      ? {
+          ...prev,
+          knowledgeId: prev.knowledgeId.trim() ? prev.knowledgeId : displayKnowledge,
+        }
+      : {
+          knowledgeId: displayKnowledge,
+          errorCategory: lost ? (it.error_category ?? '') : '',
+          errorNote: lost ? (it.error_note ?? '') : '',
+        }
   }
   draftEdits.value = nextEdits
 }
+
+function examNeedsAutoAssociate(detail: SchoolExamDetail | null): boolean {
+  if (!detail) return false
+  return detail.items.some(
+    it =>
+      !it.confirmed_by_user &&
+      (!it.knowledge_id ||
+        it.knowledge_id === 'unmapped' ||
+        !it.draft_knowledge_candidates ||
+        it.draft_knowledge_candidates.length < 3),
+  )
+}
+
+async function runAutoAssociateDrafts(options?: { overwrite?: boolean; silent?: boolean }) {
+  if (!selectedDetail.value || autoAssociatingDrafts.value) return
+  if (typeof props.client.autoAssociateSchoolExamItems !== 'function') return
+  const examId = selectedDetail.value.id
+  autoAssociatingDrafts.value = true
+  try {
+    const res = await props.client.autoAssociateSchoolExamItems(examId, {
+      useAi: true,
+      overwriteExisting: options?.overwrite ?? false,
+    })
+    if (options?.overwrite) {
+      draftEdits.value = {}
+    }
+    if (res.updated > 0) {
+      await loadDetail(examId)
+      if (!options?.silent) {
+        props.notify(`已自动补全 ${res.updated} 道明细的候选考点与初始关联（待人工核对后入账）。`, 'success')
+      }
+    } else if (!options?.silent) {
+      props.notify('全部待核明细均已具备 3 个候选考点与初始关联。', 'info')
+    }
+  } catch (e) {
+    if (!options?.silent) {
+      props.notify(describeError(e), 'error')
+    }
+  } finally {
+    autoAssociatingDrafts.value = false
+  }
+}
+
+watch(
+  [() => activeTab.value, () => paperStep.value, () => selectedDetail.value?.id],
+  ([tab, step, examId]) => {
+    if (tab !== 'papers' || step !== 'drafts' || !examId || !selectedDetail.value) return
+    if (autoAssociatedExamIds.value.has(examId)) return
+    if (!examNeedsAutoAssociate(selectedDetail.value)) return
+    const nextSet = new Set(autoAssociatedExamIds.value)
+    nextSet.add(examId)
+    autoAssociatedExamIds.value = nextSet
+    void runAutoAssociateDrafts({ overwrite: false, silent: true })
+  },
+)
 
 async function refreshExams(preferId?: string) {
   try {
@@ -519,17 +600,21 @@ watch(
   () => {
     scoreStep.value = 'pick'
     scorePickMode.value = 'list'
-    paperStep.value = 'upload'
+    paperStep.value = 'parse'
     itemStep.value = 'list'
     analysisStep.value = 'overview'
     paperFile.value = null
     uploadError.value = ''
-    editingAnalysisItemId.value = null
+    returningItemId.value = null
+    returnReasonInput.value = ''
     lastParseInitExamId.value = null
     selectedParseAttachmentIds.value = []
     parseDraftError.value = ''
     lastParseSummary.value = ''
+    draftFilter.value = 'all'
+    draftErrorItemId.value = null
     draftEdits.value = {}
+    autoAssociatedExamIds.value = new Set()
     confirmDeleteExamId.value = null
     void refreshExams(props.initialExamId)
   },
@@ -539,7 +624,8 @@ watch(
 async function selectExam(examId: string) {
   selectedExamId.value = examId
   uploadError.value = ''
-  editingAnalysisItemId.value = null
+  returningItemId.value = null
+  returnReasonInput.value = ''
   confirmDeleteExamId.value = null
   await loadDetail(examId)
 }
@@ -724,7 +810,7 @@ function displayKnowledgeName(it: SchoolExamItem): string {
 
 function resolveDraftKnowledgeHint(it: SchoolExamItem, currentCode: string): string {
   const trimmed = currentCode.trim()
-  if (!trimmed) return '请填写或点选上方候选考点'
+  if (!trimmed) return ''
   const cand = it.draft_knowledge_candidates?.find(c => c.knowledge_id === trimmed)
   const local = getKnowledgeLabel(trimmed)
   const label =
@@ -762,9 +848,11 @@ async function runParseDrafts() {
       : '本地规则文字骨架提取'
     const skippedMsg =
       res.skipped_labels.length > 0 ? `；已跳过 ${res.skipped_labels.length} 道既有题目` : ''
-    lastParseSummary.value = `${modeLabel}：生成 ${res.created_items.length} 条待核对草稿${skippedMsg}`
+    lastParseSummary.value = `${modeLabel}：生成 ${res.created_items.length} 条待核对明细${skippedMsg}`
     props.notify(lastParseSummary.value, 'success')
     draftEdits.value = {}
+    draftFilter.value = 'all'
+    draftErrorItemId.value = null
     await loadDetail(selectedDetail.value.id)
     if (unconfirmedDrafts.value.length > 0) {
       paperStep.value = 'drafts'
@@ -786,30 +874,124 @@ function resolveDraftKnowledgeCode(it: SchoolExamItem, rawInput: string): string
   return resolveKnowledgeCodeInput(trimmed, props.subject)
 }
 
+function isDraftKnowledgeReady(it: SchoolExamItem): boolean {
+  const edit = draftEdits.value[it.id]
+  const raw = edit ? edit.knowledgeId : (it.knowledge_id === 'unmapped' ? '' : it.knowledge_id)
+  const kid = resolveDraftKnowledgeCode(it, raw)
+  return Boolean(kid && kid !== 'unmapped')
+}
+
+const draftFilterCounts = computed(() => {
+  const list = unconfirmedDrafts.value
+  let unmapped = 0
+  let lost = 0
+  let correct = 0
+  let ready = 0
+  for (const it of list) {
+    const isReady = isDraftKnowledgeReady(it)
+    if (isReady) ready += 1
+    else unmapped += 1
+    if (isSchoolItemFullScore(it.earned_points, it.max_points)) correct += 1
+    else lost += 1
+  }
+  return { all: list.length, unmapped, lost, correct, ready }
+})
+
+const filteredDrafts = computed(() => {
+  const list = unconfirmedDrafts.value
+  if (draftFilter.value === 'unmapped') return list.filter(it => !isDraftKnowledgeReady(it))
+  if (draftFilter.value === 'lost') return list.filter(it => !isSchoolItemFullScore(it.earned_points, it.max_points))
+  if (draftFilter.value === 'correct') return list.filter(it => isSchoolItemFullScore(it.earned_points, it.max_points))
+  if (draftFilter.value === 'ready') return list.filter(isDraftKnowledgeReady)
+  return list
+})
+
+const readyDrafts = computed(() => unconfirmedDrafts.value.filter(isDraftKnowledgeReady))
+
+const hasCandidateSuggestions = computed(() =>
+  unconfirmedDrafts.value.some(
+    it => !isDraftKnowledgeReady(it) && ((it.draft_knowledge_candidates?.length ?? 0) > 0 || props.subject === 'ethics'),
+  ),
+)
+
 function applyCandidateKnowledge(itemId: string, knowledgeId: string, title?: string) {
   const edit = draftEdits.value[itemId]
   if (edit) {
     const label = getKnowledgeLabel(knowledgeId)
     edit.knowledgeId = label !== knowledgeId ? label : (title || knowledgeId)
+    if (draftErrorItemId.value === itemId) draftErrorItemId.value = null
+  }
+}
+
+function applyAllTopCandidates() {
+  let applied = 0
+  for (const it of unconfirmedDrafts.value) {
+    if (isDraftKnowledgeReady(it)) continue
+    const top = it.draft_knowledge_candidates?.[0]
+    if (top) {
+      applyCandidateKnowledge(it.id, top.knowledge_id, top.title)
+      applied += 1
+    } else if (props.subject === 'ethics' && draftEdits.value[it.id]) {
+      draftEdits.value[it.id].knowledgeId = '道法综合主题'
+      applied += 1
+    }
+  }
+  if (applied > 0) {
+    props.notify(`已为 ${applied} 道待核对明细填入推荐考点，请抽检后确认入账。`, 'success')
+  }
+}
+
+function findPrevReadyKnowledge(itemId: string): string | null {
+  const list = unconfirmedDrafts.value
+  const idx = list.findIndex(it => it.id === itemId)
+  if (idx <= 0) return null
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const prev = list[i]
+    if (isDraftKnowledgeReady(prev)) {
+      const val = draftEdits.value[prev.id]?.knowledgeId.trim()
+      if (val) return val
+    }
+  }
+  return null
+}
+
+function copyPrevDraftKnowledge(itemId: string) {
+  const prevLabel = findPrevReadyKnowledge(itemId)
+  const edit = draftEdits.value[itemId]
+  if (prevLabel && edit) {
+    edit.knowledgeId = prevLabel
+    if (draftErrorItemId.value === itemId) draftErrorItemId.value = null
+  }
+}
+
+async function focusDraftItem(itemId: string) {
+  draftErrorItemId.value = itemId
+  if (draftFilter.value !== 'all') {
+    draftFilter.value = 'all'
+    await nextTick()
+  }
+  const el = draftListRef.value?.querySelector<HTMLElement>(`[data-draft-item-id="${itemId}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const input = el.querySelector<HTMLInputElement>('input[data-knowledge-input]')
+    input?.focus({ preventScroll: true })
   }
 }
 
 function buildDraftConfirmEntry(it: SchoolExamItem) {
   const edit = draftEdits.value[it.id]
-  const earnedNum = Number(edit ? edit.earnedPoints : it.earned_points)
-  const maxNum = Number(edit ? edit.maxPoints : it.max_points)
-  const rawKnowledge = edit ? edit.knowledgeId : it.knowledge_id
+  const earnedNum = it.earned_points
+  const maxNum = it.max_points
+  const rawKnowledge = edit ? edit.knowledgeId : (it.knowledge_id === 'unmapped' ? '' : it.knowledge_id)
   const kid = resolveDraftKnowledgeCode(it, rawKnowledge)
-  if (Number.isNaN(earnedNum) || Number.isNaN(maxNum) || maxNum <= 0 || maxNum > 100 || earnedNum < 0) {
-    return { error: `「${it.question_label}」分值须在 0 到满分（≤100）之间。` }
-  }
-  if (earnedNum > maxNum) {
-    return { error: `「${it.question_label}」实得分（${earnedNum}）不能大于满分（${maxNum}）。` }
+  const heading = formatQuestionLabelHeading(it.question_label)
+  if (Number.isNaN(earnedNum) || Number.isNaN(maxNum) || maxNum <= 0 || maxNum > 100 || earnedNum < 0 || earnedNum > maxNum) {
+    return { error: `「${heading}」卷面分值异常（${earnedNum}/${maxNum}），请移除或重新解析。` }
   }
   if (!kid || kid === 'unmapped') {
-    return { error: `「${it.question_label}」所属知识点不能为空或 unmapped。` }
+    return { error: `「${heading}」请先选择或填写所属知识点后再确认入账。` }
   }
-  const lost = earnedNum < maxNum
+  const lost = !isSchoolItemFullScore(earnedNum, maxNum)
   return {
     payload: {
       itemId: it.id,
@@ -827,6 +1009,7 @@ async function confirmDraftItemWithEdits(it: SchoolExamItem) {
   const built = buildDraftConfirmEntry(it)
   if ('error' in built && built.error) {
     props.notify(built.error, 'caution')
+    await focusDraftItem(it.id)
     return
   }
   const p = built.payload!
@@ -840,7 +1023,8 @@ async function confirmDraftItemWithEdits(it: SchoolExamItem) {
   confirmingItemId.value = it.id
   try {
     await props.client.confirmSchoolExamItem(selectedDetail.value.id, it.id, confirmInput)
-    props.notify(`「${it.question_label}」已完成人工核对并正式入账。`, 'success')
+    if (draftErrorItemId.value === it.id) draftErrorItemId.value = null
+    props.notify(`「${formatQuestionLabelHeading(it.question_label)}」已完成人工核对并正式入账。`, 'success')
     await loadDetail(selectedDetail.value.id)
   } catch (e) {
     props.notify(describeError(e), 'error')
@@ -854,7 +1038,8 @@ async function discardDraftItem(it: SchoolExamItem) {
   discardingItemId.value = it.id
   try {
     await props.client.discardSchoolExamItem(selectedDetail.value.id, it.id)
-    props.notify(`已丢弃「${it.question_label}」未确认草稿。`, 'info')
+    if (draftErrorItemId.value === it.id) draftErrorItemId.value = null
+    props.notify(`已移除「${formatQuestionLabelHeading(it.question_label)}」待核对明细。`, 'info')
     await loadDetail(selectedDetail.value.id)
   } catch (e) {
     props.notify(describeError(e), 'error')
@@ -870,6 +1055,7 @@ async function confirmAllDraftsBatch() {
     const built = buildDraftConfirmEntry(it)
     if ('error' in built && built.error) {
       props.notify(built.error, 'caution')
+      await focusDraftItem(it.id)
       return
     }
     entries.push(built.payload!)
@@ -877,7 +1063,8 @@ async function confirmAllDraftsBatch() {
   batchConfirming.value = true
   try {
     const res = await props.client.confirmSchoolExamItemsBatch(selectedDetail.value.id, entries)
-    props.notify(`已批量确认 ${res.evidence_created} 道校考小题并更新错误分析。`, 'success')
+    draftErrorItemId.value = null
+    props.notify(`已批量确认 ${res.evidence_created} 条待核对明细并更新错误分析。`, 'success')
     await loadDetail(selectedDetail.value.id)
   } catch (e) {
     props.notify(describeError(e), 'error')
@@ -886,43 +1073,60 @@ async function confirmAllDraftsBatch() {
   }
 }
 
-function startEditAnalysis(it: SchoolExamItem) {
-  editingAnalysisItemId.value = it.id
-  editErrorCategory.value = it.error_category ?? ''
-  editErrorNote.value = it.error_note ?? ''
-}
-
-function cancelEditAnalysis() {
-  editingAnalysisItemId.value = null
-  editErrorCategory.value = ''
-  editErrorNote.value = ''
-}
-
-async function saveItemAnalysis(it: SchoolExamItem) {
-  if (!selectedDetail.value) return
-  savingAnalysis.value = true
+async function confirmReadyDraftsBatch() {
+  if (!selectedDetail.value || readyDrafts.value.length === 0) return
+  const entries = []
+  for (const it of readyDrafts.value) {
+    const built = buildDraftConfirmEntry(it)
+    if ('error' in built && built.error) {
+      props.notify(built.error, 'caution')
+      await focusDraftItem(it.id)
+      return
+    }
+    entries.push(built.payload!)
+  }
+  batchConfirming.value = true
   try {
-    await props.client.updateSchoolExamItemAnalysis(selectedDetail.value.id, it.id, {
-      errorCategory: editErrorCategory.value || null,
-      errorNote: editErrorNote.value.trim() || null,
-    })
-    props.notify(`已保存「${it.question_label}」的错因分类与复盘备注。`, 'success')
-    cancelEditAnalysis()
+    const res = await props.client.confirmSchoolExamItemsBatch(selectedDetail.value.id, entries)
+    draftErrorItemId.value = null
+    props.notify(`已先确认 ${res.evidence_created} 条已就绪待核对明细并更新错误分析。`, 'success')
     await loadDetail(selectedDetail.value.id)
   } catch (e) {
     props.notify(describeError(e), 'error')
   } finally {
-    savingAnalysis.value = false
+    batchConfirming.value = false
   }
 }
 
-function jumpToEditItem(itemId: string) {
+function startReturnReflection(it: SchoolExamItem) {
+  returningItemId.value = it.id
+  returnReasonInput.value = it.return_reason || '请进一步写明具体出错步骤与可执行的改进方法'
+}
+
+function cancelReturnReflection() {
+  returningItemId.value = null
+  returnReasonInput.value = ''
+}
+
+async function submitReturnReflection(it: SchoolExamItem) {
+  if (!selectedDetail.value) return
+  const reason = returnReasonInput.value.trim() || '请进一步写明具体出错步骤与可执行的改进方法'
+  returningSaving.value = true
+  try {
+    await props.client.returnSchoolExamItemReflection(selectedDetail.value.id, it.id, reason)
+    props.notify(`已将「${it.question_label}」退回学生端重写复盘。`, 'info')
+    cancelReturnReflection()
+    await loadDetail(selectedDetail.value.id)
+  } catch (e) {
+    props.notify(describeError(e), 'error')
+  } finally {
+    returningSaving.value = false
+  }
+}
+
+function jumpToEditItem(_itemId: string) {
   activeTab.value = 'items'
   itemStep.value = 'list'
-  const target = selectedDetail.value?.items.find(it => it.id === itemId)
-  if (target) {
-    startEditAnalysis(target)
-  }
 }
 
 async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'items' | 'analysis') {
@@ -961,6 +1165,28 @@ async function selectExamAndAdvance(examId: string) {
   scoreStep.value = 'detail'
 }
 
+function enterPapersStage() {
+  activeTab.value = 'papers'
+  if (unconfirmedDrafts.value.length > 0 && parseableAttachments.value.length === 0) {
+    paperStep.value = 'drafts'
+  } else if (parseableAttachments.value.length > 0 && unconfirmedDrafts.value.length === 0) {
+    paperStep.value = 'parse'
+  } else if (unconfirmedDrafts.value.length > 0) {
+    paperStep.value = 'drafts'
+  } else {
+    paperStep.value = 'parse'
+  }
+}
+
+watch(
+  () => activeTab.value,
+  tab => {
+    if (tab === 'papers' && unconfirmedDrafts.value.length > 0 && parseableAttachments.value.length === 0) {
+      paperStep.value = 'drafts'
+    }
+  },
+)
+
 async function handleSyncPapersImported(examId: string) {
   await refreshExams(examId || undefined)
 }
@@ -978,7 +1204,7 @@ async function handleSyncPapersImported(examId: string) {
             <span class="badge approved">已核对: {{ verifiedExamsCount }}</span>
             <span class="badge total">场次总数: {{ exams?.length ?? 0 }}</span>
             <span :class="['badge', unconfirmedDrafts.length > 0 ? 'pending' : 'clauses']">
-              待校对草稿: {{ unconfirmedDrafts.length }} 题
+              待核明细: {{ unconfirmedDrafts.length }} 题
             </span>
           </div>
         </div>
@@ -988,10 +1214,10 @@ async function handleSyncPapersImported(examId: string) {
             v-if="(exams?.length ?? 0) > 0 && pendingExamsCount === 0 && unconfirmedDrafts.length === 0"
             class="audit-note audit-ok"
           >
-            当前科目已录场次均已完成人工核对，且无待校对草稿。
+            当前科目已录场次均已完成人工核对，且无待核对明细。
           </span>
           <span v-else-if="unconfirmedDrafts.length > 0" class="audit-note">
-            当前场次尚有 {{ unconfirmedDrafts.length }} 道解析草稿待人工校对确认。
+            当前场次尚有 {{ unconfirmedDrafts.length }} 条待核对明细等待人工确认。
           </span>
           <span v-else-if="pendingExamsCount > 0" class="audit-note">
             尚有 {{ pendingExamsCount }} 场考试待核对实得总分或确认锁定。
@@ -1211,6 +1437,18 @@ async function handleSyncPapersImported(examId: string) {
                 </button>
               </div>
             </template>
+
+            <div class="batch-entry-bar">
+              <span class="muted tiny">尚未建档或批量采集：</span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="ghost small" @click="activeTab = 'report'">
+                  报告导入与核对
+                </button>
+                <button type="button" class="ghost small" @click="activeTab = 'sync'">
+                  全科校考同步
+                </button>
+              </div>
+            </div>
           </section>
         </template>
 
@@ -1296,14 +1534,14 @@ async function handleSyncPapersImported(examId: string) {
                 </div>
               </div>
               <p v-else class="muted tiny" style="margin: 8px 0 0;">
-                该场次总分已完成人工核对并锁定；按手中材料在下方选择「第二阶段 · 材料入库」任意一条入口继续推进。
+                该场次总分已完成人工核对并锁定；可先通过报告/同步补全成绩，或直接进入第 3 步上传原卷与答题卡。
               </p>
 
               <div class="handoff-box" style="margin-top: 14px;">
                 <div>
-                  <b>第二阶段分流入口（按本次拿到材料任选一路）</b>
+                  <b>外部材料补全入口（按手中材料任选一路）</b>
                   <p class="muted tiny" style="margin: 4px 0 0;">
-                    已拿到分析报告去「报告导入」；多科同批导入去「全科同步」；直接传单科卷纸去「原卷与草稿校对」。
+                    已拿到分析报告去「报告导入与核对」；多科同批从平台抓取去「全科校考同步」。
                   </p>
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1313,12 +1551,6 @@ async function handleSyncPapersImported(examId: string) {
                   <button type="button" class="ghost small" @click="activeTab = 'sync'">
                     2. 全科校考同步
                   </button>
-                  <button type="button" class="ghost small" @click="activeTab = 'papers'">
-                    3. 原卷与草稿校对
-                  </button>
-                  <button type="button" class="ghost small" @click="activeTab = 'analysis'">
-                    查看错误分析
-                  </button>
                 </div>
               </div>
 
@@ -1326,87 +1558,11 @@ async function handleSyncPapersImported(examId: string) {
                 <button type="button" class="ghost small" @click="scoreStep = 'pick'">
                   ← 返回第 1 步切换或新建场次
                 </button>
+                <button type="button" class="primary small" @click="scoreStep = 'upload'">
+                  下一步：3. 上传私有原卷与答题卡 →
+                </button>
               </div>
             </template>
-          </section>
-        </template>
-      </StepFlowWorkspace>
-    </div>
-
-    <!-- 第二阶段（入口 3）：原卷与草稿校对（单卡三步：1. 上传私有原卷与答题卡 → 2. 自动解析待核对草稿 → 3. 待核对草稿校对台） -->
-    <div
-      v-else-if="activeTab === 'papers'"
-      id="exam-panel-papers"
-      role="tabpanel"
-      aria-labelledby="exam-tab-papers"
-    >
-      <StepFlowWorkspace
-        :model-value="paperStep"
-        :steps="paperSteps"
-        :context="examContext"
-        steps-aria-label="原卷与草稿校对步骤"
-        @update:model-value="id => (paperStep = id as PaperStepId)"
-      >
-        <template #context-actions>
-          <div v-if="exams && exams.length > 1" class="active-exam-switcher">
-            <span class="muted tiny">快速切换：</span>
-            <button
-              v-for="ex in exams"
-              :key="ex.id"
-              type="button"
-              :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
-              @click="selectExam(ex.id)"
-            >
-              {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
-            </button>
-          </div>
-          <button type="button" class="ghost small" @click="activeTab = 'scores'">
-            ← 回第一阶段选场次
-          </button>
-        </template>
-
-        <template #locked="{ step }">
-          <section class="card" aria-label="私有原卷与答题卡">
-            <div class="card-head">
-              <h3>{{ step.title }}</h3>
-              <span class="chip wait">前置未就绪</span>
-            </div>
-            <p class="muted">{{ step.lockReason || '请先完成前置步骤。' }}</p>
-            <div class="card-footer-flow">
-              <button
-                v-if="!selectedDetail"
-                type="button"
-                class="primary small"
-                @click="activeTab = 'scores'"
-              >
-                ← 前往第一阶段选定校考
-              </button>
-              <template v-else-if="step.id === 'parse'">
-                <button type="button" class="primary small" @click="paperStep = 'upload'">
-                  ← 返回第 1 步上传原卷
-                </button>
-                <button
-                  v-if="unconfirmedDrafts.length > 0"
-                  type="button"
-                  class="ghost small"
-                  @click="paperStep = 'drafts'"
-                >
-                  前往第 3 步校对草稿 →
-                </button>
-              </template>
-              <template v-else>
-                <button
-                  type="button"
-                  class="primary small"
-                  @click="paperStep = parseableAttachments.length > 0 ? 'parse' : 'upload'"
-                >
-                  ← {{ parseableAttachments.length > 0 ? '前往第 2 步解析草稿' : '前往第 1 步上传原卷' }}
-                </button>
-                <button type="button" class="ghost small" @click="activeTab = 'report'">
-                  去「报告导入与核对」生成草稿
-                </button>
-              </template>
-            </div>
           </section>
         </template>
 
@@ -1480,38 +1636,102 @@ async function handleSyncPapersImported(examId: string) {
             </div>
 
             <div class="card-footer-flow">
-              <button type="button" class="ghost small" @click="activeTab = 'report'">
-                或去「报告导入与核对」生成草稿
+              <button type="button" class="ghost small" @click="scoreStep = 'detail'">
+                ← 上一步：总分概览与材料入口
               </button>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="primary small" @click="enterPapersStage">
+                下一步：进入第二阶段 · 明细提取与核对 →
+              </button>
+            </div>
+          </section>
+        </template>
+      </StepFlowWorkspace>
+    </div>
+
+    <!-- 第二阶段（入口 3）：原卷与明细核对（单卡三步：1. 上传私有原卷与答题卡 → 2. 自动提取待核对明细 → 3. 逐题明细核对台） -->
+    <div
+      v-else-if="activeTab === 'papers'"
+      id="exam-panel-papers"
+      role="tabpanel"
+      aria-labelledby="exam-tab-papers"
+    >
+      <StepFlowWorkspace
+        :model-value="paperStep"
+        :steps="paperSteps"
+        :context="examContext"
+        steps-aria-label="原卷与明细核对步骤"
+        @update:model-value="id => (paperStep = id as PaperStepId)"
+      >
+        <template #context-actions>
+          <div v-if="exams && exams.length > 1" class="active-exam-switcher">
+            <span class="muted tiny">快速切换：</span>
+            <button
+              v-for="ex in exams"
+              :key="ex.id"
+              type="button"
+              :class="['mini-switch-btn', ex.id === selectedExamId ? 'selected' : '']"
+              @click="selectExam(ex.id)"
+            >
+              {{ fmtExamMonth(ex.exam_date) }} ({{ fmtPoints(ex.earned_points) }}/{{ fmtPoints(ex.max_points) }})
+            </button>
+          </div>
+          <button type="button" class="ghost small" @click="activeTab = 'scores'">
+            ← 回第一阶段选场次
+          </button>
+        </template>
+
+        <template #locked="{ step }">
+          <section class="card" aria-label="私有原卷与答题卡">
+            <div class="card-head">
+              <h3>{{ step.title }}</h3>
+              <span class="chip wait">前置未就绪</span>
+            </div>
+            <p class="muted">{{ step.lockReason || '请先完成前置步骤。' }}</p>
+            <div class="card-footer-flow">
+              <button
+                v-if="!selectedDetail"
+                type="button"
+                class="primary small"
+                @click="activeTab = 'scores'"
+              >
+                ← 前往第一阶段选定校考
+              </button>
+              <template v-else-if="step.id === 'parse'">
+                <button type="button" class="primary small" @click="activeTab = 'scores'; scoreStep = 'upload'">
+                  ← 前往第一阶段第 3 步上传原卷
+                </button>
                 <button
                   v-if="unconfirmedDrafts.length > 0"
                   type="button"
                   class="ghost small"
                   @click="paperStep = 'drafts'"
                 >
-                  直接校对现有草稿 ({{ unconfirmedDrafts.length }}) →
+                  前往第 2 步核对明细 →
                 </button>
+              </template>
+              <template v-else>
                 <button
-                  v-if="parseableAttachments.length > 0"
                   type="button"
                   class="primary small"
-                  @click="paperStep = 'parse'"
+                  @click="parseableAttachments.length > 0 ? (paperStep = 'parse') : (activeTab = 'scores', scoreStep = 'upload')"
                 >
-                  下一步：自动解析待核对草稿 →
+                  ← {{ parseableAttachments.length > 0 ? '前往第 1 步提取待核对明细' : '前往第一阶段第 3 步上传原卷' }}
                 </button>
-              </div>
+                <button type="button" class="ghost small" @click="activeTab = 'report'">
+                  去「报告导入与核对」生成待核对明细
+                </button>
+              </template>
             </div>
           </section>
         </template>
 
         <template #step-parse>
-          <section v-if="selectedDetail" class="card" aria-label="自动解析待核对草稿">
+          <section v-if="selectedDetail" class="card" aria-label="自动提取待核对明细">
             <div class="card-head">
               <div>
-                <h3>从原卷/答题卡自动解析草稿</h3>
+                <h3>从原卷/答题卡自动提取待核对明细</h3>
                 <p class="card-sub">
-                  抽取题号、分值、候选考点与失分线索，所有结果均为待核对草稿
+                  抽取题号、分值、候选考点与失分线索，所有结果均为待核对明细
                 </p>
               </div>
               <span class="chip wait">未确认不进画像</span>
@@ -1536,8 +1756,8 @@ async function handleSyncPapersImported(examId: string) {
 
             <div class="parse-controls-grid">
               <label>
-                解析方式
-                <select v-model="parseMode" class="parse-mode-select" aria-label="草稿解析方式">
+                提取方式
+                <select v-model="parseMode" class="parse-mode-select" aria-label="待核对明细提取方式">
                   <option value="auto">智能多模态联合识别（原卷 + 答题卡，识别错点与候选考点）</option>
                   <option value="skeleton_only">仅本地提取题号与分值骨架（不联网，纯文字卷适用）</option>
                 </select>
@@ -1554,13 +1774,13 @@ async function handleSyncPapersImported(examId: string) {
             <div class="confirm-box">
               <input id="parse-replace-unconfirmed" type="checkbox" v-model="replaceUnconfirmedDrafts" />
               <label for="parse-replace-unconfirmed">
-                重生成时清理本场尚未人工确认的旧草稿（已人工确认题目永久锁定，绝不覆盖）
+                重生成时清理本场尚未人工确认的旧待核对明细（已人工确认题目永久锁定，绝不覆盖）
               </label>
             </div>
 
             <div class="attachment-actions">
               <p v-if="parseMode === 'auto' && !hasAnswerCard" class="muted tiny">
-                提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或去「报告导入与核对」生成逐题草稿。
+                提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或去「报告导入与核对」生成逐题待核对明细。
               </p>
               <button
                 type="button"
@@ -1568,15 +1788,15 @@ async function handleSyncPapersImported(examId: string) {
                 :disabled="parsingDrafts || selectedParseAttachmentIds.length === 0"
                 @click="runParseDrafts"
               >
-                {{ parsingDrafts ? '解析中…' : '生成待核对草稿' }}
+                {{ parsingDrafts ? '提取中…' : '生成待核对明细' }}
               </button>
               <span v-if="lastParseSummary" class="chip good">{{ lastParseSummary }}</span>
             </div>
             <p v-if="parseDraftError" class="form-error">{{ parseDraftError }}</p>
 
             <div class="card-footer-flow">
-              <button type="button" class="ghost small" @click="paperStep = 'upload'">
-                ← 返回第 1 步 · 上传原卷
+              <button type="button" class="ghost small" @click="activeTab = 'scores'; scoreStep = 'upload'">
+                ← 返回第一阶段第 3 步 · 上传原卷
               </button>
               <button
                 v-if="unconfirmedDrafts.length > 0 || confirmedItems.length > 0"
@@ -1584,117 +1804,244 @@ async function handleSyncPapersImported(examId: string) {
                 class="primary small"
                 @click="paperStep = 'drafts'"
               >
-                前往第 3 步 · 待核对草稿校对台 →
+                前往第 2 步 · 逐题明细核对台 →
               </button>
             </div>
           </section>
         </template>
 
         <template #step-drafts>
-          <section v-if="selectedDetail" class="card" aria-label="草稿校对台">
+          <section v-if="selectedDetail" class="card" aria-label="逐题明细核对台">
             <div class="card-head">
               <div>
-                <h3>待核对草稿校对台（未确认前不进能力画像）</h3>
+                <h3>逐题明细核对台（未确认前不进能力画像）</h3>
                 <p class="card-sub">
-                  核对实得分、满分、所属知识点与错因分类，点击「确认入账」或批量确认后正式生效
+                  所有分值已锁定只读；请核对所属知识点（及失分题错因），点击「确认入账」或批量确认后生效
                 </p>
               </div>
               <div class="card-head-tools">
-                <HelpBubble compact tone="caution" title="草稿核对红线说明" label="校对口径">
-                  <p>所有自动识别与同步入库的逐题结果均锁定为「未确认草稿」，绝不直接修改知识点掌握状态或错误分析，须人工逐条核对或批量确认后方能入账。</p>
+                <HelpBubble compact tone="caution" title="明细核对红线说明" label="校对口径">
+                  <p>所有自动识别与同步入库的逐题结果均锁定为「待核对明细」，绝不直接修改知识点掌握状态或错误分析，须人工逐条核对或批量确认后方能入账；确认后分数与知识点永久锁定。</p>
                 </HelpBubble>
                 <span v-if="unconfirmedDrafts.length > 0" class="chip wait">待核对 {{ unconfirmedDrafts.length }} 题</span>
               </div>
             </div>
 
             <template v-if="unconfirmedDrafts.length > 0">
-              <ul class="draft-card-list" tabindex="0" aria-label="解析草稿逐题校对列表">
-                <li v-for="it in unconfirmedDrafts" :key="it.id" class="draft-card-item">
+              <!-- 顶部只读分值对账与统计条 -->
+              <div class="draft-summary-bar" role="region" aria-label="小题分值只读汇总">
+                <div class="draft-summary-main">
+                  <span>
+                    小题汇总（已核 + 待核）：<b>{{ fmtPoints(scoreSummary.totalEarned) }} / {{ fmtPoints(scoreSummary.totalMax) }} 分</b>
+                  </span>
+                  <span v-if="scoreSummary.earnedDiff !== null" :class="['chip', scoreSummary.earnedDiff === 0 ? 'good' : 'wait']">
+                    {{
+                      scoreSummary.earnedDiff === 0
+                        ? `与卷面总分（${fmtPoints(selectedDetail.earned_points)} 分）完全吻合 ✓`
+                        : `与卷面总分差 ${scoreSummary.earnedDiff > 0 ? '+' : ''}${fmtPoints(scoreSummary.earnedDiff)} 分`
+                    }}
+                  </span>
+                  <span v-else class="chip subtle">
+                    卷面总分待核对（参考 {{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }} 分）
+                  </span>
+                </div>
+                <div class="draft-summary-counts muted tiny">
+                  <span>满分作答正确 {{ scoreSummary.correctPendingCount }} 题</span>
+                  <span>·</span>
+                  <span>失分待归因 {{ scoreSummary.lostPendingCount }} 题</span>
+                  <span>·</span>
+                  <span>已填考点 {{ readyDrafts.length }} / {{ unconfirmedDrafts.length }} 题</span>
+                </div>
+              </div>
+
+              <!-- 状态筛选与快捷填充工具条 -->
+              <div class="draft-toolbar">
+                <div class="draft-filter-pills" role="group" aria-label="按核对状态筛选题目">
+                  <button
+                    type="button"
+                    :class="['chip-btn', draftFilter === 'all' ? 'selected' : '']"
+                    @click="draftFilter = 'all'"
+                  >
+                    全部 ({{ draftFilterCounts.all }})
+                  </button>
+                  <button
+                    type="button"
+                    :class="['chip-btn', draftFilter === 'unmapped' ? 'selected' : '']"
+                    @click="draftFilter = 'unmapped'"
+                  >
+                    待补考点 ({{ draftFilterCounts.unmapped }})
+                  </button>
+                  <button
+                    type="button"
+                    :class="['chip-btn', draftFilter === 'lost' ? 'selected' : '']"
+                    @click="draftFilter = 'lost'"
+                  >
+                    失分题 ({{ draftFilterCounts.lost }})
+                  </button>
+                  <button
+                    type="button"
+                    :class="['chip-btn', draftFilter === 'correct' ? 'selected' : '']"
+                    @click="draftFilter = 'correct'"
+                  >
+                    满分正确 ({{ draftFilterCounts.correct }})
+                  </button>
+                  <button
+                    type="button"
+                    :class="['chip-btn', draftFilter === 'ready' ? 'selected' : '']"
+                    @click="draftFilter = 'ready'"
+                  >
+                    已就绪 ({{ draftFilterCounts.ready }})
+                  </button>
+                </div>
+                <div class="draft-toolbar-actions">
+                  <button
+                    type="button"
+                    class="ghost small"
+                    :disabled="autoAssociatingDrafts || batchConfirming"
+                    @click="runAutoAssociateDrafts({ overwrite: false })"
+                  >
+                    {{ autoAssociatingDrafts ? '正在匹配候选…' : '智能补全关联' }}
+                  </button>
+                  <button
+                    v-if="hasCandidateSuggestions"
+                    type="button"
+                    class="ghost small"
+                    @click="applyAllTopCandidates"
+                  >
+                    {{ subject === 'ethics' ? '未填项设为默认主题' : '一键采纳首选候选考点' }}
+                  </button>
+                </div>
+              </div>
+
+              <p v-if="filteredDrafts.length === 0" class="muted" style="margin: 10px 0;">
+                当前筛选条件下暂无待核对明细，可切换「全部」查看。
+              </p>
+
+              <!-- 方案三：三栏纵向堆叠卡（每卡全宽单列堆叠、分数只读、满分题不展示错因与复盘备注） -->
+              <ul v-else ref="draftListRef" class="draft-card-list" tabindex="0" aria-label="待核对明细逐题列表">
+                <li
+                  v-for="it in filteredDrafts"
+                  :key="it.id"
+                  :data-draft-item-id="it.id"
+                  :class="[
+                    'draft-card-item',
+                    isSchoolItemFullScore(it.earned_points, it.max_points) ? 'is-correct' : 'is-lost',
+                    draftErrorItemId === it.id ? 'has-error' : '',
+                  ]"
+                >
                   <div class="draft-card-head">
-                    <b>{{ it.question_label }}</b>
+                    <b>{{ formatQuestionLabelHeading(it.question_label) }}</b>
                     <span
                       :class="['chip', DRAFT_CONFIDENCE_META[it.draft_confidence ?? '']?.tone ?? 'wait']"
                     >
-                      {{ DRAFT_CONFIDENCE_META[it.draft_confidence ?? '']?.label ?? '草稿待核对' }}
+                      {{ DRAFT_CONFIDENCE_META[it.draft_confidence ?? '']?.label ?? '待核对明细' }}
                     </span>
                     <span class="chip wait">未确认 · 不进画像</span>
                   </div>
-                  <p v-if="it.draft_reason" class="draft-reason">识别依据：{{ it.draft_reason }}</p>
 
-                  <div v-if="it.draft_knowledge_candidates?.length" class="candidate-chip-row">
-                    <span class="muted tiny">候选考点：</span>
-                    <button
-                      v-for="cand in it.draft_knowledge_candidates"
-                      :key="cand.knowledge_id"
-                      type="button"
-                      :title="cand.reason"
-                      :class="[
-                        'candidate-chip-btn',
-                        resolveDraftKnowledgeCode(it, draftEdits[it.id]?.knowledgeId ?? '') === cand.knowledge_id ? 'active' : '',
-                      ]"
-                      @click="applyCandidateKnowledge(it.id, cand.knowledge_id, cand.title)"
-                    >
-                      {{ cand.title || getKnowledgeLabel(cand.knowledge_id) }}
-                    </button>
+                  <!-- 所有分数只读不可编辑 -->
+                  <div
+                    :class="[
+                      'draft-score-banner',
+                      isSchoolItemFullScore(it.earned_points, it.max_points) ? 'ok' : 'lost',
+                    ]"
+                    :aria-label="`${formatQuestionLabelHeading(it.question_label)} 只读分值：实得 ${fmtPoints(it.earned_points)} / 满分 ${fmtPoints(it.max_points)} 分`"
+                  >
+                    <span>实得 {{ fmtPoints(it.earned_points) }} / 满分 {{ fmtPoints(it.max_points) }} 分</span>
+                    <span>
+                      {{
+                        isSchoolItemFullScore(it.earned_points, it.max_points)
+                          ? '✓ 作答正确'
+                          : `✗ 失 ${fmtPoints(it.max_points - it.earned_points)} 分`
+                      }}
+                    </span>
                   </div>
 
-                  <div v-if="draftEdits[it.id]" class="draft-edit-grid">
-                    <label>
-                      实得分
+                  <!-- 方式一：结构化识别依据微标签 -->
+                  <div
+                    v-if="parseDraftBasisTags(it.draft_reason, it.draft_confidence).length"
+                    class="draft-basis-tags"
+                    aria-label="识别依据"
+                  >
+                    <span
+                      v-for="tag in parseDraftBasisTags(it.draft_reason, it.draft_confidence)"
+                      :key="`${tag.kind}-${tag.label}`"
+                      :class="['draft-basis-tag', `is-${tag.kind}`]"
+                      :title="it.draft_reason || tag.label"
+                    >
+                      {{ tag.label }}
+                    </span>
+                  </div>
+
+                  <!-- 方式一：每题必显 Top-3 候选考点芯片行 -->
+                  <div class="candidate-block" aria-label="候选考点">
+                    <span class="candidate-block-label">候选考点（点击直选）：</span>
+                    <div v-if="it.draft_knowledge_candidates?.length" class="candidate-chip-row">
+                      <button
+                        v-for="(cand, cIdx) in it.draft_knowledge_candidates"
+                        :key="cand.knowledge_id"
+                        type="button"
+                        :title="cand.reason"
+                        :class="[
+                          'candidate-chip-btn',
+                          resolveDraftKnowledgeCode(it, draftEdits[it.id]?.knowledgeId ?? '') === cand.knowledge_id ? 'active' : '',
+                        ]"
+                        @click="applyCandidateKnowledge(it.id, cand.knowledge_id, cand.title)"
+                      >
+                        <span class="cand-rank">{{ ['①', '②', '③'][cIdx] || `${cIdx + 1}.` }}</span>
+                        <span>{{ cand.title || getKnowledgeLabel(cand.knowledge_id) }}</span>
+                        <span
+                          v-if="resolveDraftKnowledgeCode(it, draftEdits[it.id]?.knowledgeId ?? '') === cand.knowledge_id"
+                          class="cand-check"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
+                      </button>
+                    </div>
+                    <div v-else class="muted tiny">
+                      {{ autoAssociatingDrafts ? '正在匹配 Top-3 候选考点…' : '暂无候选，可点上方「智能补全关联」或直接输入' }}
+                    </div>
+                  </div>
+
+                  <div v-if="draftEdits[it.id]" class="draft-stack-fields">
+                    <div class="draft-field-stack">
+                      <div class="draft-field-label-row">
+                        <label :for="`draft-kid-${it.id}`">所属知识点（必填）</label>
+                        <div class="draft-field-label-tools">
+                          <span v-if="isDraftKnowledgeReady(it)" class="draft-auto-tag">已自动关联</span>
+                          <button
+                            v-if="findPrevReadyKnowledge(it.id)"
+                            type="button"
+                            class="link-btn"
+                            @click="copyPrevDraftKnowledge(it.id)"
+                          >
+                            同上题
+                          </button>
+                        </div>
+                      </div>
                       <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        v-model.number="draftEdits[it.id].earnedPoints"
-                        :aria-label="`${it.question_label} 草稿实得分`"
-                      />
-                    </label>
-                    <label>
-                      满分
-                      <input
-                        type="number"
-                        min="0.5"
-                        max="100"
-                        step="0.5"
-                        v-model.number="draftEdits[it.id].maxPoints"
-                        :aria-label="`${it.question_label} 草稿满分`"
-                      />
-                    </label>
-                    <label>
-                      所属知识点（{{ resolveDraftKnowledgeHint(it, draftEdits[it.id].knowledgeId) }}）
-                      <input
+                        :id="`draft-kid-${it.id}`"
+                        data-knowledge-input
                         v-model="draftEdits[it.id].knowledgeId"
                         :list="`school-exam-knowledge-list-${subject}`"
-                        :aria-label="`${it.question_label} 草稿所属知识点`"
-                        placeholder="点选候选或输入知识点中文名"
+                        :class="{ 'input-auto-linked': isDraftKnowledgeReady(it) }"
+                        :aria-label="`${formatQuestionLabelHeading(it.question_label)} 所属知识点`"
+                        placeholder="点击选择或输入所属知识点中文名…"
+                        @input="draftErrorItemId === it.id && (draftErrorItemId = null)"
                       />
-                    </label>
-                    <label>
-                      错因分类
-                      <select
-                        v-model="draftEdits[it.id].errorCategory"
-                        :disabled="Number(draftEdits[it.id].earnedPoints) >= Number(draftEdits[it.id].maxPoints)"
-                        :aria-label="`${it.question_label} 草稿错因分类`"
-                      >
-                        <option value="">暂不归类</option>
-                        <option
-                          v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                          :key="opt.value"
-                          :value="opt.value"
-                        >
-                          {{ opt.label }}
-                        </option>
-                      </select>
-                    </label>
-                    <label class="wide-note">
-                      错题复盘备注
-                      <input
-                        v-model="draftEdits[it.id].errorNote"
-                        maxlength="500"
-                        placeholder="失分题目可填写原因，满分题自动忽略"
-                        :aria-label="`${it.question_label} 草稿复盘备注`"
-                      />
-                    </label>
+                      <small v-if="resolveDraftKnowledgeHint(it, draftEdits[it.id].knowledgeId)" class="draft-knowledge-hint">
+                        {{ resolveDraftKnowledgeHint(it, draftEdits[it.id].knowledgeId) }}
+                      </small>
+                    </div>
+
+                    <!-- 仅核对分数与考点；失分题确认后推送学生端完成错因分类与防敷衍复盘 -->
+                    <p v-if="!isSchoolItemFullScore(it.earned_points, it.max_points)" class="draft-lost-student-hint">
+                      失分题确认入账后，将推送至学生端「错题复盘」由学生本人归因与复盘
+                    </p>
+                    <p v-else class="draft-correct-hint">
+                      ✓ 实得分与满分一致（作答正确），无需复盘
+                    </p>
                   </div>
 
                   <div class="attachment-actions">
@@ -1712,27 +2059,40 @@ async function handleSyncPapersImported(examId: string) {
                       :disabled="confirmingItemId === it.id || batchConfirming || discardingItemId === it.id"
                       @click="discardDraftItem(it)"
                     >
-                      {{ discardingItemId === it.id ? '丢弃中…' : '丢弃草稿' }}
+                      {{ discardingItemId === it.id ? '移除中…' : '移除待核项' }}
                     </button>
                   </div>
                 </li>
               </ul>
 
               <div class="draft-card-foot">
-                <span class="muted tiny">共 {{ unconfirmedDrafts.length }} 道待核对草稿，批量确认整批校验原子提交</span>
-                <button
-                  type="button"
-                  class="primary"
-                  :disabled="batchConfirming || confirmingItemId !== null || discardingItemId !== null"
-                  @click="confirmAllDraftsBatch"
-                >
-                  {{ batchConfirming ? '批量确认中…' : '批量确认本页已核对草稿' }}
-                </button>
+                <span class="muted tiny">
+                  共 {{ unconfirmedDrafts.length }} 题待核对（已填妥考点 {{ readyDrafts.length }} 题），批量确认整批原子提交
+                </span>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button
+                    v-if="readyDrafts.length > 0 && readyDrafts.length < unconfirmedDrafts.length"
+                    type="button"
+                    class="ghost"
+                    :disabled="batchConfirming || confirmingItemId !== null || discardingItemId !== null"
+                    @click="confirmReadyDraftsBatch"
+                  >
+                    {{ batchConfirming ? '确认中…' : `先确认已就绪项 (${readyDrafts.length} 题)` }}
+                  </button>
+                  <button
+                    type="button"
+                    class="primary"
+                    :disabled="batchConfirming || confirmingItemId !== null || discardingItemId !== null"
+                    @click="confirmAllDraftsBatch"
+                  >
+                    {{ batchConfirming ? '批量确认中…' : '批量确认本页待核明细' }}
+                  </button>
+                </div>
               </div>
             </template>
             <div v-else>
               <p class="muted">
-                当前场次暂无待核对草稿：可返回上传或解析原卷，或进入「第三阶段 · 已核对明细与补录」查看或手工录入小题。
+                当前场次暂无待核对明细：可返回上传或提取原卷，或进入「第三阶段 · 已核对明细与补录」查看或手工录入小题。
               </p>
             </div>
 
@@ -1740,9 +2100,9 @@ async function handleSyncPapersImported(examId: string) {
               <button
                 type="button"
                 class="ghost small"
-                @click="paperStep = parseableAttachments.length > 0 ? 'parse' : 'upload'"
+                @click="parseableAttachments.length > 0 ? (paperStep = 'parse') : (activeTab = 'scores', scoreStep = 'upload')"
               >
-                ← {{ parseableAttachments.length > 0 ? '返回第 2 步 · 重新解析' : '返回第 1 步 · 上传原卷' }}
+                ← {{ parseableAttachments.length > 0 ? '返回第 1 步 · 重新解析' : '前往第一阶段第 3 步 · 上传原卷' }}
               </button>
               <button type="button" class="primary small" @click="activeTab = 'items'">
                 前往第三阶段 · 已核对明细与补录 →
@@ -1817,7 +2177,7 @@ async function handleSyncPapersImported(examId: string) {
                   class="ghost small"
                   @click="activeTab = 'papers'; paperStep = 'drafts'"
                 >
-                  待核对草稿 ({{ unconfirmedDrafts.length }}) →
+                  待核对明细 ({{ unconfirmedDrafts.length }}) →
                 </button>
                 <span class="chip">{{ subject === 'ethics' ? '道法 · 校考复盘档案' : '细粒度证据' }}</span>
               </div>
@@ -1825,14 +2185,14 @@ async function handleSyncPapersImported(examId: string) {
             <p v-if="confirmedItems.length === 0" class="muted">
               {{
                 unconfirmedDrafts.length > 0
-                  ? '当前题目均在「原卷与草稿校对」等待人工确认；确认后将在此显示并生成分析结果。'
+                  ? '当前题目均在「原卷与明细核对」等待人工确认；确认后将在此显示并生成分析结果。'
                   : '还没有录入已确认的逐题得分明细，可点击下方「第 2 步 · 人工补录小题」手工补充。'
               }}
             </p>
             <ul v-else class="attachment-list" tabindex="0" aria-label="已确认逐题得分明细列表">
               <li v-for="it in confirmedItems" :key="it.id" class="attachment-row">
                 <div class="attachment-main">
-                  <b>{{ it.question_label }}</b>
+                  <b>{{ formatQuestionLabelHeading(it.question_label) }}</b>
                   <span>{{ displayKnowledgeName(it) }}</span>
                   <span><b>{{ fmtPoints(it.earned_points) }} / {{ fmtPoints(it.max_points) }}</b></span>
                   <span v-if="it.earned_points < it.max_points" class="chip bad">
@@ -1844,46 +2204,60 @@ async function handleSyncPapersImported(examId: string) {
                   >
                     {{ getSchoolErrorCategoryLabel(it.error_category) }}
                   </span>
+                  <span
+                    v-if="it.earned_points < it.max_points"
+                    :class="[
+                      'chip',
+                      it.reflection_status === 'completed'
+                        ? 'good'
+                        : it.reflection_status === 'needs_revision'
+                          ? 'bad'
+                          : 'wait',
+                    ]"
+                  >
+                    {{
+                      it.reflection_status === 'completed'
+                        ? '学生已复盘'
+                        : it.reflection_status === 'needs_revision'
+                          ? '已退回重写'
+                          : '待学生复盘'
+                    }}
+                  </span>
                   <span class="chip good">已确认</span>
                 </div>
-                <p v-if="it.error_note" class="item-error-note">
-                  复盘备注：{{ it.error_note }}
-                </p>
+                <div v-if="it.earned_points < it.max_points && (it.stuck_point || it.fix_strategy || it.error_note || it.return_reason)" class="admin-reflection-readonly">
+                  <p v-if="it.return_reason" class="item-error-note" style="color: var(--red);">
+                    退回重写要求：{{ it.return_reason }}
+                  </p>
+                  <p v-if="it.stuck_point" class="item-error-note">
+                    失分卡点：{{ it.stuck_point }}
+                  </p>
+                  <p v-if="it.fix_strategy" class="item-error-note">
+                    改进对策：{{ it.fix_strategy }}
+                  </p>
+                  <p v-else-if="it.error_note && !it.stuck_point" class="item-error-note">
+                    复盘备注：{{ it.error_note }}
+                  </p>
+                </div>
                 <div class="attachment-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
                   <button
-                    v-if="it.earned_points < it.max_points"
+                    v-if="it.earned_points < it.max_points && (it.reflection_status === 'completed' || it.error_note)"
                     type="button"
                     class="ghost small"
-                    @click="editingAnalysisItemId === it.id ? cancelEditAnalysis() : startEditAnalysis(it)"
+                    @click="returningItemId === it.id ? cancelReturnReflection() : startReturnReflection(it)"
                   >
-                    {{ editingAnalysisItemId === it.id ? '收起复盘编辑' : '标注/修改错因' }}
+                    {{ returningItemId === it.id ? '收起退回框' : '退回重写' }}
                   </button>
                 </div>
-                <div v-if="editingAnalysisItemId === it.id" class="inline-analysis-editor">
+                <div v-if="returningItemId === it.id" class="inline-analysis-editor">
                   <div class="admin-grid">
-                    <label>
-                      错因分类
-                      <select
-                        v-model="editErrorCategory"
-                        :aria-label="`${it.question_label} 错因分类`"
-                      >
-                        <option value="">未归类错因</option>
-                        <option
-                          v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                          :key="opt.value"
-                          :value="opt.value"
-                        >
-                          {{ opt.label }}
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      错题复盘备注
+                    <label style="grid-column: 1 / -1;">
+                      退回学生重写原因
                       <input
-                        v-model="editErrorNote"
-                        :aria-label="`${it.question_label} 错题复盘备注`"
-                        maxlength="500"
-                        placeholder="记录失分原因与改进要点"
+                        v-model="returnReasonInput"
+                        :aria-label="`${it.question_label} 退回重写原因`"
+                        maxlength="200"
+                        placeholder="说明学生复盘哪里过于笼统、需要补充什么细节"
                       />
                     </label>
                   </div>
@@ -1891,12 +2265,12 @@ async function handleSyncPapersImported(examId: string) {
                     <button
                       type="button"
                       class="primary small"
-                      :disabled="savingAnalysis"
-                      @click="saveItemAnalysis(it)"
+                      :disabled="returningSaving"
+                      @click="submitReturnReflection(it)"
                     >
-                      {{ savingAnalysis ? '保存中…' : '保存复盘' }}
+                      {{ returningSaving ? '退回中…' : '确认退回重写' }}
                     </button>
-                    <button type="button" class="ghost small" @click="cancelEditAnalysis">
+                    <button type="button" class="ghost small" @click="cancelReturnReflection">
                       取消
                     </button>
                   </div>
@@ -1952,29 +2326,9 @@ async function handleSyncPapersImported(examId: string) {
                 小题满分
                 <input type="number" min="0.5" max="100" step="0.5" v-model.number="itemMax" />
               </label>
-              <template v-if="isNewItemLost">
-                <label>
-                  错因分类（失分题选填）
-                  <select v-model="itemErrorCategory">
-                    <option value="">暂不归类</option>
-                    <option
-                      v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                      :key="opt.value"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  错题复盘备注
-                  <input
-                    v-model="itemErrorNote"
-                    maxlength="500"
-                    placeholder="如：漏看条件 / 判别式未讨论 / 材料要点缺失"
-                  />
-                </label>
-              </template>
+              <p v-if="isNewItemLost" class="muted tiny" style="grid-column: 1 / -1; margin: 0;">
+                本小题未拿满分，录入后将自动进入学生端「错题复盘」由学生本人归因与填写复盘。
+              </p>
             </div>
 
             <div class="card-footer-flow">
@@ -2067,12 +2421,12 @@ async function handleSyncPapersImported(examId: string) {
               </div>
               <div class="kpi-tile wait">
                 <b>{{ errorAnalysis.overview.unconfirmed_draft_count }} 题</b>
-                <span>待核对自动提取草稿</span>
+                <span>待核对明细</span>
               </div>
             </div>
             <div class="card-footer-flow">
               <button type="button" class="ghost small" @click="activeTab = 'papers'">
-                查看原卷与草稿校对
+                查看原卷与明细核对
               </button>
               <button type="button" class="primary" @click="goAnalysisAddItems">
                 前往补录失分小题
@@ -2092,7 +2446,7 @@ async function handleSyncPapersImported(examId: string) {
                 <HelpBubble compact title="统计范围说明" label="口径说明">
                   <p>仅汇总已人工核对的逐题失分；未单独归类的失分小题保持如实标示。</p>
                   <p v-if="errorAnalysis.overview.unconfirmed_draft_count > 0">
-                    另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 道自动提取草稿待核对，确认后自动纳入统计。
+                    另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 条自动提取待核对明细，确认后自动纳入统计。
                   </p>
                 </HelpBubble>
                 <span class="chip mid">
@@ -2106,10 +2460,10 @@ async function handleSyncPapersImported(examId: string) {
               style="margin-bottom: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;"
             >
               <span class="chip wait">
-                另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 题草稿待核对
+                另有 {{ errorAnalysis.overview.unconfirmed_draft_count }} 条明细待核对
               </span>
               <button type="button" class="ghost small" @click="activeTab = 'papers'; paperStep = 'drafts'">
-                去校对草稿
+                去逐题核对
               </button>
             </div>
 
@@ -2335,13 +2689,19 @@ async function handleSyncPapersImported(examId: string) {
       </StepFlowWorkspace>
     </div>
 
-    <!-- 第二阶段（入口 2）：全科校考同步（发现 → 匹配 → 获取 → 核对四步工作流） -->
+    <!-- 第一阶段材料子入口：全科校考同步（发现 → 匹配 → 获取 → 核对四步工作流） -->
     <div
       v-else-if="activeTab === 'sync'"
       id="exam-panel-sync"
       role="tabpanel"
       aria-labelledby="exam-tab-sync"
     >
+      <div class="stage-return-bar">
+        <button type="button" class="ghost small" @click="activeTab = 'scores'">
+          ← 返回第一阶段 · 总分台账与建档
+        </button>
+        <span class="muted tiny">当前入口：第一阶段 &gt; 全科校考同步</span>
+      </div>
       <SchoolExamSyncCenter
         :client="client"
         :subject="subject"
@@ -2352,13 +2712,19 @@ async function handleSyncPapersImported(examId: string) {
       />
     </div>
 
-    <!-- 第二阶段（入口 1）：校考报告导入与核对（发现 → 关联 → 解析 → 核对四步工作流） -->
+    <!-- 第一阶段材料子入口：校考报告导入与核对（发现 → 关联 → 解析 → 核对四步工作流） -->
     <div
       v-else
       id="exam-panel-report"
       role="tabpanel"
       aria-labelledby="exam-tab-report"
     >
+      <div class="stage-return-bar">
+        <button type="button" class="ghost small" @click="activeTab = 'scores'">
+          ← 返回第一阶段 · 总分台账与建档
+        </button>
+        <span class="muted tiny">当前入口：第一阶段 &gt; 报告导入与核对</span>
+      </div>
       <SchoolExamReportCenter
         :client="client"
         :subject="subject"

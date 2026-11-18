@@ -8,6 +8,7 @@ import Gate from './components/Gate.vue'
 import PracticeView from './views/PracticeView.vue'
 import GrowthView from './views/GrowthView.vue'
 import KnowledgeGraphView from './views/KnowledgeGraphView.vue'
+import WrongReviewView from './views/WrongReviewView.vue'
 
 /** 本机记住的学生端令牌（P0-1 双凭据隔离）：仅当用户在令牌门显式勾选「在本机记住令牌」才写入。
  *  与管理端凭据（shutong.admin_token）彻底脱钩，防止凭据交叉复用。默认行为不变：仅页面内存。 */
@@ -18,8 +19,22 @@ const subject = ref<Subject>('math')
 const view = ref<ViewId>('practice')
 const focusKnowledgeCode = ref<string | null>(null)
 const notice = ref<NoticeData | null>(null)
+const pendingReflectionCount = ref(0)
 
 const client = computed(() => (token.value === '' ? null : createClient(token.value, 'student')))
+
+async function refreshPendingReflections() {
+  if (!client.value) {
+    pendingReflectionCount.value = 0
+    return
+  }
+  try {
+    const res = await client.value.schoolExamReflections()
+    pendingReflectionCount.value = res.total_pending
+  } catch {
+    // 忽略后台计数刷新失败，不阻断主界面
+  }
+}
 
 function notify(text: string, tone: NoticeTone = 'info') {
   notice.value = { text, tone }
@@ -49,6 +64,7 @@ onMounted(() => {
         if (token.value !== '') return
         notify('已用本机记住的令牌自动进入。', 'success')
         token.value = saved
+        void refreshPendingReflections()
       })
       .catch(() => {
         // 令牌已失效（如服务端轮换）：如实清除，不留在本机。
@@ -65,6 +81,7 @@ onMounted(() => {
         if (token.value !== '') return
         notify('已使用开发环境配置令牌自动进入。', 'success')
         token.value = devToken
+        void refreshPendingReflections()
       })
       .catch(() => {
         clearDevAuthArtifacts('student')
@@ -81,6 +98,7 @@ async function enter(nextToken: string, remember: boolean) {
   if (import.meta.env.DEV) {
     markDevLoggedIn('student', nextToken)
   }
+  void refreshPendingReflections()
   notify('已进入私有学习空间。', 'success')
 }
 
@@ -132,7 +150,12 @@ function signOut() {
           :class="view === entry.id ? 'view-tab selected' : 'view-tab'"
           @click="view = entry.id"
         >
-          <b>{{ entry.label }}</b>
+          <b>
+            {{ entry.label }}
+            <span v-if="entry.id === 'reflection' && pendingReflectionCount > 0" class="nav-count-badge">
+              {{ pendingReflectionCount }}
+            </span>
+          </b>
           <small>{{ entry.hint }}</small>
         </button>
         <div class="subject-row" role="group" aria-label="科目">
@@ -173,6 +196,13 @@ function signOut() {
         :subject="subject"
         :notify="notify"
         @goPracticeFocus="goPracticeWithFocus"
+      />
+      <WrongReviewView
+        v-else-if="view === 'reflection'"
+        :client="client"
+        :subject="subject"
+        :notify="notify"
+        @pendingCount="pendingReflectionCount = $event"
       />
     </main>
 

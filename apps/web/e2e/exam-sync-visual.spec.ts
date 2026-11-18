@@ -279,7 +279,7 @@ async function setupVisualPage(browser: Browser, contextOptions: BrowserContextO
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
-  await page.getByRole('tab', { name: /全科校考同步/ }).click()
+  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
   await expect(page.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
   await stabilize(page)
   return page

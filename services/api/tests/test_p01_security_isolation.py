@@ -92,6 +92,9 @@ def test_admin_token_access_student_api_rejected(client, admin_auth, published):
     res = client.get("/api/guidance/validation?subject=math", headers=admin_auth)
     assert res.status_code == 403
 
+    res = client.get("/api/student/school-exam-reflections?subject=math", headers=admin_auth)
+    assert res.status_code == 403
+
 
 def test_unauthenticated_or_invalid_tokens_rejected(client):
     """负例：未提供凭据或凭据无效必须返回 401 Unauthorized。"""

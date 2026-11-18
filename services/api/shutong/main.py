@@ -27,8 +27,8 @@ from . import k12100_backfill
 from . import k12100_report_sync
 from . import school_exam_pipeline as exam_pipeline
 from . import school_report_pipeline as report_pipeline
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
-from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, MIN_DISTINCT_ITEMS
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
+from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, question_label_sort_key, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
 app.include_router(ingestion_router)
@@ -339,7 +339,12 @@ CORE_SUBJECTS = ("math", "chinese", "english", "physics")
 
 
 def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None = None) -> dict:
-    """统一序列化校考逐题明细（含失分、结构化错因与自动解析草稿元数据）。"""
+    """统一序列化校考逐题明细（含失分、结构化复盘状态与自动解析草稿元数据）。"""
+    parsed_ref = paper_parser.parse_structured_reflection_note(
+        i.error_note,
+        i.error_category,
+        is_lost=(i.earned_points < i.max_points),
+    )
     out = {
         "id": i.id,
         "question_label": i.question_label,
@@ -351,6 +356,10 @@ def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None 
         "confirmed_by_user": i.confirmed_by_user,
         "error_category": i.error_category,
         "error_note": i.error_note,
+        "reflection_status": parsed_ref["reflection_status"],
+        "stuck_point": parsed_ref["stuck_point"],
+        "fix_strategy": parsed_ref["fix_strategy"],
+        "return_reason": parsed_ref["return_reason"],
         "draft_source_attachment_id": i.draft_source_attachment_id,
         "draft_confidence": i.draft_confidence,
         "draft_reason": i.draft_reason,
@@ -889,54 +898,142 @@ def list_school_exam_reports(owner: str = Depends(require_admin), db: Session = 
     return [report_pipeline.serialize_report(item) for item in exam_pipeline.select_canonical_reports(rows)]
 
 
+def _auto_associate_exam_items(
+    db: Session,
+    exam: m.SchoolExam,
+    *,
+    use_ai: bool = True,
+    overwrite_existing: bool = False,
+) -> dict[str, int]:
+    """为校考未确认明细补全所属知识点与 Top-3 候选考点（绝不改写已确认小题）。"""
+    rows = sorted(
+        db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam.id)).scalars().all(),
+        key=lambda it: question_label_sort_key(it.question_label),
+    )
+    if not rows:
+        return {"updated": 0, "tier1_matched": 0, "tier2_ai": 0, "tier3_inferred": 0, "skipped_confirmed": 0}
+
+    _has_taxonomy, nodes, _names, _aliases = _resolve_school_knowledge_meta(db, exam.subject, set())
+    attachments = db.execute(
+        select(m.SchoolPaperAttachment).where(
+            m.SchoolPaperAttachment.school_exam_id == exam.id,
+            m.SchoolPaperAttachment.owner_id == exam.learner_id,
+        )
+    ).scalars().all()
+    by_number: dict[str, str] = {}
+    ordered_attachments = sorted(attachments, key=lambda a: (1 if "答题卡" in a.filename else 0, a.created_at, a.id))
+    for att in ordered_attachments:
+        if by_number:
+            break
+        try:
+            data = files.blob_path(att.storage_key).read_bytes()
+            text = paper_parser.extract_embedded_text(data, att.media_type)
+        except Exception:
+            text = ""
+        if not text:
+            continue
+        for parsed in paper_parser.parse_paper_skeleton_from_text(text, exam.subject, nodes, attachment_id=att.id):
+            m_num = re.search(r"(\d+)", str(parsed.get("question_label") or ""))
+            stem = str(parsed.get("stem") or "").strip()
+            if m_num and stem and m_num.group(1) not in by_number:
+                by_number[m_num.group(1)] = stem
+
+    skipped_confirmed = 0
+    targets: list[m.SchoolExamItem] = []
+    payload_rows: list[dict] = []
+    for row in rows:
+        if row.confirmed_by_user:
+            skipped_confirmed += 1
+            continue
+        has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
+        has_three_cands = isinstance(row.draft_knowledge_candidates, list) and len(row.draft_knowledge_candidates) >= 3
+        if not overwrite_existing and has_kid and has_three_cands:
+            continue
+        m_num = re.search(r"(\d+)", str(row.question_label or ""))
+        stem = by_number.get(m_num.group(1), "") if m_num else ""
+        targets.append(row)
+        payload_rows.append(
+            {
+                "question_label": row.question_label,
+                "max_points": row.max_points,
+                "stem_text": stem,
+                "draft_reason": row.draft_reason,
+                "knowledge_id": row.knowledge_id,
+            }
+        )
+
+    if not targets:
+        return {"updated": 0, "tier1_matched": 0, "tier2_ai": 0, "tier3_inferred": 0, "skipped_confirmed": skipped_confirmed}
+
+    assocs = paper_parser.auto_associate_school_items(
+        subject=exam.subject,
+        knowledge_catalog=nodes,
+        items=payload_rows,
+        use_ai=use_ai,
+    )
+    updated = 0
+    tier1 = 0
+    tier2 = 0
+    tier3 = 0
+    valid_names = {str(n["code"]): str(n.get("name") or n["code"]) for n in nodes if n.get("code")}
+
+    for row, assoc in zip(targets, assocs):
+        has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
+        cands = assoc["draft_knowledge_candidates"]
+        if not overwrite_existing and has_kid:
+            existing_first = [
+                {
+                    "knowledge_id": row.knowledge_id,
+                    "title": valid_names.get(row.knowledge_id, row.knowledge_id),
+                    "reason": "保留既有已选考点",
+                }
+            ]
+            row.draft_knowledge_candidates = paper_parser.ensure_three_candidates(
+                existing_first,
+                subject=exam.subject,
+                knowledge_catalog=nodes,
+                question_label=row.question_label,
+                max_points=row.max_points,
+                fallback_candidates=cands,
+            )
+            updated += 1
+            continue
+
+        row.knowledge_id = assoc["knowledge_id"]
+        row.draft_knowledge_candidates = cands
+        row.draft_confidence = assoc["draft_confidence"]
+        basis = str(assoc.get("basis_note") or "").strip()
+        if basis:
+            base_reason = re.sub(r"；(?:[^；]*先验|[^；]*命中[^；]*|AI语义:[^；]*)$", "", str(row.draft_reason or "").strip())
+            row.draft_reason = f"{base_reason}；{basis}"[:500] if base_reason else basis[:500]
+        method = assoc.get("method")
+        if method == "auto_matched":
+            tier1 += 1
+        elif method == "ai_matched":
+            tier2 += 1
+        else:
+            tier3 += 1
+        updated += 1
+
+    return {
+        "updated": updated,
+        "tier1_matched": tier1,
+        "tier2_ai": tier2,
+        "tier3_inferred": tier3,
+        "skipped_confirmed": skipped_confirmed,
+    }
+
+
 def _auto_map_report_items(db: Session, report: m.SchoolExamReport) -> int:
-    """用已归档原卷文字层做本地知识点匹配，只填候选，不确认。"""
+    """用已归档原卷文字层及考纲先验自动关联报告草稿知识点与 Top-3 候选，只填候选，不确认。"""
     links = {str(link.get("subject")): str(link.get("exam_id")) for link in (report.linked_exam_ids or [])}
     applied = 0
-    for subject, exam_id in links.items():
-        has_taxonomy, nodes, _names, _aliases = _resolve_school_knowledge_meta(db, subject, set())
-        if not has_taxonomy or not nodes:
+    for exam_id in links.values():
+        exam = db.get(m.SchoolExam, exam_id)
+        if exam is None or exam.learner_id != report.learner_id:
             continue
-        attachments = db.execute(
-            select(m.SchoolPaperAttachment).where(
-                m.SchoolPaperAttachment.school_exam_id == exam_id,
-                m.SchoolPaperAttachment.owner_id == report.learner_id,
-            )
-        ).scalars().all()
-        original = next((a for a in attachments if "答题卡" not in a.filename), None)
-        if original is None:
-            continue
-        try:
-            data = files.blob_path(original.storage_key).read_bytes()
-            text, _version = files.parse_text(data, original.media_type)
-        except Exception:
-            continue
-        skeleton = paper_parser.parse_paper_skeleton_from_text(text, subject, nodes)
-        by_number: dict[str, dict] = {}
-        for item in skeleton:
-            match = re.search(r"(\d+)", str(item.get("question_label") or ""))
-            if match:
-                by_number[match.group(1)] = item
-        rows = db.execute(
-            select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)
-        ).scalars().all()
-        for row in rows:
-            if row.confirmed_by_user or row.knowledge_id != "unmapped":
-                continue
-            match = re.search(r"(\d+)", row.question_label)
-            candidate = by_number.get(match.group(1)) if match else None
-            if not candidate:
-                continue
-            children = candidate.get("draft_knowledge_candidates") or []
-            knowledge_id = str(candidate.get("knowledge_id") or "")
-            if not children or knowledge_id in {"", "unmapped"}:
-                continue
-            if all("未命中明确关键词" in str(child.get("reason") or "") for child in children):
-                continue
-            row.knowledge_id = knowledge_id
-            row.draft_knowledge_candidates = children
-            row.draft_confidence = "auto_matched"
-            applied += 1
+        summary = _auto_associate_exam_items(db, exam, use_ai=False, overwrite_existing=False)
+        applied += summary["updated"]
     return applied
 
 
@@ -1314,6 +1411,28 @@ async def import_k12100_bundle_endpoint(
         use_ai=payload.use_ai,
     )
 
+@app.post("/api/school-exams/{exam_id}/items/auto-associate", response_model=SchoolExamAutoAssociateOut)
+def auto_associate_school_exam_items(
+    exam_id: str,
+    payload: SchoolExamAutoAssociateIn | None = None,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """按三层混合管线为校考待核对明细补全所属知识点与 Top-3 候选考点；只写草稿，绝不自动确认。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    opts = payload or SchoolExamAutoAssociateIn()
+    summary = _auto_associate_exam_items(
+        db,
+        exam,
+        use_ai=opts.use_ai,
+        overwrite_existing=opts.overwrite_existing,
+    )
+    db.commit()
+    return SchoolExamAutoAssociateOut(**summary)
+
+
 @app.post("/api/school-exams/{exam_id}/items/{item_id}/analysis")
 def update_school_exam_item_analysis(
     exam_id: str,
@@ -1333,6 +1452,32 @@ def update_school_exam_item_analysis(
         raise HTTPException(422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
     item.error_category = payload.error_category
     item.error_note = payload.error_note
+    db.commit()
+    db.refresh(item)
+    return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
+
+
+@app.post("/api/school-exams/{exam_id}/items/{item_id}/return-reflection")
+def return_school_exam_item_reflection(
+    exam_id: str,
+    item_id: str,
+    payload: AdminReturnReflectionIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端退回学生的校考失分复盘，要求重写；绝不改写已核对得分与知识点（INV-04）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    if not item.confirmed_by_user:
+        raise HTTPException(409, detail="SCHOOL_ITEM_NOT_CONFIRMED")
+    if item.earned_points >= item.max_points:
+        raise HTTPException(422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
+    item.error_note = paper_parser.format_returned_reflection_note(payload.reason, item.error_note)
+    item.error_category = None
     db.commit()
     db.refresh(item)
     return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
@@ -1409,11 +1554,13 @@ def get_school_exam_error_analysis(
     ).scalars().all()
     exam_ids = [e.id for e in same_subject_exams]
     all_items = (
-        db.execute(
-            select(m.SchoolExamItem)
-            .where(m.SchoolExamItem.school_exam_id.in_(exam_ids))
-            .order_by(m.SchoolExamItem.question_label)
-        ).scalars().all()
+        sorted(
+            db.execute(
+                select(m.SchoolExamItem)
+                .where(m.SchoolExamItem.school_exam_id.in_(exam_ids))
+            ).scalars().all(),
+            key=lambda it: question_label_sort_key(it.question_label),
+        )
         if exam_ids
         else []
     )
@@ -1481,7 +1628,10 @@ def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
-    items = db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam.id).order_by(m.SchoolExamItem.question_label)).scalars().all()
+    items = sorted(
+        db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam.id)).scalars().all(),
+        key=lambda it: question_label_sort_key(it.question_label),
+    )
     attachments = db.execute(select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam.id, m.SchoolPaperAttachment.owner_id == owner).order_by(m.SchoolPaperAttachment.created_at, m.SchoolPaperAttachment.id)).scalars().all()
     return {"id": exam.id, "subject": exam.subject, "title": exam.title, "exam_date": str(exam.exam_date),
             "earned_points": exam.earned_points, "max_points": exam.max_points, "confirmed_by_user": exam.confirmed_by_user,

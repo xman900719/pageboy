@@ -275,6 +275,64 @@ class SchoolExamItemAnalysisIn(BaseModel):
             self.error_note = self.error_note.strip() or None
         return self
 
+
+ReflectionStatus = Literal["not_required", "pending", "completed", "needs_revision"]
+
+
+class StudentSchoolReflectionSubmitIn(BaseModel):
+    """学生端提交校考失分题结构化错因分类与防敷衍复盘。"""
+    error_category: SchoolErrorCategory
+    stuck_point: str = Field(min_length=1, max_length=300)
+    fix_strategy: str = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def strip_fields(self):
+        self.stuck_point = self.stuck_point.strip()
+        self.fix_strategy = self.fix_strategy.strip()
+        return self
+
+
+class AdminReturnReflectionIn(BaseModel):
+    """管理端退回学生重写复盘的理由载荷。"""
+    reason: str = Field(
+        default="请进一步写明具体出错步骤与可执行的改进方法",
+        min_length=2,
+        max_length=200,
+    )
+
+    @model_validator(mode="after")
+    def strip_reason(self):
+        self.reason = self.reason.strip() or "请进一步写明具体出错步骤与可执行的改进方法"
+        return self
+
+
+class StudentSchoolReflectionItemOut(BaseModel):
+    """面向学生端的校考失分复盘条目（严禁泄露内部 knowledge_id）。"""
+    item_id: str
+    exam_id: str
+    subject: SchoolExamSubject
+    exam_title: str
+    exam_date: str
+    question_label: str
+    topic: str
+    earned_points: float
+    max_points: float
+    lost_points: float
+    stem_excerpt: str | None = None
+    reflection_status: ReflectionStatus
+    error_category: SchoolErrorCategory | None = None
+    stuck_point: str = ""
+    fix_strategy: str = ""
+    return_reason: str | None = None
+    ai_audit_mode: str | None = None
+
+
+class StudentSchoolReflectionsResponseOut(BaseModel):
+    """学生端校考错题复盘列表及全科待复盘计数。"""
+    items: list[StudentSchoolReflectionItemOut]
+    pending_counts_by_subject: dict[str, int]
+    total_pending: int
+
 class SchoolExamItemsIn(BaseModel):
     items: list[SchoolExamItemIn] = Field(min_length=1, max_length=100)
 
@@ -350,6 +408,21 @@ class SchoolExamSyncDraftsIn(BaseModel):
     source_name: str = Field(default="k12100", min_length=1, max_length=64)
     use_ai: bool = True
     replace_unconfirmed_drafts: bool = False
+
+
+class SchoolExamAutoAssociateIn(BaseModel):
+    """按三层混合管线为校考待核对明细补全所属知识点与 Top-3 候选考点。"""
+    use_ai: bool = True
+    overwrite_existing: bool = False
+
+
+class SchoolExamAutoAssociateOut(BaseModel):
+    """校考待核对明细自动关联结果摘要。"""
+    updated: int
+    tier1_matched: int
+    tier2_ai: int
+    tier3_inferred: int
+    skipped_confirmed: int
 
 
 class SchoolExamErrorOverviewOut(BaseModel):

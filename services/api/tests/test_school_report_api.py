@@ -161,7 +161,8 @@ def test_report_scan_is_idempotent_and_owner_scoped(client, tmp_path, monkeypatc
     try:
         items = session.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.question_label == "1")).scalars().all()
         assert items and items[0].scoring_origin == "ocr_draft" and items[0].confirmed_by_user is False
-        assert items[0].knowledge_id == "unmapped"
+        assert items[0].knowledge_id not in {"", "unmapped"}
+        assert isinstance(items[0].draft_knowledge_candidates, list) and len(items[0].draft_knowledge_candidates) == 3
     finally:
         session.close()
     math_exams = client.get("/api/school-exams?subject=math", headers=ADMIN_AUTH).json()

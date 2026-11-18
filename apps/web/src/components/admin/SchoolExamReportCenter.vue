@@ -154,12 +154,12 @@ const steps = computed<StepDefinition[]>(() => [
   {
     id: 'confirm',
     title: '4. 核对入档',
-    subtitle: selected.value?.status === 'confirmed' ? '已人工确认' : '确认并生成草稿',
+    subtitle: selected.value?.status === 'confirmed' ? '已人工确认' : '确认并生成待核明细',
     badge: selected.value?.status === 'confirmed' ? '已确认' : '待确认',
     badgeTone: selected.value?.status === 'confirmed' ? 'good' : 'wait',
     done: selected.value?.status === 'confirmed' && draftsGeneratedHere.value,
     prereqMet: isMatchReady.value,
-    lockReason: '请先在第 2 步完成校考档案关联后再执行确认入档与生成逐题草稿。',
+    lockReason: '请先在第 2 步完成校考档案关联后再执行确认入档与生成逐题待核对明细。',
   },
 ])
 
@@ -309,13 +309,13 @@ async function generateDrafts() {
     const result = await props.client.generateSchoolExamReportItemDrafts(selected.value.id)
     if (result.created === 0) {
       props.notify(
-        `未生成逐题草稿：${(result.unmapped_subjects || []).map(code => getSubjectLabel(code)).join('、') || '没有已关联校考'}。请先补录/关联校考档案。`,
+        `未生成待核对明细：${(result.unmapped_subjects || []).map(code => getSubjectLabel(code)).join('、') || '没有已关联校考'}。请先补录/关联校考档案。`,
         'caution',
       )
     } else {
       draftsGeneratedHere.value = true
       props.notify(
-        `已生成 ${result.created} 条逐题草稿（无需原卷/答题卡）；请到“原卷与草稿校对”映射知识点并逐题确认。`,
+        `已生成 ${result.created} 条待核对明细（无需原卷/答题卡）；请到“原卷与明细核对”映射知识点并逐题确认。`,
         'success',
       )
     }
@@ -630,7 +630,7 @@ onMounted(() => void load())
               ← 返回关联考试
             </button>
             <button type="button" class="primary small" @click="reportStep = 'confirm'">
-              下一步：确认入档与生成草稿 →
+              下一步：确认入档与生成待核明细 →
             </button>
           </div>
         </article>
@@ -641,8 +641,8 @@ onMounted(() => void load())
         <article v-if="selected" class="card" aria-label="第四步 · 核对入档">
           <div class="card-head">
             <div>
-              <h3>第四步 · 核对入档与生成逐题草稿</h3>
-              <p class="card-sub">已关联 {{ linkedCount }} / {{ selected.subjects.length }} 科 · 推荐顺序：① 人工确认报告 → ② 生成逐题草稿 → ③ 校对草稿入账</p>
+              <h3>第四步 · 核对入档与生成待核对明细</h3>
+              <p class="card-sub">已关联 {{ linkedCount }} / {{ selected.subjects.length }} 科 · 推荐顺序：① 人工确认报告 → ② 生成待核对明细 → ③ 逐题核对入账</p>
             </div>
             <span :class="['chip', selected.status === 'confirmed' ? 'good' : 'wait']">
               {{ selected.status === 'confirmed' ? '已确认' : '待核对' }}
@@ -667,13 +667,13 @@ onMounted(() => void load())
               {{ confirming ? '确认中…' : selected.status === 'confirmed' ? '① 已人工确认报告' : '① 人工确认报告' }}
             </button>
             <button type="button" class="ghost small" :disabled="generatingDrafts" @click="generateDrafts">
-              {{ generatingDrafts ? '生成中…' : '② 生成逐题草稿到台账' }}
+              {{ generatingDrafts ? '生成中…' : '② 生成待核对明细到台账' }}
             </button>
             <button
               type="button"
               class="ghost small"
               :disabled="aiMapping"
-              title="需先生成逐题草稿；若对应校考已上传原卷附件可自动抽取题干供 DeepSeek 匹配"
+              title="需先生成待核对明细；若对应校考已上传原卷附件可自动抽取题干供 DeepSeek 匹配"
               @click="aiMapKnowledge"
             >
               {{ aiMapping ? '匹配中…' : '③ DeepSeek 匹配知识点（可选）' }}
@@ -681,16 +681,16 @@ onMounted(() => void load())
           </div>
 
           <p class="muted tiny">
-            逐题草稿直接从分析报告生成，不需要原卷/答题卡；默认知识点为“unmapped”，必须在「原卷与草稿校对」的待核对草稿台映射并确认后，错误分析与复盘才会使用。
+            待核对明细直接从分析报告生成，不需要原卷/答题卡；默认尚未绑定知识点，必须在「原卷与明细核对」的逐题明细核对台映射并确认后，错误分析与复盘才会使用。
           </p>
 
           <div class="handoff-box">
             <div>
-              <strong>{{ draftsGeneratedHere ? '逐题草稿已生成！' : '去草稿校对台逐题确认' }}</strong>
-              <span>在「原卷与草稿校对」第 3 步校对台确认知识点与错因后，即可查看「错误分析与复盘」。</span>
+              <strong>{{ draftsGeneratedHere ? '待核对明细已生成！' : '去逐题明细核对台逐题确认' }}</strong>
+              <span>在「原卷与明细核对」第 3 步核对台确认知识点与失分题错因后，即可查看「错误分析与复盘」。</span>
             </div>
             <button type="button" class="primary small" @click="goToPapersDrafts">
-              前往草稿校对台 →
+              前往逐题明细核对台 →
             </button>
           </div>
         </article>

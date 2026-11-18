@@ -5,6 +5,7 @@ import type {
   SchoolExamPaper,
   SchoolExamRanksPayload,
   SchoolSubject,
+  StudentSchoolReflectionItem,
 } from './api'
 
 export type SyncStep = 1 | 2 | 3 | 4
@@ -195,4 +196,307 @@ export function summarizeReportJob(result: K12100ReportJobResult | null | undefi
     cardsSynced: t.cards_synced ?? 0,
     hasIssues: conflicts > 0 || awaitingOrAmbiguous > 0 || (t.failures ?? 0) > 0,
   }
+}
+
+function extractLabelNumbers(label: string): number[] {
+  const matches = label.match(/\d+/g)
+  return matches ? matches.map(n => Number.parseInt(n, 10)) : []
+}
+
+/** 按题号中的数字序列自然升序比较（1, 2, ..., 10），无数字项排在末尾。 */
+export function compareQuestionLabel(a: string, b: string): number {
+  const numsA = extractLabelNumbers(a)
+  const numsB = extractLabelNumbers(b)
+  if (numsA.length === 0 && numsB.length === 0) {
+    return a.localeCompare(b, 'zh-CN', { numeric: true })
+  }
+  if (numsA.length === 0) return 1
+  if (numsB.length === 0) return -1
+  const len = Math.min(numsA.length, numsB.length)
+  for (let i = 0; i < len; i += 1) {
+    if (numsA[i] !== numsB[i]) return numsA[i] - numsB[i]
+  }
+  if (numsA.length !== numsB.length) return numsA.length - numsB.length
+  return a.localeCompare(b, 'zh-CN', { numeric: true })
+}
+
+/** 纯数字题号格式化为「第 N 题」，其余保留原样。 */
+export function formatQuestionLabelHeading(label: string): string {
+  const trimmed = label.trim()
+  if (/^\d+$/.test(trimmed)) return `第 ${trimmed} 题`
+  return trimmed
+}
+
+/** 实得分与满分一致（含浮点容差）视为作答正确。 */
+export function isSchoolItemFullScore(earnedPoints: number, maxPoints: number): boolean {
+  return earnedPoints >= maxPoints - 1e-6
+}
+
+export interface SchoolExamItemScoreSummary {
+  totalEarned: number
+  totalMax: number
+  pendingCount: number
+  confirmedCount: number
+  correctPendingCount: number
+  lostPendingCount: number
+  earnedDiff: number | null
+  maxDiff: number | null
+}
+
+/** 汇总本场校考已确认与待核对小题分值，并与卷面总分只读对账。 */
+export function summarizeSchoolExamItemScores(
+  detail: Pick<SchoolExamDetail, 'items' | 'earned_points' | 'max_points' | 'confirmed_by_user'> | null,
+): SchoolExamItemScoreSummary {
+  if (!detail) {
+    return {
+      totalEarned: 0,
+      totalMax: 0,
+      pendingCount: 0,
+      confirmedCount: 0,
+      correctPendingCount: 0,
+      lostPendingCount: 0,
+      earnedDiff: null,
+      maxDiff: null,
+    }
+  }
+  let totalEarned = 0
+  let totalMax = 0
+  let pendingCount = 0
+  let confirmedCount = 0
+  let correctPendingCount = 0
+  let lostPendingCount = 0
+  for (const it of detail.items) {
+    totalEarned += it.earned_points
+    totalMax += it.max_points
+    if (it.confirmed_by_user) {
+      confirmedCount += 1
+    } else {
+      pendingCount += 1
+      if (isSchoolItemFullScore(it.earned_points, it.max_points)) {
+        correctPendingCount += 1
+      } else {
+        lostPendingCount += 1
+      }
+    }
+  }
+  totalEarned = Math.round(totalEarned * 100) / 100
+  totalMax = Math.round(totalMax * 100) / 100
+  const earnedDiff = detail.confirmed_by_user
+    ? Math.round((totalEarned - detail.earned_points) * 100) / 100
+    : null
+  const maxDiff = detail.max_points > 0
+    ? Math.round((totalMax - detail.max_points) * 100) / 100
+    : null
+  return {
+    totalEarned,
+    totalMax,
+    pendingCount,
+    confirmedCount,
+    correctPendingCount,
+    lostPendingCount,
+    earnedDiff,
+    maxDiff,
+  }
+}
+
+export interface DraftBasisTag {
+  kind: 'source' | 'qtype' | 'match'
+  label: string
+}
+
+const CONFIDENCE_MATCH_TAG: Record<string, string> = {
+  auto_matched: '关键词匹配',
+  ai_matched: 'AI 语义匹配',
+  type_inferred: '题型考纲先验',
+  external_sync: '同步平台推荐',
+  high: '高置信识别',
+  medium: '常规草稿',
+  skeleton_only: '骨架匹配',
+}
+
+/** 将后端冗长的 draft_reason 与 draft_confidence 拆解为方式一结构化识别依据微标签（最多 3 枚）。 */
+export function parseDraftBasisTags(draftReason?: string | null, draftConfidence?: string | null): DraftBasisTag[] {
+  const raw = String(draftReason || '').trim()
+  const conf = String(draftConfidence || '').trim().toLowerCase()
+  const tags: DraftBasisTag[] = []
+
+  const pageMatch = raw.match(/分析报告册第\s*(\d+)\s*页/)
+  if (pageMatch) {
+    tags.push({ kind: 'source', label: `报告册P${pageMatch[1]}` })
+  } else if (/原卷/.test(raw)) {
+    tags.push({ kind: 'source', label: '原卷文字层' })
+  } else if (/平台/.test(raw) || conf === 'external_sync') {
+    tags.push({ kind: 'source', label: '成绩平台同步' })
+  } else if (raw) {
+    tags.push({ kind: 'source', label: '识别草稿' })
+  }
+
+  const qtypeMatch = raw.match(/题型\s*[=＝:]\s*([^\s；;，,]+)/)
+  if (qtypeMatch && qtypeMatch[1] && !['未知', 'None'].includes(qtypeMatch[1])) {
+    tags.push({ kind: 'qtype', label: qtypeMatch[1] })
+  }
+
+  const segments = raw
+    .split(/[；;]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+  const matchSeg = [...segments]
+    .reverse()
+    .find(seg => /(?:关键词|特征词|命中|AI|先验|道法主题|DeepSeek|考纲)/i.test(seg) && !/^分析报告册第/.test(seg) && !/^题型/.test(seg))
+
+  if (matchSeg) {
+    const cleanMatch = matchSeg.length > 18 ? `${matchSeg.slice(0, 17)}…` : matchSeg
+    tags.push({ kind: 'match', label: cleanMatch })
+  } else if (conf && CONFIDENCE_MATCH_TAG[conf]) {
+    tags.push({ kind: 'match', label: CONFIDENCE_MATCH_TAG[conf] })
+  }
+
+  return tags
+}
+
+const PERFUNCTORY_CLICHES = [
+  '下次一定注意',
+  '下次注意',
+  '下次认真',
+  '下次小心',
+  '认真审题',
+  '仔细审题',
+  '多做练习',
+  '多刷题',
+  '多做题',
+  '好好复习',
+  '加强练习',
+  '粗心大意',
+  '太粗心',
+  '粗心了',
+  '粗心',
+  '马虎大意',
+  '马虎了',
+  '马虎',
+  '大意了',
+  '大意',
+  '不知道',
+  '不会做',
+  '不会',
+  '不懂',
+  '忘了',
+  '忘记了',
+  '没看清',
+  '没看懂',
+  '看错了',
+  '算错了',
+  '写错了',
+  '做错了',
+  '蒙错了',
+  '乱写的',
+  '随便',
+  '哈哈',
+  '呵呵',
+  '测试',
+  '略',
+]
+
+function extractEffectiveChars(text: string): string {
+  return (text.match(/[\u4e00-\u9fffA-Za-z]/g) ?? []).join('')
+}
+
+function stripPerfunctoryCliches(text: string): string {
+  let cleaned = text
+  for (const phrase of PERFUNCTORY_CLICHES) {
+    cleaned = cleaned.split(phrase).join('')
+  }
+  return extractEffectiveChars(cleaned)
+}
+
+/** 前端本地防敷衍预检（与后端 Stage 1 规则同源），不通过时返回引导提示。 */
+export function validateReflectionDraftLocally(stuckPoint: string, fixStrategy: string): string | null {
+  const stuck = stuckPoint.trim()
+  const fix = fixStrategy.trim()
+  const stuckEff = extractEffectiveChars(stuck)
+  const fixEff = extractEffectiveChars(fix)
+
+  if (stuckEff.length < 8) {
+    return '「具体失分卡点」有效内容过短（需至少 8 个汉字或字母），请写明具体错在哪一步或漏看了哪个条件。'
+  }
+  if (fixEff.length < 8) {
+    return '「正确思路与改进对策」有效内容过短（需至少 8 个汉字或字母），请写明正确解法或具体的检验动作。'
+  }
+  if (stuckEff.length + fixEff.length < 20) {
+    return '两栏合计有效分析不足 20 字，请再补充关键条件、公式或具体步骤。'
+  }
+  if (stuckEff.toLowerCase() === fixEff.toLowerCase()) {
+    return '「失分卡点」与「改进对策」不能填写完全相同的内容，请分别写清错因和改法。'
+  }
+
+  for (const [label, raw, eff] of [
+    ['具体失分卡点', stuck, stuckEff],
+    ['正确思路与改进对策', fix, fixEff],
+  ] as const) {
+    if (/(.)\1{3,}/.test(raw.replace(/\s+/g, ''))) {
+      return `「${label}」存在连续重复字符，请认真填写复盘内容。`
+    }
+    const chars = eff.toLowerCase().split('')
+    const unique = new Set(chars)
+    if (unique.size < 5) {
+      return `「${label}」有效用字过于单一，请用完整句子说明具体情况。`
+    }
+    let maxCount = 0
+    for (const ch of unique) {
+      const cnt = chars.filter(c => c === ch).length
+      if (cnt > maxCount) maxCount = cnt
+    }
+    if (maxCount / chars.length > 0.45) {
+      return `「${label}」存在重复灌水字符，请写明真实错因与思路。`
+    }
+  }
+
+  if (stripPerfunctoryCliches(stuck).length < 5) {
+    return '「具体失分卡点」不能仅写“粗心/不会/看错了”等套话，请补充具体漏掉的条件或出错步骤。'
+  }
+  if (stripPerfunctoryCliches(fix).length < 5) {
+    return '「正确思路与改进对策」不能仅写“下次注意/多做题”等套话，请写出具体怎么改、怎么验算。'
+  }
+  return null
+}
+
+export interface SchoolReflectionExamGroup {
+  examId: string
+  examTitle: string
+  examDate: string
+  pendingCount: number
+  needsRevisionCount: number
+  completedCount: number
+  items: StudentSchoolReflectionItem[]
+}
+
+/** 按校考台账（exam_id）将失分复盘条目分组，保留场次先后顺序并汇总各场待复盘/已完成数。 */
+export function groupSchoolReflectionsByExam(
+  items: StudentSchoolReflectionItem[],
+): SchoolReflectionExamGroup[] {
+  const map = new Map<string, SchoolReflectionExamGroup>()
+  for (const it of items) {
+    let group = map.get(it.exam_id)
+    if (!group) {
+      group = {
+        examId: it.exam_id,
+        examTitle: it.exam_title,
+        examDate: it.exam_date,
+        pendingCount: 0,
+        needsRevisionCount: 0,
+        completedCount: 0,
+        items: [],
+      }
+      map.set(it.exam_id, group)
+    }
+    group.items.push(it)
+    if (it.reflection_status === 'completed') {
+      group.completedCount += 1
+    } else {
+      group.pendingCount += 1
+      if (it.reflection_status === 'needs_revision') {
+        group.needsRevisionCount += 1
+      }
+    }
+  }
+  return [...map.values()]
 }
