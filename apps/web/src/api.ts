@@ -15,6 +15,8 @@ export type SchoolDraftConfidence =
   | 'external_sync'
   | 'auto_matched'
   | 'ai_matched'
+  | 'ai_recommended'
+  | 'type_inferred'
 
 export interface DraftKnowledgeCandidate {
   knowledge_id: string

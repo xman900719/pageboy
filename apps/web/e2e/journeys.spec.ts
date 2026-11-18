@@ -1296,7 +1296,17 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('同步入口占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await expect(sync).toContainText('SOURCE_NOT_CONFIGURED')
@@ -1515,7 +1525,17 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('同步入口占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
@@ -1734,7 +1754,17 @@ test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('同步入口占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   // 无需先在第 1/2 步选试卷，第 3 步应可直接点击
@@ -2070,7 +2100,17 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('同步入口占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
@@ -2290,7 +2330,17 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('同步入口占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /虚构测试数据_离线回退.docx/ }).click()

@@ -279,7 +279,17 @@ async function setupVisualPage(browser: Browser, contextOptions: BrowserContextO
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
-  await page.getByRole('button', { name: /全科校考同步/ }).first().click()
+  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const titleInput = page.getByLabel('考试名称')
+  await expect(enterBtn.or(titleInput)).toBeVisible()
+  if (await enterBtn.isVisible()) {
+    await enterBtn.click()
+  } else {
+    await titleInput.fill('视觉巡检占位校考（虚构测试数据）')
+    await page.getByLabel('获得分数').fill('88')
+    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+  }
+  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
   await expect(page.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
   await stabilize(page)
   return page

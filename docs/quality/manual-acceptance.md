@@ -113,7 +113,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 10** | [10-school-exam-pending-items-workbench.md](checklists/10-school-exam-pending-items-workbench.md) | 逐题明细核对台三栏纵向堆叠布局、题号自然排序、分数只读、满分隐藏错因与术语统一 | 依赖【主题 8 通过】 | **[x] 已通过（2026-11-18）** |
 | **主题 11** | [11-school-exam-auto-knowledge-assoc.md](checklists/11-school-exam-auto-knowledge-assoc.md) | 逐题 Top-3 候选考点全覆盖、所属知识点三层自动关联与方式一微标签/芯片展示 | 依赖【主题 10 通过】 | **[x] 已通过（2026-11-18）** |
 | **主题 12** | [12-student-wrong-reflection-anti-perfunctory.md](checklists/12-student-wrong-reflection-anti-perfunctory.md) | 学生端「校考错题复盘」台账目录钻取单场、防敷衍质检、管理端只读查看与退回重写 | 依赖【主题 11 通过】 | **[x] 已通过（2026-11-18）** |
-| **主题 13** | [13-school-exam-stage1-stage2-reorg.md](checklists/13-school-exam-stage1-stage2-reorg.md) | 管理端校考第一、二阶段重组（方案一 · 上传原卷归入第一阶段、移除第二阶段重复入口） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
+| **主题 13** | [13-school-exam-stage1-stage2-reorg.md](checklists/13-school-exam-stage1-stage2-reorg.md) | 管理端校考第一、二阶段重组（方案一 · 上传原卷归入第一阶段、移除 Step 1 底部入口与报告中心冗余 DeepSeek 按钮） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
 
 ---
 

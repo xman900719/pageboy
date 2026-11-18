@@ -945,12 +945,13 @@ def _auto_associate_exam_items(
         if row.confirmed_by_user:
             skipped_confirmed += 1
             continue
-        has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
-        has_three_cands = isinstance(row.draft_knowledge_candidates, list) and len(row.draft_knowledge_candidates) >= 3
-        if not overwrite_existing and has_kid and has_three_cands:
-            continue
         m_num = re.search(r"(\d+)", str(row.question_label or ""))
         stem = by_number.get(m_num.group(1), "") if m_num else ""
+        has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
+        has_three_cands = isinstance(row.draft_knowledge_candidates, list) and len(row.draft_knowledge_candidates) >= 3
+        can_upgrade_inferred = row.draft_confidence == "type_inferred" and bool(stem)
+        if not overwrite_existing and has_kid and has_three_cands and not can_upgrade_inferred:
+            continue
         targets.append(row)
         payload_rows.append(
             {
@@ -980,7 +981,7 @@ def _auto_associate_exam_items(
     for row, assoc in zip(targets, assocs):
         has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
         cands = assoc["draft_knowledge_candidates"]
-        if not overwrite_existing and has_kid:
+        if not overwrite_existing and has_kid and row.draft_confidence != "type_inferred":
             existing_first = [
                 {
                     "knowledge_id": row.knowledge_id,

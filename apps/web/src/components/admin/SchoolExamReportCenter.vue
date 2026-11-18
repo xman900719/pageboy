@@ -56,7 +56,6 @@ const supplementGradeRank = ref<number | ''>('')
 const savingSubject = ref(false)
 const generatingDrafts = ref(false)
 const draftsGeneratedHere = ref(false)
-const aiMapping = ref(false)
 const matchUnresolved = ref<string[]>([])
 const matchAmbiguous = ref<string[]>([])
 
@@ -323,24 +322,6 @@ async function generateDrafts() {
     props.notify(describeError(error), 'error')
   } finally {
     generatingDrafts.value = false
-  }
-}
-
-async function aiMapKnowledge() {
-  if (!selected.value) return
-  aiMapping.value = true
-  try {
-    const result = await props.client.aiMapSchoolExamReportItems(selected.value.id)
-    props.notify(
-      result.mapped
-        ? `DeepSeek 已匹配 ${result.mapped} 条知识点（仅候选，仍需人工确认）。`
-        : `DeepSeek 未匹配到可确认的知识点${result.failed_subjects.length ? '；失败学科：' + result.failed_subjects.join('、') : ''}。`,
-      result.mapped ? 'success' : 'caution',
-    )
-  } catch (error) {
-    props.notify(describeError(error), 'error')
-  } finally {
-    aiMapping.value = false
   }
 }
 
@@ -669,19 +650,10 @@ onMounted(() => void load())
             <button type="button" class="ghost small" :disabled="generatingDrafts" @click="generateDrafts">
               {{ generatingDrafts ? '生成中…' : '② 生成待核对明细到台账' }}
             </button>
-            <button
-              type="button"
-              class="ghost small"
-              :disabled="aiMapping"
-              title="需先生成待核对明细；若对应校考已上传原卷附件可自动抽取题干供 DeepSeek 匹配"
-              @click="aiMapKnowledge"
-            >
-              {{ aiMapping ? '匹配中…' : '③ DeepSeek 匹配知识点（可选）' }}
-            </button>
           </div>
 
           <p class="muted tiny">
-            待核对明细直接从分析报告生成，不需要原卷/答题卡；默认尚未绑定知识点，必须在「原卷与明细核对」的逐题明细核对台映射并确认后，错误分析与复盘才会使用。
+            待核对明细直接从分析报告生成，不需要原卷/答题卡；进入「原卷提取与明细核对」的逐题明细核对台时，系统会自动结合已上传原卷匹配候选知识点，人工核对确认后即可用于错误分析与复盘。
           </p>
 
           <div class="handoff-box">

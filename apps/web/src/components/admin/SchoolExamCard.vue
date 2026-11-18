@@ -511,13 +511,15 @@ function syncDraftStateFromDetail(detail: SchoolExamDetail) {
 
 function examNeedsAutoAssociate(detail: SchoolExamDetail | null): boolean {
   if (!detail) return false
+  const hasAttachments = Array.isArray(detail.attachments) && detail.attachments.length > 0
   return detail.items.some(
     it =>
       !it.confirmed_by_user &&
       (!it.knowledge_id ||
         it.knowledge_id === 'unmapped' ||
         !it.draft_knowledge_candidates ||
-        it.draft_knowledge_candidates.length < 3),
+        it.draft_knowledge_candidates.length < 3 ||
+        (hasAttachments && it.draft_confidence === 'type_inferred')),
   )
 }
 
@@ -1437,18 +1439,6 @@ async function handleSyncPapersImported(examId: string) {
                 </button>
               </div>
             </template>
-
-            <div class="batch-entry-bar">
-              <span class="muted tiny">尚未建档或批量采集：</span>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button type="button" class="ghost small" @click="activeTab = 'report'">
-                  报告导入与核对
-                </button>
-                <button type="button" class="ghost small" @click="activeTab = 'sync'">
-                  全科校考同步
-                </button>
-              </div>
-            </div>
           </section>
         </template>
 

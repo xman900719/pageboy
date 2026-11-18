@@ -690,10 +690,6 @@ button.link-btn:hover:not(:disabled) { background: transparent; border-color: tr
   margin-bottom: 10px; padding: 8px 12px; border-radius: var(--radius-s);
   border: 1px solid var(--line); background: var(--card-warm);
 }
-.batch-entry-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
-  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line);
-}
 .draft-correct-hint {
   margin: 0; padding: 6px 9px; border-radius: 7px;
   background: var(--green-soft); border: 1px dashed var(--green-line);

@@ -933,3 +933,118 @@ def test_student_reflection_workflow_anti_perfunctory_and_admin_return(client, a
     assert "增根" in list_after["items"][0]["stuck_point"]
 
 
+def test_auto_associate_upgrades_type_inferred_when_paper_attached(client, auth, monkeypatch) -> None:
+    """报告生成的 type_inferred 草稿在上传原卷后，不传 overwrite 也应自动升级为 AI/关键词匹配结果，且不覆盖已确认项。"""
+    exam_id = make_exam(client, auth, title="虚构测试数据：先验升级测试", earned_points=88)
+
+    # 插入一条未确认的 type_inferred 草稿与一条已确认项
+    seeded = post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            {
+                "question_label": "第1题",
+                "knowledge_id": "math.number_sense",
+                "earned_points": 2.0,
+                "max_points": 3.0,
+                "scoring_origin": "ocr_draft",
+                "draft_confidence": "low",
+                "draft_knowledge_candidates": [
+                    {"knowledge_id": "math.number_sense", "title": "数感", "reason": "题型先验"},
+                    {"knowledge_id": "math.arithmetic", "title": "运算", "reason": "题型先验"},
+                    {"knowledge_id": "math.equations", "title": "方程", "reason": "题型先验"},
+                ],
+            },
+            {
+                "question_label": "第2题",
+                "knowledge_id": "math.number_sense",
+                "earned_points": 3.0,
+                "max_points": 3.0,
+                "scoring_origin": "manual_entry",
+                "draft_confidence": "low",
+            },
+        ],
+    )
+    assert seeded.status_code == 201, seeded.text
+
+    from sqlalchemy import select
+    from shutong import models as m
+    from shutong.main import app, get_db
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        for row in db.execute(select(m.SchoolExamItem).where(m.SchoolExamItem.school_exam_id == exam_id)).scalars():
+            row.draft_confidence = "type_inferred"
+        db.commit()
+    finally:
+        db_gen.close()
+
+    # 上传一份含第1、2题题干的 docx 原卷
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "word/document.xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            "<w:p><w:r><w:t>1. 解一元二次方程 x^2 - 5x + 6 = 0。</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>2. 计算 (-2) + 3 的值。</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    up = client.post(
+        f"/api/school-exams/{exam_id}/paper",
+        params={"filename": "paper.docx"},
+        content=buf.getvalue(),
+        headers={
+            **auth,
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+    )
+    assert up.status_code == 201, up.text
+
+    from shutong import school_paper_parser as parser
+
+    called: list[bool] = []
+
+    def fake_auto_associate(*, subject, knowledge_catalog, items, use_ai=True):
+        called.append(use_ai)
+        return [
+            {
+                "knowledge_id": "math.equations",
+                "draft_knowledge_candidates": [
+                    {"knowledge_id": "math.equations", "title": "方程与不等式", "reason": "AI 语义匹配"},
+                    {"knowledge_id": "math.arithmetic", "title": "数与式运算", "reason": "次选"},
+                    {"knowledge_id": "math.functions", "title": "函数", "reason": "备选"},
+                ],
+                "draft_confidence": "ai_recommended",
+                "method": "ai_recommended",
+                "basis_note": "AI 语义匹配",
+            }
+            for _ in items
+        ]
+
+    monkeypatch.setattr(parser, "auto_associate_school_items", fake_auto_associate)
+
+    res = client.post(
+        f"/api/school-exams/{exam_id}/items/auto-associate",
+        json={"use_ai": True, "overwrite_existing": False},
+        headers=auth,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["updated"] == 1
+    assert res.json()["skipped_confirmed"] == 1
+    assert called == [True]
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_label = {it["question_label"]: it for it in detail["items"]}
+    assert by_label["第1题"]["knowledge_id"] == "math.equations"
+    assert by_label["第1题"]["draft_confidence"] == "ai_recommended"
+    assert by_label["第2题"]["knowledge_id"] == "math.number_sense"
+
+
+
