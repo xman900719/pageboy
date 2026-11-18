@@ -9,6 +9,7 @@ import {
   type SchoolExamDetail,
   type SchoolExamErrorAnalysis,
   type SchoolExamItem,
+  type SchoolExamRanksPayload,
   type SchoolSubject,
 } from '../../api'
 import { EXAM_NOTE, fmtBytes, fmtPoints, shortTime } from '../../copy'
@@ -105,6 +106,7 @@ const selectedExamId = ref<string | null>(null)
 const confirmDeleteExamId = ref<string | null>(null)
 const deletingExamId = ref<string | null>(null)
 const selectedDetail = ref<SchoolExamDetail | null>(null)
+const selectedRanks = ref<SchoolExamRanksPayload | null>(null)
 const errorAnalysis = ref<SchoolExamErrorAnalysis | null>(null)
 const loadingDetail = ref(false)
 const activeTab = ref<ExamTabId>(props.initialTab ?? 'scores')
@@ -421,17 +423,22 @@ const analysisSteps = computed<StepDefinition[]>(() => {
 async function loadDetail(examId: string) {
   loadingDetail.value = true
   try {
-    const [detail, analysis] = await Promise.all([
+    const [detail, analysis, ranks] = await Promise.all([
       props.client.schoolExamDetail(examId),
       props.client.schoolExamErrorAnalysis(examId),
+      typeof props.client.schoolExamRanks === 'function'
+        ? props.client.schoolExamRanks(examId).catch(() => null)
+        : Promise.resolve(null),
     ])
     selectedDetail.value = detail
     errorAnalysis.value = analysis
+    selectedRanks.value = ranks
     confirmEarned.value = detail.earned_points
     syncDraftStateFromDetail(detail)
   } catch (e) {
     selectedDetail.value = null
     errorAnalysis.value = null
+    selectedRanks.value = null
     props.notify(describeError(e), 'error')
   } finally {
     loadingDetail.value = false
@@ -486,6 +493,9 @@ async function refreshExams(preferId?: string) {
     }
     if (targetId) {
       await loadDetail(targetId)
+      if (preferId && preferId === targetId && activeTab.value === 'scores' && selectedDetail.value?.id === preferId) {
+        scoreStep.value = 'detail'
+      }
     } else {
       selectedDetail.value = null
       errorAnalysis.value = null
@@ -912,6 +922,12 @@ function jumpToEditItem(itemId: string) {
 async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'items' | 'analysis') {
   if (examId) {
     await selectExam(examId)
+    const targetSubject = selectedDetail.value?.subject
+    if (targetSubject && targetSubject !== props.subject) {
+      const safeTab: 'scores' | 'papers' | 'items' = tab === 'analysis' ? 'items' : tab
+      emit('select-subject', targetSubject, examId, safeTab)
+      return
+    }
   }
   activeTab.value = tab
   if (tab === 'papers' && unconfirmedDrafts.value.length > 0) {
@@ -1188,6 +1204,33 @@ async function handleSyncPapersImported(examId: string) {
                   <b>{{ selectedDetail.attachments.length }} 份</b>
                   <span>私有原件附件</span>
                 </div>
+                <div
+                  v-if="selectedDetail.class_highest !== null && selectedDetail.class_highest !== undefined"
+                  class="kpi-tile"
+                >
+                  <b>{{ fmtPoints(selectedDetail.class_highest) }}</b>
+                  <span>班级最高分</span>
+                </div>
+                <div
+                  v-if="selectedDetail.grade_highest !== null && selectedDetail.grade_highest !== undefined"
+                  class="kpi-tile"
+                >
+                  <b>{{ fmtPoints(selectedDetail.grade_highest) }}</b>
+                  <span>年级最高分</span>
+                </div>
+              </div>
+
+              <div
+                v-if="selectedRanks && (selectedRanks.ranks.length > 0 || selectedRanks.report_total)"
+                class="muted tiny"
+                style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px;"
+              >
+                <span v-for="rk in selectedRanks.ranks" :key="rk.id">
+                  {{ rk.scope === 'class' ? '班排' : rk.scope === 'grade' ? '年排' : rk.scope }}：第 {{ rk.rank_value }} 名{{ rk.participant_count ? ` / ${rk.participant_count}人` : '' }}{{ rk.highest_score !== null && rk.highest_score !== undefined ? `（最高 ${fmtPoints(rk.highest_score)}）` : '' }}
+                </span>
+                <span v-if="selectedRanks.report_total">
+                  全科总分 {{ selectedRanks.report_total.report_total_score !== null ? fmtPoints(selectedRanks.report_total.report_total_score) : '—' }}/{{ selectedRanks.report_total.report_total_max !== null ? fmtPoints(selectedRanks.report_total.report_total_max) : '—' }}（班排 {{ selectedRanks.report_total.total_class_rank ?? '—' }} · 年排 {{ selectedRanks.report_total.total_grade_rank ?? '—' }} · 班最高 {{ selectedRanks.report_total.total_class_highest !== null ? fmtPoints(selectedRanks.report_total.total_class_highest) : '—' }} · 年最高 {{ selectedRanks.report_total.total_grade_highest !== null ? fmtPoints(selectedRanks.report_total.total_grade_highest) : '—' }}）
+                </span>
               </div>
 
               <div v-if="!selectedDetail.confirmed_by_user" class="exam-confirm-panel">

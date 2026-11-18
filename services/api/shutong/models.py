@@ -122,6 +122,8 @@ class SchoolExam(Base):
     series_title: Mapped[str | None] = mapped_column(String(160), nullable=True)
     external_exam_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     source_kind: Mapped[str] = mapped_column(String(24), default="manual", server_default="manual")
+    class_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    grade_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class Goal(Base):
@@ -198,6 +200,9 @@ class SchoolExamItem(Base):
 
 class SchoolPaperAttachment(Base):
     __tablename__ = "school_paper_attachments"
+    __table_args__ = (
+        UniqueConstraint("school_exam_id", "sha256", name="uq_school_paper_attachment_exam_sha"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     school_exam_id: Mapped[str] = mapped_column(ForeignKey("school_exams.id"), index=True)
     owner_id: Mapped[str] = mapped_column(String(40))
@@ -277,6 +282,7 @@ class SchoolExamRankSnapshot(Base):
     rank_value: Mapped[int] = mapped_column(Integer)
     participant_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    highest_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_name: Mapped[str] = mapped_column(String(64), default="k12100")
     source_field: Mapped[str] = mapped_column(String(64))
     content_hash: Mapped[str] = mapped_column(String(64))
@@ -434,7 +440,25 @@ class AiTutorTurn(Base):
 class SchoolExamReport(Base):
     """本地分析报告册解析结果；多学科报告，待人工核对，不直接进入能力画像。"""
     __tablename__ = "school_exam_reports"
-    __table_args__ = (UniqueConstraint("learner_id", "sha256", name="uq_school_exam_report_owner_sha"),)
+    __table_args__ = (
+        UniqueConstraint("learner_id", "sha256", name="uq_school_exam_report_owner_sha"),
+        Index(
+            "uq_school_exam_report_owner_ext_id",
+            "learner_id",
+            "external_exam_id",
+            unique=True,
+            sqlite_where=text("external_exam_id IS NOT NULL"),
+            postgresql_where=text("external_exam_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_school_exam_report_owner_canonical_key",
+            "learner_id",
+            "canonical_exam_key",
+            unique=True,
+            sqlite_where=text("canonical_exam_key IS NOT NULL"),
+            postgresql_where=text("canonical_exam_key IS NOT NULL"),
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     learner_id: Mapped[str] = mapped_column(String(40), default="owner", index=True)
     sha256: Mapped[str] = mapped_column(String(64))
@@ -449,11 +473,16 @@ class SchoolExamReport(Base):
     exam_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     exam_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     report_time: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    external_exam_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    canonical_exam_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    exam_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     report_total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     report_total_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_class_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_grade_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_class_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_grade_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
     listed_subject_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     listed_subject_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     scope_status: Mapped[str] = mapped_column(String(32), default="NEEDS_REVIEW")

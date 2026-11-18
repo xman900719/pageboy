@@ -6,8 +6,10 @@ import {
   formatRankValue,
   getMatchMeta,
   getPaperNextStep,
+  getReportActionMeta,
+  summarizeReportJob,
 } from './examSync'
-import type { SchoolExamDetail, SchoolExamPaper, SchoolExamRanksPayload } from './api'
+import type { K12100ReportJobResult, SchoolExamDetail, SchoolExamPaper, SchoolExamRanksPayload } from './api'
 
 function paper(overrides: Partial<SchoolExamPaper> = {}): SchoolExamPaper {
   return {
@@ -164,5 +166,47 @@ describe('examSync 四步状态与核对覆盖', () => {
     expect(coverage.hasExam).toBe(false)
     expect(coverage.totalStatus).toBe('missing')
     expect(coverage.totalText).toContain('待关联')
+  })
+
+  it('报告同步摘要正确汇总新建/更新/冲突/草稿与徽标色调', () => {
+    expect(getReportActionMeta('created')).toEqual({ label: '新建待核对', tone: 'good' })
+    expect(getReportActionMeta('locked_conflict')).toEqual({ label: '锁分冲突', tone: 'bad' })
+    expect(getReportActionMeta('awaiting_exam_date')).toEqual({ label: '缺日期未建档', tone: 'wait' })
+
+    const sample: K12100ReportJobResult = {
+      home_exams: [],
+      reports: [],
+      subject_actions: [],
+      totals: {
+        home_exams: 3,
+        skipped_existing: 1,
+        downloaded: 2,
+        reports_registered: 2,
+        created_exams: 4,
+        updated_exams: 1,
+        filled_exams: 2,
+        unchanged_exams: 0,
+        locked_conflicts: 1,
+        identity_conflicts: 0,
+        awaiting_exam_date: 0,
+        ambiguous_exams: 0,
+        drafts_created: 18,
+        drafts_updated: 3,
+        auto_mapped: 5,
+        cards_created: 6,
+        cards_synced: 6,
+        failures: 0,
+      },
+      failures: [],
+      knowledge_evidence_created: 0,
+    }
+    const summary = summarizeReportJob(sample)
+    expect(summary.homeExams).toBe(3)
+    expect(summary.skippedExisting).toBe(1)
+    expect(summary.created).toBe(4)
+    expect(summary.conflicts).toBe(1)
+    expect(summary.draftsChanged).toBe(21)
+    expect(summary.hasIssues).toBe(true)
+    expect(summarizeReportJob(null).hasIssues).toBe(false)
   })
 })

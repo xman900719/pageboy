@@ -38,27 +38,30 @@ _SUBJECT_ALIASES = {
     "道法": "ethics",
 }
 _GRADE_ALIASES = {
-    "7": "7",
+    "初一年级": "7",
     "七年级": "7",
     "初一": "7",
     "7年级": "7",
-    "8": "8",
+    "7": "7",
+    "初二年级": "8",
     "八年级": "8",
     "初二": "8",
     "8年级": "8",
-    "9": "9",
+    "8": "8",
+    "初三年级": "9",
     "九年级": "9",
     "初三": "9",
     "9年级": "9",
-    "10": "10",
-    "高一": "10",
+    "9": "9",
     "高中一年级": "10",
-    "11": "11",
-    "高二": "11",
+    "高一": "10",
+    "10": "10",
     "高中二年级": "11",
-    "12": "12",
-    "高三": "12",
+    "高二": "11",
+    "11": "11",
     "高中三年级": "12",
+    "高三": "12",
+    "12": "12",
 }
 _EXAM_TYPE_ALIASES = {
     "月考": "monthly",
@@ -490,3 +493,169 @@ def header_identity_from_recognition(recognized: dict[str, Any]) -> ExamIdentity
         academic_year=recognized.get("academic_year"),
         external_exam_id=None,
     )
+
+
+_SEQ_NUM_MAP = {
+    "一": 1, "1": 1, "二": 2, "2": 2, "三": 3, "3": 3,
+    "四": 4, "4": 4, "五": 5, "5": 5, "六": 6, "6": 6,
+}
+
+
+def extract_term_window(title: str | None = None, exam_date: Any = None) -> str | None:
+    """从标题或考试日期提取学期窗口（T1 秋/上学期；T2 春/下学期），用于防上下学期同型碰撞。"""
+    raw = unicodedata.normalize("NFKC", str(title or "")).strip()
+    if any(tok in raw for tok in ("第一学期", "上学期", "秋学期")):
+        return "T1"
+    if any(tok in raw for tok in ("第二学期", "下学期", "春学期")):
+        return "T2"
+    date_str = normalize_exam_date(exam_date)
+    if date_str and len(date_str) >= 7:
+        try:
+            month = int(date_str[5:7])
+        except ValueError:
+            return None
+        if month in {8, 9, 10, 11, 12, 1}:
+            return "T1"
+        if month in {2, 3, 4, 5, 6, 7}:
+            return "T2"
+    return None
+
+
+def canonical_report_type_and_seq(
+    exam_type: str | None = None,
+    exam_sequence: int | None = None,
+    title: str | None = None,
+) -> tuple[str | None, int | None]:
+    """统一提取报告考试类型规范键与序号（单一真源）。"""
+    raw = unicodedata.normalize("NFKC", str(exam_type or "")).strip()
+    seq = exam_sequence
+    if not raw and title:
+        m = re.search(
+            r"(统一练习\s*[一二三四五六1-6]*|期中考试|期末考试|期中|期末|月考)",
+            unicodedata.normalize("NFKC", str(title)),
+        )
+        if m:
+            raw = re.sub(r"\s+", "", m.group(1))
+    if not raw:
+        return None, seq
+    if raw.startswith("统一练习") or raw == "unified_practice":
+        suffix = raw.removeprefix("统一练习").strip()
+        if seq is None and suffix:
+            seq = _SEQ_NUM_MAP.get(suffix)
+        if seq is None and title:
+            m_seq = re.search(r"统一练习\s*([一二三四五六1-6])", unicodedata.normalize("NFKC", str(title)))
+            if m_seq:
+                seq = _SEQ_NUM_MAP.get(m_seq.group(1))
+        return "unified_practice", seq
+    norm = normalize_exam_type(raw, raw)
+    return norm, seq
+
+
+def build_canonical_exam_key(
+    *,
+    academic_year: Any = None,
+    grade: Any = None,
+    exam_type: str | None = None,
+    exam_sequence: int | None = None,
+    title: str | None = None,
+    exam_date: Any = None,
+) -> str | None:
+    """构造单场考试全局规范唯一键；关键维度不足时返回 None 以防误合并。"""
+    year = normalize_academic_year(academic_year)
+    norm_grade = normalize_grade(grade)
+    ctype, seq = canonical_report_type_and_seq(exam_type, exam_sequence, title)
+    if not (year and norm_grade and ctype):
+        return None
+    if ctype == "monthly":
+        date_str = normalize_exam_date(exam_date)
+        return f"{year}|{norm_grade}|monthly|{date_str[:7]}" if date_str and len(date_str) >= 7 else None
+    term = extract_term_window(title, exam_date)
+    if ctype == "unified_practice":
+        if seq is not None and term:
+            return f"{year}|{norm_grade}|unified_practice|{term}|{seq}"
+        return None
+    if ctype in {"midterm", "final"}:
+        return f"{year}|{norm_grade}|{ctype}|{term}" if term else None
+    date_str = normalize_exam_date(exam_date)
+    return f"{year}|{norm_grade}|{ctype}|{date_str[:7]}" if date_str and len(date_str) >= 7 else None
+
+
+def reports_represent_same_exam(
+    *,
+    a_ext_id: str | None,
+    a_year: Any,
+    a_grade: Any,
+    a_type: str | None,
+    a_seq: int | None,
+    a_title: str | None,
+    a_date: Any,
+    a_linked_ids: Iterable[str] = (),
+    b: Any,
+) -> bool:
+    """读写共用的同场报告等价判定（单一真源）。"""
+    b_ext = getattr(b, "external_exam_id", None)
+    if a_ext_id and b_ext:
+        return a_ext_id == b_ext
+    key_a = build_canonical_exam_key(
+        academic_year=a_year,
+        grade=a_grade,
+        exam_type=a_type,
+        exam_sequence=a_seq,
+        title=a_title,
+        exam_date=a_date,
+    )
+    key_b = getattr(b, "canonical_exam_key", None) or build_canonical_exam_key(
+        academic_year=getattr(b, "academic_year", None),
+        grade=getattr(b, "grade", None),
+        exam_type=getattr(b, "exam_type", None),
+        exam_sequence=getattr(b, "exam_sequence", None),
+        title=getattr(b, "title", None),
+        exam_date=getattr(b, "exam_date", None),
+    )
+    if key_a and key_b:
+        return key_a == key_b
+
+    date_a = normalize_exam_date(a_date)
+    date_b = normalize_exam_date(getattr(b, "exam_date", None))
+    if date_a and date_b and date_a[:7] != date_b[:7]:
+        return False
+
+    year_a = normalize_academic_year(a_year)
+    year_b = normalize_academic_year(getattr(b, "academic_year", None))
+    grade_a = normalize_grade(a_grade)
+    grade_b = normalize_grade(getattr(b, "grade", None))
+    if grade_a and grade_b and grade_a != grade_b:
+        return False
+
+    ctype_a, seq_a = canonical_report_type_and_seq(a_type, a_seq, a_title)
+    ctype_b, seq_b = canonical_report_type_and_seq(
+        getattr(b, "exam_type", None),
+        getattr(b, "exam_sequence", None),
+        getattr(b, "title", None),
+    )
+    if ctype_a and ctype_b and ctype_a != ctype_b:
+        return False
+
+    term_a = extract_term_window(a_title, date_a)
+    term_b = extract_term_window(getattr(b, "title", None), date_b)
+    if term_a and term_b and term_a != term_b:
+        return False
+
+    if year_a and year_b and year_a == year_b and ctype_a and ctype_b and ctype_a == ctype_b:
+        if ctype_a == "unified_practice" or seq_a is not None or seq_b is not None:
+            if seq_a == seq_b and seq_a is not None:
+                return True
+        elif term_a and term_b and term_a == term_b:
+            return True
+        elif grade_a and grade_b and grade_a == grade_b and not (date_a and date_b):
+            return True
+
+    linked_a = {str(x) for x in a_linked_ids if x}
+    linked_b = {
+        str(link.get("exam_id"))
+        for link in (getattr(b, "linked_exam_ids", None) or [])
+        if isinstance(link, dict) and link.get("exam_id")
+    }
+    if linked_a and linked_b and (linked_a & linked_b):
+        return True
+    return False

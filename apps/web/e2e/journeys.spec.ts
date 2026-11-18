@@ -1347,46 +1347,27 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
       }),
     }),
   )
-  let paperCollectCalled = false
-  await page.route('**/api/school-exams/pipeline/papers/paper-e2e-fail/collect', route => {
-    paperCollectCalled = true
+  let reportJobCalled = false
+  await page.route('**/api/school-exams/k12100-sync/report-jobs', route => {
+    reportJobCalled = true
     return route.fulfill({
       status: 202,
       contentType: 'application/json',
       body: JSON.stringify({
         job_id: 'job-e2e-429',
+        kind: 'report',
         state: 'queued',
         stage_message: '任务已入队。',
         created_at: '2026-11-15T00:00:00Z',
         updated_at: '2026-11-15T00:00:00Z',
-        exam_keyword: '虚构测试数据 十月月考',
+        exam_keyword: null,
         confirm_total_scores: false,
         error_code: null,
         error_message: null,
         result: null,
+        report_result: null,
       }),
     })
-  })
-  await page.route('**/api/school-exams/k12100-sync/jobs', route => {
-    if (route.request().method() === 'POST') {
-      return route.fulfill({
-        status: 202,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          job_id: 'job-e2e-429',
-          state: 'queued',
-          stage_message: '任务已入队。',
-          created_at: '2026-11-15T00:00:00Z',
-          updated_at: '2026-11-15T00:00:00Z',
-          exam_keyword: '虚构测试数据 十月月考',
-          confirm_total_scores: false,
-          error_code: null,
-          error_message: null,
-          result: null,
-        }),
-      })
-    }
-    return route.continue()
   })
   await page.route('**/api/school-exams/k12100-sync/jobs/job-e2e-429', route =>
     route.fulfill({
@@ -1394,15 +1375,17 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
       contentType: 'application/json',
       body: JSON.stringify({
         job_id: 'job-e2e-429',
+        kind: 'report',
         state: 'failed',
         stage_message: '检测到 HTTP 429，已立即熔断止损。',
         created_at: '2026-11-15T00:00:00Z',
         updated_at: '2026-11-15T00:00:01Z',
-        exam_keyword: '虚构测试数据 十月月考',
+        exam_keyword: null,
         confirm_total_scores: false,
         error_code: 'K12100_CIRCUIT_BREAKER',
         error_message: '检测到 HTTP 429，已立即熔断止损。',
         result: null,
+        report_result: null,
       }),
     }),
   )
@@ -1425,14 +1408,603 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
   await page.getByRole('tab', { name: /全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
-  await sync.getByRole('button', { name: /虚构测试数据_失败状态.docx/ }).click()
-  await sync.getByRole('button', { name: /获取信息/ }).click()
-  await expect(sync.getByRole('button', { name: '启动单场信息采集' })).toBeEnabled()
-  await sync.getByRole('button', { name: '启动单场信息采集' }).click()
+  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await expect(sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' })).toBeEnabled()
+  await sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' }).click()
   await expect(sync).toContainText('检测到 HTTP 429，已立即熔断止损', { timeout: 8000 })
-  expect(paperCollectCalled).toBe(true)
-  await expect(sync).not.toContainText('采集任务结束')
+  expect(reportJobCalled).toBe(true)
+  await expect(sync).not.toContainText('报告同步完成')
   await expect(sync).toContainText('已停止')
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
+
+test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已同步场次、新建与锁分冲突清晰呈现', async ({ page }) => {
+  const created = await page.request.post('/api/school-exams', {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    data: {
+      subject: 'math',
+      title: '虚构测试数据 · 报告同步核对',
+      exam_date: '2026-10-10',
+      earned_points: 88,
+      max_points: 100,
+      confirmed_by_user: false,
+      grade: '9',
+      exam_type: 'unified_practice',
+      academic_year: '2026-2027',
+    },
+  })
+  expect(created.status()).toBe(201)
+  const examId = ((await created.json()) as { id: string }).id
+
+  await page.route('**/api/school-exams/sync-center', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        source: {
+          environment: 'development',
+          directory: '/tmp/pageboy-test-home/development/school-exams/inbox',
+          directory_display: '$PAGEBOY_HOME/development/school-exams/inbox',
+          real_source_configured: false,
+          source_kind: 'local_inbox',
+          ready: true,
+          source_code: 'SOURCE_NOT_CONFIGURED',
+          message: '未配置真实授权学校试卷来源。',
+          supported_formats: ['PDF'],
+          max_file_bytes: 36700160,
+        },
+        latest_scan: null,
+        counts: { total: 0, needs_review: 0, matched: 0, imported: 0, rejected: 0 },
+        papers: [],
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/status', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        environment: 'development',
+        mode: 'host_direct',
+        can_run_local: true,
+        is_isolated: false,
+        browser_ready: true,
+        node_available: true,
+        playwright_available: true,
+        unavailable_code: null,
+        unavailable_reason: null,
+        credentials: { status: 'ready', username_masked: '25****86', deepseek_configured: true, deepseek_masked: 'sk-****', message: '已就绪' },
+        deepseek_configured: true,
+        active_job_id: null,
+        latest_job: null,
+        recommended_cli_command: 'uv run python scripts/k12100_sync.py collect --env development',
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/report-jobs', route =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        job_id: 'job-e2e-report-ok',
+        kind: 'report',
+        state: 'queued',
+        stage_message: '任务已创建，准备下载「总分」报告…',
+        created_at: '2026-11-18T00:00:00Z',
+        updated_at: '2026-11-18T00:00:00Z',
+        exam_keyword: null,
+        confirm_total_scores: false,
+        error_code: null,
+        error_message: null,
+        result: null,
+        report_result: null,
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/jobs/job-e2e-report-ok', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        job_id: 'job-e2e-report-ok',
+        kind: 'report',
+        state: 'completed',
+        stage_message: '报告同步完成：下载 1 份，新建 1 科、更新 0 科、补全 0 科，新增草稿 3 题。',
+        created_at: '2026-11-18T00:00:00Z',
+        updated_at: '2026-11-18T00:00:03Z',
+        exam_keyword: null,
+        confirm_total_scores: false,
+        error_code: null,
+        error_message: null,
+        result: null,
+        report_result: {
+          home_exams: [
+            {
+              external_exam_id: 'E-PREV',
+              exam_name: '虚构测试数据 九年级上期中',
+              exam_date: '2026-11-12',
+              grade: '九年级',
+              academic_year: '2026-2027',
+              exam_type: '期中',
+              already_synced: true,
+            },
+            {
+              external_exam_id: 'E-NEW',
+              exam_name: '虚构测试数据 统一练习一',
+              exam_date: '2026-10-10',
+              grade: '九年级',
+              academic_year: '2026-2027',
+              exam_type: '月考',
+              already_synced: false,
+            },
+          ],
+          reports: [],
+          subject_actions: [
+            {
+              subject: 'math',
+              subject_label: '数学',
+              action: 'created',
+              exam_id: examId,
+              exam_title: '虚构测试数据 · 报告同步核对',
+              exam_date: '2026-10-10',
+              earned_points: 88,
+              max_points: 100,
+              confirmed_by_user: false,
+              filled_fields: ['exam_date', 'grade'],
+              conflict_fields: [],
+              message: '已按 k12100 首页日期与报告身份新建待核对档案。',
+              report_id: 'rep-1',
+              report_title: '虚构测试数据 统一练习一',
+              external_exam_id: 'E-NEW',
+              report_exam_date: '2026-10-10',
+              academic_year: '2026-2027',
+              grade: '9',
+              exam_type: '统一练习一',
+            },
+            {
+              subject: 'english',
+              subject_label: '英语',
+              action: 'locked_conflict',
+              exam_id: examId,
+              exam_title: '虚构测试数据 · 英语锁定',
+              exam_date: '2026-10-10',
+              earned_points: 92,
+              max_points: 100,
+              confirmed_by_user: true,
+              filled_fields: [],
+              conflict_fields: [],
+              message: '已人工锁定总分 92/100，与报告 85/100 不同；按锁分红线保留原值。',
+              report_id: 'rep-1',
+              report_title: '虚构测试数据 统一练习一',
+              external_exam_id: 'E-NEW',
+              report_exam_date: '2026-10-10',
+              academic_year: '2026-2027',
+              grade: '9',
+              exam_type: '统一练习一',
+            },
+          ],
+          totals: {
+            home_exams: 2,
+            skipped_existing: 1,
+            downloaded: 1,
+            reports_registered: 1,
+            created_exams: 1,
+            updated_exams: 0,
+            filled_exams: 0,
+            unchanged_exams: 0,
+            locked_conflicts: 1,
+            identity_conflicts: 0,
+            awaiting_exam_date: 0,
+            ambiguous_exams: 0,
+            drafts_created: 3,
+            drafts_updated: 0,
+            auto_mapped: 1,
+            cards_created: 2,
+            cards_synced: 2,
+            failures: 0,
+          },
+          failures: [],
+          knowledge_evidence_created: 0,
+        },
+      }),
+    }),
+  )
+  await page.route(`**/api/school-exams/${examId}/ranks`, route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        exam_id: examId,
+        ranks: [],
+        missing_scopes: ['class', 'grade', 'school', 'region'],
+        disclaimer: '本人排名仅为平台来源快照，不进入知识点能力画像，也不预测中考成绩。',
+      }),
+    }),
+  )
+
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+  await page.getByRole('tab', { name: /全科校考同步/ }).click()
+  const sync = page.getByRole('region', { name: '全科校考同步中心' })
+  await expect(sync).toBeVisible()
+  // 无需先在第 1/2 步选试卷，第 3 步应可直接点击
+  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' }).click()
+  await expect(sync).toContainText('本次报告同步结果', { timeout: 8000 })
+  await expect(sync).toContainText('已同步跳过')
+  await expect(sync).toContainText('新建待核对')
+  await expect(sync).toContainText('锁分冲突')
+
+  const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+  expect(noOverflow).toBe(true)
+
+  await page.evaluate(() =>
+    Promise.allSettled(Array.from(document.getAnimations()).map(animation => animation.finished)),
+  )
+  const axe = await new AxeBuilder({ page })
+    .include('#exam-panel-sync')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(axe.violations).toEqual([])
+
+  await sync.getByRole('button', { name: '核对总分 →' }).first().click()
+  await expect(sync).toContainText('第四步 · 虚构测试数据 · 报告同步核对')
+  await expect(sync).toContainText('总分待核对')
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
+
+
+test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示且支持跨学科跳转', async ({ page }) => {
+  const mathRes = await page.request.post('/api/school-exams', {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    data: {
+      subject: 'math',
+      title: '虚构测试数据 · 九年级上期中',
+      exam_date: '2026-11-12',
+      earned_points: 88,
+      max_points: 100,
+      confirmed_by_user: false,
+      grade: '9',
+      exam_type: 'midterm',
+      academic_year: '2026-2027',
+    },
+  })
+  expect(mathRes.status()).toBe(201)
+  const mathExamId = ((await mathRes.json()) as { id: string }).id
+
+  const chiRes = await page.request.post('/api/school-exams', {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    data: {
+      subject: 'chinese',
+      title: '虚构测试数据 · 九年级上期中（语文）',
+      exam_date: '2026-11-12',
+      earned_points: 91,
+      max_points: 120,
+      confirmed_by_user: false,
+      grade: '9',
+      exam_type: 'midterm',
+      academic_year: '2026-2027',
+    },
+  })
+  expect(chiRes.status()).toBe(201)
+  const chiExamId = ((await chiRes.json()) as { id: string }).id
+
+  await page.route(`**/api/school-exams/${mathExamId}/ranks`, route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        exam_id: mathExamId,
+        class_highest: 98,
+        grade_highest: 100,
+        ranks: [
+          {
+            id: 'rk-e2e-cls',
+            subject_scope: 'math',
+            scope: 'class',
+            rank_value: 5,
+            participant_count: null,
+            percentile: null,
+            highest_score: 98,
+            source_name: 'k12100',
+            source_field: 'report.math.class_rank',
+            ownership_status: 'verified',
+            ownership_basis: 'k12100_total_report_pdf',
+            review_status: 'pending',
+            captured_at: '2026-11-18T00:00:00Z',
+            history_count: 1,
+          },
+          {
+            id: 'rk-e2e-grd',
+            subject_scope: 'math',
+            scope: 'grade',
+            rank_value: 42,
+            participant_count: 680,
+            percentile: null,
+            highest_score: 100,
+            source_name: 'k12100',
+            source_field: 'report.math.grade_rank',
+            ownership_status: 'verified',
+            ownership_basis: 'k12100_total_report_pdf',
+            review_status: 'pending',
+            captured_at: '2026-11-18T00:00:00Z',
+            history_count: 1,
+          },
+        ],
+        total_ranks: [],
+        report_total: {
+          report_total_score: 179,
+          report_total_max: 220,
+          total_class_rank: 8,
+          total_grade_rank: 120,
+          total_participants: 680,
+          total_class_highest: 205,
+          total_grade_highest: 216,
+        },
+        missing_scopes: ['school', 'region'],
+        disclaimer: '本人排名仅为平台来源快照，不进入知识点能力画像，也不预测中考成绩。',
+      }),
+    }),
+  )
+
+  await page.route('**/api/school-exams/sync-center', async route => {
+    const [mathStateRes, chiStateRes] = await Promise.all([
+      page.request.get(`/api/school-exams/${mathExamId}`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } }),
+      page.request.get(`/api/school-exams/${chiExamId}`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } }),
+    ])
+    const mathState = (await mathStateRes.json()) as { confirmed_by_user: boolean; earned_points: number }
+    const chiState = (await chiStateRes.json()) as { confirmed_by_user: boolean; earned_points: number }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        source: {
+          environment: 'development',
+          directory: '/tmp/pageboy-test-home/development/school-exams/inbox',
+          directory_display: '$PAGEBOY_HOME/development/school-exams/inbox',
+          real_source_configured: false,
+          source_kind: 'local_inbox',
+          ready: true,
+          source_code: 'SOURCE_NOT_CONFIGURED',
+          message: '未配置真实授权学校试卷来源。',
+          supported_formats: ['PDF'],
+          max_file_bytes: 36700160,
+        },
+        latest_scan: null,
+        counts: { total: 0, needs_review: 0, matched: 0, imported: 0, rejected: 0 },
+        papers: [],
+        synced_reports: [
+          {
+            id: 'rep-persisted-1',
+            title: '虚构测试数据 · 九年级上期中分析报告册',
+            external_exam_id: 'E-PERSIST-1',
+            exam_date: '2026-11-12',
+            academic_year: '2026-2027',
+            grade: '9',
+            exam_type: 'midterm',
+            status: 'matched',
+            match_state: 'MATCHED',
+            report_total_score: 179,
+            report_total_max: 220,
+            total_class_rank: 8,
+            total_grade_rank: 120,
+            total_participants: 680,
+            total_class_highest: 205,
+            total_grade_highest: 216,
+            pages: 12,
+            updated_at: '2026-11-18T00:00:00Z',
+            completeness: { complete: true, missing: [] },
+            exams: [
+              {
+                exam_id: mathExamId,
+                subject: 'math',
+                subject_label: '数学',
+                exam_title: '虚构测试数据 · 九年级上期中',
+                exam_date: '2026-11-12',
+                earned_points: mathState.earned_points,
+                max_points: 100,
+                confirmed_by_user: mathState.confirmed_by_user,
+                draft_count: 14,
+                confirmed_item_count: 0,
+                attachment_count: 2,
+                class_rank: 5,
+                grade_rank: 42,
+                participants: 680,
+                class_highest: 98,
+                grade_highest: 100,
+                rank_synced_count: 2,
+              },
+              {
+                exam_id: chiExamId,
+                subject: 'chinese',
+                subject_label: '语文',
+                exam_title: '虚构测试数据 · 九年级上期中（语文）',
+                exam_date: '2026-11-12',
+                earned_points: chiState.earned_points,
+                max_points: 120,
+                confirmed_by_user: chiState.confirmed_by_user,
+                draft_count: 0,
+                confirmed_item_count: 18,
+                attachment_count: 2,
+                class_rank: 7,
+                grade_rank: 85,
+                participants: 680,
+                class_highest: 108,
+                grade_highest: 115,
+                rank_synced_count: 2,
+              },
+            ],
+            unlinked_subjects: [],
+          },
+        ],
+        sync_readiness: {
+          total_reports: 1,
+          complete_reports: 1,
+          incomplete_reports: 0,
+          all_complete: true,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/school-exams/k12100-sync/status', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        environment: 'development',
+        mode: 'host_direct',
+        can_run_local: true,
+        is_isolated: false,
+        browser_ready: true,
+        node_available: true,
+        playwright_available: true,
+        unavailable_code: null,
+        unavailable_reason: null,
+        credentials: { status: 'ready', username_masked: '25****86', deepseek_configured: true, deepseek_masked: 'sk-****', message: '已就绪' },
+        deepseek_configured: true,
+        active_job_id: null,
+        latest_job: {
+          job_id: 'job-e2e-failed-before',
+          kind: 'report',
+          state: 'failed',
+          stage_message: '上次抓取中途退出',
+          created_at: '2026-11-18T00:00:00Z',
+          updated_at: '2026-11-18T00:00:00Z',
+          exam_keyword: null,
+          confirm_total_scores: false,
+          error_code: 'K12100_BROWSER_FAILED',
+          error_message: '浏览器下载分析报告中断，可重新点击同步继续下载剩余场次。',
+          result: null,
+          report_result: null,
+        },
+        recommended_cli_command: 'uv run python scripts/k12100_sync.py collect --env development',
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/report-jobs', route =>
+    route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        job_id: 'job-e2e-skip-all',
+        kind: 'report',
+        state: 'queued',
+        stage_message: '任务已创建，准备检查首页已同步场次…',
+        created_at: '2026-11-18T00:01:00Z',
+        updated_at: '2026-11-18T00:01:00Z',
+        exam_keyword: null,
+        confirm_total_scores: false,
+        error_code: null,
+        error_message: null,
+        result: null,
+        report_result: null,
+      }),
+    }),
+  )
+  await page.route('**/api/school-exams/k12100-sync/jobs/job-e2e-skip-all', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        job_id: 'job-e2e-skip-all',
+        kind: 'report',
+        state: 'completed',
+        stage_message: '首页共 1 场考试，全部已有同步报告，本次无需重复下载。',
+        created_at: '2026-11-18T00:01:00Z',
+        updated_at: '2026-11-18T00:01:03Z',
+        exam_keyword: null,
+        confirm_total_scores: false,
+        error_code: null,
+        error_message: null,
+        result: null,
+        report_result: {
+          home_exams: [
+            {
+              external_exam_id: 'E-PERSIST-1',
+              exam_name: '虚构测试数据 · 九年级上期中',
+              exam_date: '2026-11-12',
+              grade: '九年级',
+              academic_year: '2026-2027',
+              exam_type: '期中',
+              already_synced: true,
+            },
+          ],
+          reports: [],
+          subject_actions: [],
+          totals: {
+            home_exams: 1,
+            skipped_existing: 1,
+            downloaded: 0,
+            reports_registered: 0,
+            created_exams: 0,
+            updated_exams: 0,
+            filled_exams: 0,
+            unchanged_exams: 0,
+            locked_conflicts: 0,
+            identity_conflicts: 0,
+            awaiting_exam_date: 0,
+            ambiguous_exams: 0,
+            drafts_created: 0,
+            drafts_updated: 0,
+            auto_mapped: 0,
+            cards_created: 0,
+            cards_synced: 0,
+            failures: 0,
+          },
+          failures: [],
+          knowledge_evidence_created: 0,
+        },
+      }),
+    }),
+  )
+
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+  await page.getByRole('tab', { name: /全科校考同步/ }).click()
+  const sync = page.getByRole('region', { name: '全科校考同步中心' })
+  await expect(sync).toBeVisible()
+  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+
+  // 前期同步数据在任务曾经失败时仍从数据库持久展示，并展示同步前完整性预检与全科/各科排名+最高分
+  await expect(sync).toContainText('已全部完整同步')
+  const persistedPanel = sync.getByLabel('已同步的 k12100 报告与档案')
+  await expect(persistedPanel).toContainText('虚构测试数据 · 九年级上期中分析报告册')
+  await expect(persistedPanel).toContainText('总分班最高：205')
+  await expect(persistedPanel).toContainText('总分年最高：216')
+  await expect(persistedPanel).toContainText('班排 #5 · 年排 #42 · 班最高 98 · 年最高 100')
+  await expect(persistedPanel).toContainText('数学')
+  await expect(persistedPanel).toContainText('语文')
+
+  // 二次点击同步且全部跳过（downloaded=0）后，前期同步数据继续保留
+  await sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' }).click()
+  await expect(sync).toContainText('均已有同步报告并自动跳过下载', { timeout: 8000 })
+  await expect(persistedPanel).toContainText('虚构测试数据 · 九年级上期中分析报告册')
+  await expect(persistedPanel).toContainText('草稿 14 / 已确认 0 题 · 附件 2 份')
+
+  // 确认数学总分后，仅数学更新（不连带确认语文）
+  await persistedPanel.getByRole('button', { name: '核对总分 →' }).first().click()
+  await sync.getByLabel('我已对照成绩单人工核对').check()
+  await sync.getByRole('button', { name: '确认并锁定总分' }).click()
+  await expect(sync).toContainText('总分已人工锁定', { timeout: 8000 })
+  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await expect(persistedPanel.locator('.exam-sync-persisted-subject').nth(0)).toContainText('已核对')
+  await expect(persistedPanel.locator('.exam-sync-persisted-subject').nth(1)).toContainText('待核对')
+
+  const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+  expect(noOverflow).toBe(true)
+
+  await page.evaluate(() =>
+    Promise.allSettled(Array.from(document.getAnimations()).map(animation => animation.finished)),
+  )
+  const axe = await new AxeBuilder({ page })
+    .include('#exam-panel-sync')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(axe.violations).toEqual([])
+
+  // 从数学视角跨科点击语文“打开档案”，应自动切换顶部学科并打开该语文档案
+  await persistedPanel.getByRole('button', { name: '打开档案' }).nth(1).click()
+  await expect(page.getByText('虚构测试数据 · 九年级上期中（语文）').first()).toBeVisible({ timeout: 8000 })
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 })
 
@@ -1612,7 +2184,7 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /虚构测试数据_离线回退.docx/ }).click()
-  await sync.getByRole('button', { name: /^获取信息/ }).click()
+  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
   await expect(sync).toContainText('本机直连不可用')
   await sync.getByRole('button', { name: '高级设置与离线包' }).click()
   await sync.locator('input[type="file"]').setInputFiles({

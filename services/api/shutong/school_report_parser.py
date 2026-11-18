@@ -18,6 +18,7 @@ from typing import Any
 
 from . import private_files as files
 from . import school_report_ocr as report_ocr
+from .school_exam_matcher import normalize_grade
 
 REPORT_SIGNAL = "分析报告册"
 _REPORT_HEADERS = ("总分成绩分析", "成绩单", "小题分析表", "答题卡")
@@ -98,6 +99,8 @@ class ReportDocument:
     total_class_rank: int | None = None
     total_grade_rank: int | None = None
     total_participants: int | None = None
+    total_class_highest: float | None = None
+    total_grade_highest: float | None = None
     listed_subject_score: float | None = None
     listed_subject_max: float | None = None
     scope_status: str = "NEEDS_REVIEW"
@@ -148,10 +151,7 @@ def _subject_code(name: str) -> str | None:
 
 
 def _grade_code(value: str | None) -> str | None:
-    if not value:
-        return None
-    mapping = {"初一": "7", "初二": "8", "初三": "9", "七年级": "7", "八年级": "8", "九年级": "9"}
-    return mapping.get(value) or (value[:2] if value[:1].isdigit() else None)
+    return normalize_grade(value)
 
 
 def _academic_year(text: str) -> str | None:
@@ -220,7 +220,38 @@ def _parse_totals(pages: list[tuple[int, str]]) -> tuple[dict[str, ReportSubject
         lines = [line for line in text.splitlines() if line.strip()]
         header = " ".join(lines[:20])
         has_participants = "实考人数" in header or "REAR" in header
-        for line in lines:
+        in_grade_highest_cont = False
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "成绩单":
+                block_hdr = " ".join(lines[idx : idx + 3])
+                in_grade_highest_cont = "年级最高" in block_hdr and "满分" not in block_hdr
+                if not in_grade_highest_cont and ("实考人数" in block_hdr or "REAR" in block_hdr):
+                    has_participants = True
+                continue
+            if stripped.startswith("科目"):
+                in_grade_highest_cont = "年级最高" in line and "满分" not in line
+                continue
+
+            if in_grade_highest_cont:
+                if "总分" in line and _subject_code(line) is None:
+                    values = _row_values(line)
+                    total_max = float((total.get("values") or [1000])[0])
+                    if values and 0 < values[0] <= total_max and total.get("total_grade_highest") is None:
+                        total["total_grade_highest"] = values[0]
+                    continue
+                row = _subject_row(line)
+                if row is not None:
+                    code, values = row
+                    existing = subjects.get(code)
+                    if existing is not None and values:
+                        max_lim = existing.max_score or 200.0
+                        if existing.grade_highest is None and 0 < values[0] <= max_lim:
+                            existing.grade_highest = values[0]
+                        if existing.score_rate is None and len(values) > 1 and "%" in line and 0 <= values[1] <= 100:
+                            existing.score_rate = values[1]
+                    continue
+
             if _subject_code(line) is None:
                 values = _row_values(line)
                 if len(values) >= 6 and 200 < values[0] <= 1000 and values[1] <= values[0] and not total.get("values"):
@@ -243,11 +274,13 @@ def _parse_totals(pages: list[tuple[int, str]]) -> tuple[dict[str, ReportSubject
             max_score, score = values[0], values[1]
             class_rank = int(values[2]) if len(values) > 2 else None
             grade_rank = int(values[3]) if len(values) > 3 else None
-            has_row_participants = has_participants or len(values) >= 7
+            has_row_participants = has_participants or len(values) >= 7 or (len(values) >= 5 and values[4] > max_score)
             participants = int(values[4]) if has_row_participants and len(values) > 4 else None
             offset = 1 if has_row_participants else 0
-            class_highest = values[4 + offset] if len(values) > 4 + offset else None
-            grade_highest = values[5 + offset] if len(values) > 5 + offset else None
+            raw_cls_hi = values[4 + offset] if len(values) > 4 + offset else None
+            raw_grd_hi = values[5 + offset] if len(values) > 5 + offset else None
+            class_highest = raw_cls_hi if raw_cls_hi is not None and raw_cls_hi <= max_score else None
+            grade_highest = raw_grd_hi if raw_grd_hi is not None and raw_grd_hi <= max_score else None
             subjects[code] = ReportSubject(
                 subject=code,
                 name=next(alias for c, aliases in _SUBJECTS if c == code for alias in aliases if alias in line),
@@ -263,12 +296,23 @@ def _parse_totals(pages: list[tuple[int, str]]) -> tuple[dict[str, ReportSubject
     total_values = total.get("values", [])
     total_data: dict[str, Any] = {"page": total.get("page")}
     if len(total_values) >= 2:
+        total_max = total_values[0]
+        total_has_part = bool(
+            total.get("has_participants")
+            or len(total_values) >= 7
+            or (len(total_values) >= 5 and total_values[4] > total_max)
+        )
+        t_offset = 1 if total_has_part else 0
+        raw_t_cls = total_values[4 + t_offset] if len(total_values) > 4 + t_offset else None
+        raw_t_grd = total_values[5 + t_offset] if len(total_values) > 5 + t_offset else total.get("total_grade_highest")
         total_data.update(
-            report_total_max=total_values[0],
+            report_total_max=total_max,
             report_total_score=total_values[1],
             total_class_rank=int(total_values[2]) if len(total_values) > 2 else None,
             total_grade_rank=int(total_values[3]) if len(total_values) > 3 else None,
-            total_participants=int(total_values[4]) if total.get("has_participants") and len(total_values) > 4 else None,
+            total_participants=int(total_values[4]) if total_has_part and len(total_values) > 4 else None,
+            total_class_highest=raw_t_cls if raw_t_cls is not None and raw_t_cls <= total_max else None,
+            total_grade_highest=raw_t_grd if raw_t_grd is not None and raw_t_grd <= total_max else None,
         )
     else:
         warnings.append("未识别到总分成绩行")
@@ -371,7 +415,7 @@ def _question_rows(page_number: int, text: str) -> list[ReportQuestion]:
 def _score_row_values(text: str) -> list[float]:
     lines = [line for line in text.splitlines() if line.strip()]
     for index, line in enumerate(lines):
-        if line.strip() != "成绩单":
+        if re.sub(r"\s+", "", line) != "成绩单":
             continue
         for candidate in lines[index + 1 : index + 4]:
             values = _row_values(candidate)
@@ -404,18 +448,24 @@ def _page_subjects(pages: list[tuple[int, str]], subjects: dict[str, ReportSubje
     return page_subject
 
 
-def _section_score_override(pages: list[tuple[int, str]], subjects: dict[str, ReportSubject]) -> None:
+def _section_score_override(
+    pages: list[tuple[int, str]],
+    subjects: dict[str, ReportSubject],
+    *,
+    fill_missing_only: bool = False,
+) -> None:
     """用学科页成绩单覆盖第 2 页列错位的排名/实考人数/最高分。"""
     for page_number, text in pages:
         # 第 2 页汇总表也有“成绩单”与总分/学科行，不能让汇总表覆盖学科页排名。
-        if "小题分析表" not in text:
+        compact = re.sub(r"[ \t]+", "", text)
+        if "小题分析表" not in compact:
             continue
         code = None
-        headings = [_subject_code(match.group(1)) for match in _SUBJECT_HEADING.finditer(text)]
+        headings = [_subject_code(match.group(1)) for match in _SUBJECT_HEADING.finditer(compact)]
         headings = [item for item in headings if item]
         if headings:
             code = headings[0]
-        if code is None and "成绩单" in text:
+        if code is None and "成绩单" in compact:
             values = _score_row_values(text)
             if values:
                 matches = [key for key, item in subjects.items() if item.score is not None and abs(item.score - values[0]) < 0.01]
@@ -427,17 +477,27 @@ def _section_score_override(pages: list[tuple[int, str]], subjects: dict[str, Re
         if len(values) < 5:
             continue
         subject = subjects[code]
-        subject.score = values[0]
-        subject.class_rank = int(values[1]) if len(values) > 1 else subject.class_rank
-        subject.grade_rank = int(values[2]) if len(values) > 2 else subject.grade_rank
+        if subject.score is not None and abs(subject.score - values[0]) > 0.01:
+            continue
+        max_lim = subject.max_score or 200.0
+        if not fill_missing_only or subject.class_rank is None:
+            subject.class_rank = int(values[1]) if len(values) > 1 else subject.class_rank
+        if not fill_missing_only or subject.grade_rank is None:
+            subject.grade_rank = int(values[2]) if len(values) > 2 else subject.grade_rank
         if len(values) >= 7:
-            subject.participants = int(values[3])
-            subject.score_rate = values[4]
-            subject.class_highest = values[5]
-            subject.grade_highest = values[6]
+            if (not fill_missing_only or subject.participants is None) and values[3] > 0:
+                subject.participants = int(values[3])
+            if (not fill_missing_only or subject.score_rate is None) and 0 <= values[4] <= 100:
+                subject.score_rate = values[4]
+            if (not fill_missing_only or subject.class_highest is None) and values[5] <= max_lim:
+                subject.class_highest = values[5]
+            if (not fill_missing_only or subject.grade_highest is None) and values[6] <= max_lim:
+                subject.grade_highest = values[6]
         else:
-            subject.class_highest = values[3] if len(values) > 3 else subject.class_highest
-            subject.grade_highest = values[4] if len(values) > 4 else subject.grade_highest
+            if len(values) > 3 and (not fill_missing_only or subject.class_highest is None) and values[3] <= max_lim:
+                subject.class_highest = values[3]
+            if len(values) > 4 and (not fill_missing_only or subject.grade_highest is None) and values[4] <= max_lim:
+                subject.grade_highest = values[4]
         subject.page = page_number
 
 
@@ -511,6 +571,8 @@ def parse_report_text(text: str, *, filename: str = "", digest: str = "") -> Rep
         total_class_rank=total_data.get("total_class_rank"),
         total_grade_rank=total_data.get("total_grade_rank"),
         total_participants=total_data.get("total_participants"),
+        total_class_highest=total_data.get("total_class_highest"),
+        total_grade_highest=total_data.get("total_grade_highest"),
         listed_subject_score=listed_score,
         listed_subject_max=listed_max,
         scope_status=scope,
@@ -604,6 +666,11 @@ def parse_report_pdf(data: bytes, *, filename: str = "", digest: str = "") -> Re
         pages, page_count = report_ocr.ocr_pdf(data)
         doc.pages = page_count
         subject_map = {item.subject: item for item in doc.subjects}
+        ocr_tuples = [
+            (p["page"], sanitize_report_text("\n".join(line["text"] for line in p["lines"])))
+            for p in pages
+        ]
+        _section_score_override(ocr_tuples, subject_map, fill_missing_only=True)
         page_subject = _page_subjects(split_pages(text), subject_map)
         wanted = {number for number in question_page_numbers}
         page_bodies = {number: body for number, body in split_pages(text)}

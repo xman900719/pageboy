@@ -698,6 +698,13 @@ class K12100ImportBundleIn(BaseModel):
     use_ai: bool = True
 
 
+class K12100ReportJobStartIn(BaseModel):
+    """启动宿主机 k12100「总分」分析报告自动下载与考试档案同步任务。"""
+
+    max_exams: int = Field(default=3, ge=1, le=3)
+    headless: bool = False
+
+
 class SchoolExamReportConfirmIn(BaseModel):
     confirmed: bool = False
 

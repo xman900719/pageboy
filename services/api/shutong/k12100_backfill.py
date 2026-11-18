@@ -1518,6 +1518,7 @@ def _collect_with_browser(
 def _snapshot_job(job: dict[str, Any]) -> dict[str, Any]:
     return {
         "job_id": job["job_id"],
+        "kind": job.get("kind", "legacy_collect"),
         "state": job["state"],
         "stage_message": job["stage_message"],
         "created_at": job["created_at"],
@@ -1527,6 +1528,7 @@ def _snapshot_job(job: dict[str, Any]) -> dict[str, Any]:
         "error_code": job.get("error_code"),
         "error_message": job.get("error_message"),
         "result": job.get("result"),
+        "report_result": job.get("report_result"),
     }
 
 
@@ -1536,6 +1538,90 @@ def _update_job(job_id: str, **updates: Any) -> None:
         if job is not None:
             job.update(updates)
             job["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def launch_k12100_job(
+    db: Session,
+    *,
+    kind: str,
+    initial_stage_message: str,
+    extra_fields: dict[str, Any] | None,
+    worker_fn: Callable[[str, Path, dict[str, str], sessionmaker[Session]], None],
+) -> dict[str, Any]:
+    """宿主机环境下加锁启动单实例后台 k12100 任务（与旧任务互斥，禁止并发）。"""
+    global _ACTIVE_JOB_ID
+
+    cfg_dir = resolve_k12100_config_dir()
+    runtime = get_k12100_runtime_status(cfg_dir)
+    if not runtime["can_run_local"]:
+        detail_code = runtime["unavailable_code"] or "K12100_LOCAL_RUNNER_UNAVAILABLE"
+        raise HTTPException(409, detail=detail_code)
+
+    creds = parse_secure_env_file(cfg_dir / "k12100.env")
+    engine = db.get_bind()
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    with _JOB_LOCK:
+        if _ACTIVE_JOB_ID is not None:
+            active_job = _JOBS.get(_ACTIVE_JOB_ID)
+            if active_job and active_job["state"] in {"queued", "collecting", "backfilling"}:
+                raise HTTPException(409, detail="K12100_SYNC_ALREADY_RUNNING")
+
+        job_id = str(uuid4())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        job_record: dict[str, Any] = {
+            "job_id": job_id,
+            "kind": kind,
+            "state": "queued",
+            "stage_message": initial_stage_message,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "exam_keyword": None,
+            "confirm_total_scores": False,
+            "error_code": None,
+            "error_message": None,
+            "result": None,
+            "report_result": None,
+            **(extra_fields or {}),
+        }
+        _JOBS[job_id] = job_record
+        _JOB_ORDER.append(job_id)
+        while len(_JOB_ORDER) > _MAX_RETAINED_JOBS:
+            evict_id = _JOB_ORDER.pop(0)
+            _JOBS.pop(evict_id, None)
+        _ACTIVE_JOB_ID = job_id
+        initial_snapshot = _snapshot_job(job_record)
+
+    def _run() -> None:
+        global _ACTIVE_JOB_ID
+        try:
+            worker_fn(job_id, cfg_dir, creds, session_factory)
+        except Exception as exc:
+            if isinstance(exc, HTTPException):
+                err_code = str(exc.detail or "K12100_SYNC_FAILED")
+                err_msg = f"同步中止：{err_code}"
+            else:
+                raw_msg = str(exc)
+                err_code, _, rest = raw_msg.partition(":")
+                if err_code.startswith("K12100_") and rest:
+                    err_msg = rest.strip()
+                else:
+                    err_code = "K12100_SYNC_FAILED"
+                    err_msg = raw_msg[:240] or "后台同步执行失败。"
+            _update_job(
+                job_id,
+                state="failed",
+                stage_message=err_msg,
+                error_code=err_code,
+                error_message=err_msg,
+            )
+        finally:
+            with _JOB_LOCK:
+                if _ACTIVE_JOB_ID == job_id:
+                    _ACTIVE_JOB_ID = None
+
+    threading.Thread(target=_run, name=f"k12100-{kind}-{job_id[:8]}", daemon=True).start()
+    return initial_snapshot
 
 
 def get_k12100_runtime_status(config_dir: Path | str | None = None) -> dict[str, Any]:
@@ -1611,114 +1697,58 @@ def start_k12100_sync_job(
     headless: bool = True,
 ) -> dict[str, Any]:
     """宿主机环境下加锁启动单实例后台 k12100 全科采集与补全任务（禁止并发）。"""
-    global _ACTIVE_JOB_ID
 
-    cfg_dir = resolve_k12100_config_dir()
-    runtime = get_k12100_runtime_status(cfg_dir)
-    if not runtime["can_run_local"]:
-        detail_code = runtime["unavailable_code"] or "K12100_LOCAL_RUNNER_UNAVAILABLE"
-        raise HTTPException(409, detail=detail_code)
+    def _worker(job_id: str, cfg_dir: Path, creds: dict[str, str], session_factory: sessionmaker[Session]) -> None:
+        _update_job(
+            job_id,
+            state="collecting",
+            stage_message="正在拟人化复用持久化会话抓取 k12100 各科成绩、明细与答题卡…",
+        )
+        collected = _collect_with_browser(
+            config_dir=cfg_dir,
+            creds=creds,
+            exam_keyword=exam_keyword,
+            max_exams=clamp_max_exams(max_exams),
+            fetch_card_images=upload_missing_cards,
+            headless=headless,
+        )
+        _update_job(
+            job_id,
+            state="backfilling",
+            stage_message="已取得脱敏全科快照，正在对齐校考场次、抽取原卷题干并生成 ocr_draft 草稿…",
+        )
+        with session_factory() as worker_db:
+            result = apply_k12100_bundle(
+                worker_db,
+                owner=owner,
+                raw_bundle=collected,
+                resolve_knowledge_fn=resolve_knowledge_fn,
+                persist_drafts_fn=persist_drafts_fn,
+                save_paper_fn=save_paper_fn,
+                exam_keyword=exam_keyword,
+                target_exam_date=target_exam_date,
+                series_title_prefix=series_title_prefix,
+                max_exams=max_exams,
+                confirm_total_scores=confirm_total_scores,
+                extract_existing_pdfs=extract_existing_pdfs,
+                upload_missing_cards=upload_missing_cards,
+                replace_unconfirmed_drafts=replace_unconfirmed_drafts,
+                use_ai=use_ai,
+            )
+        _update_job(
+            job_id,
+            state="completed",
+            stage_message="全科补全完成，逐题明细已全部以待人工校对草稿入库。",
+            result=result,
+        )
 
-    creds = parse_secure_env_file(cfg_dir / "k12100.env")
-    engine = db.get_bind()
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-
-    with _JOB_LOCK:
-        if _ACTIVE_JOB_ID is not None:
-            active_job = _JOBS.get(_ACTIVE_JOB_ID)
-            if active_job and active_job["state"] in {"queued", "collecting", "backfilling"}:
-                raise HTTPException(409, detail="K12100_SYNC_ALREADY_RUNNING")
-
-        job_id = str(uuid4())
-        now_iso = datetime.now(timezone.utc).isoformat()
-        job_record: dict[str, Any] = {
-            "job_id": job_id,
-            "state": "queued",
-            "stage_message": "任务已创建，准备启动宿主机持久化浏览器采集…",
-            "created_at": now_iso,
-            "updated_at": now_iso,
+    return launch_k12100_job(
+        db,
+        kind="legacy_collect",
+        initial_stage_message="任务已创建，准备启动宿主机持久化浏览器采集…",
+        extra_fields={
             "exam_keyword": exam_keyword,
             "confirm_total_scores": confirm_total_scores,
-            "error_code": None,
-            "error_message": None,
-            "result": None,
-        }
-        _JOBS[job_id] = job_record
-        _JOB_ORDER.append(job_id)
-        while len(_JOB_ORDER) > _MAX_RETAINED_JOBS:
-            evict_id = _JOB_ORDER.pop(0)
-            _JOBS.pop(evict_id, None)
-        _ACTIVE_JOB_ID = job_id
-        initial_snapshot = _snapshot_job(job_record)
-
-    def _worker() -> None:
-        global _ACTIVE_JOB_ID
-        try:
-            _update_job(
-                job_id,
-                state="collecting",
-                stage_message="正在拟人化复用持久化会话抓取 k12100 各科成绩、明细与答题卡…",
-            )
-            collected = _collect_with_browser(
-                config_dir=cfg_dir,
-                creds=creds,
-                exam_keyword=exam_keyword,
-                max_exams=clamp_max_exams(max_exams),
-                fetch_card_images=upload_missing_cards,
-                headless=headless,
-            )
-            _update_job(
-                job_id,
-                state="backfilling",
-                stage_message="已取得脱敏全科快照，正在对齐校考场次、抽取原卷题干并生成 ocr_draft 草稿…",
-            )
-            with session_factory() as worker_db:
-                result = apply_k12100_bundle(
-                    worker_db,
-                    owner=owner,
-                    raw_bundle=collected,
-                    resolve_knowledge_fn=resolve_knowledge_fn,
-                    persist_drafts_fn=persist_drafts_fn,
-                    save_paper_fn=save_paper_fn,
-                    exam_keyword=exam_keyword,
-                    target_exam_date=target_exam_date,
-                    series_title_prefix=series_title_prefix,
-                    max_exams=max_exams,
-                    confirm_total_scores=confirm_total_scores,
-                    extract_existing_pdfs=extract_existing_pdfs,
-                    upload_missing_cards=upload_missing_cards,
-                    replace_unconfirmed_drafts=replace_unconfirmed_drafts,
-                    use_ai=use_ai,
-                )
-            _update_job(
-                job_id,
-                state="completed",
-                stage_message="全科补全完成，逐题明细已全部以待人工校对草稿入库。",
-                result=result,
-            )
-        except Exception as exc:
-            if isinstance(exc, HTTPException):
-                err_code = str(exc.detail or "K12100_SYNC_FAILED")
-                err_msg = f"同步中止：{err_code}"
-            else:
-                raw_msg = str(exc)
-                err_code, _, rest = raw_msg.partition(":")
-                if err_code.startswith("K12100_") and rest:
-                    err_msg = rest.strip()
-                else:
-                    err_code = "K12100_SYNC_FAILED"
-                    err_msg = raw_msg[:240] or "后台同步执行失败。"
-            _update_job(
-                job_id,
-                state="failed",
-                stage_message=err_msg,
-                error_code=err_code,
-                error_message=err_msg,
-            )
-        finally:
-            with _JOB_LOCK:
-                if _ACTIVE_JOB_ID == job_id:
-                    _ACTIVE_JOB_ID = None
-
-    threading.Thread(target=_worker, name=f"k12100-sync-{job_id[:8]}", daemon=True).start()
-    return initial_snapshot
+        },
+        worker_fn=_worker,
+    )

@@ -412,6 +412,21 @@ components:
       - questions
       title: ImportConfirmationIn
       type: object
+    K12100ReportJobStartIn:
+      description: 启动宿主机 k12100「总分」分析报告自动下载与考试档案同步任务。
+      properties:
+        headless:
+          default: false
+          title: Headless
+          type: boolean
+        max_exams:
+          default: 3
+          maximum: 3.0
+          minimum: 1.0
+          title: Max Exams
+          type: integer
+      title: K12100ReportJobStartIn
+      type: object
     K12100SyncJobStartIn:
       description: 手动发起宿主机 k12100.com 全科采集补全任务的请求参数。
       properties:
@@ -4652,6 +4667,32 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Add School Exam
+  /api/school-exams/k12100-sync/hydrate-local:
+    post:
+      description: 不联网 k12100：无损合并历史重复报告并从本地已存 PDF 补全排名、班级/年级最高分及缺失答题卡。
+      operationId: hydrate_k12100_local_reports_endpoint_api_school_exams_k12100_sync_hydrate_local_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Hydrate K12100 Local Reports Endpoint
   /api/school-exams/k12100-sync/import-bundle:
     post:
       description: 导入宿主机导出的脱敏 k12100 采集包（≤ 15 MiB），跨环境统一执行全科建档/提干与草稿入库。
@@ -4801,6 +4842,40 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get K12100 Sync Job Endpoint
+  /api/school-exams/k12100-sync/report-jobs:
+    post:
+      description: 从 k12100 首页读取场次日期并下载未同步场次的「总分」分析报告，新建/更新/补全考试档案与草稿。
+      operationId: start_k12100_report_sync_job_endpoint_api_school_exams_k12100_sync_report_jobs_post
+      parameters:
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/K12100ReportJobStartIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '202':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Start K12100 Report Sync Job Endpoint
   /api/school-exams/k12100-sync/status:
     get:
       description: 查询当前运行环境的 k12100 直连采集能力、脱敏凭据状态与最近任务快照。

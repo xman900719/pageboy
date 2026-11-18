@@ -567,6 +567,8 @@ onMounted(() => void load())
             <div><dt>已列学科合计</dt><dd>{{ fmtScore(selected.listed_subject_score) }} / {{ fmtScore(selected.listed_subject_max) }}</dd></div>
             <div><dt>总分班排</dt><dd>{{ selected.total_class_rank ?? '缺失' }}</dd></div>
             <div><dt>总分年排</dt><dd>{{ selected.total_grade_rank ?? '缺失' }}</dd></div>
+            <div><dt>总分班最高</dt><dd>{{ fmtScore(selected.total_class_highest ?? null) }}</dd></div>
+            <div><dt>总分年最高</dt><dd>{{ fmtScore(selected.total_grade_highest ?? null) }}</dd></div>
             <div><dt>实考人数</dt><dd>{{ selected.total_participants ?? '缺失' }}</dd></div>
           </dl>
 

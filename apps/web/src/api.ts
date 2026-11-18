@@ -471,6 +471,8 @@ export interface SchoolExamErrorAnalysis {
 
 export interface SchoolExamDetail extends SchoolExam {
   subject: SchoolSubject
+  class_highest?: number | null
+  grade_highest?: number | null
   items: SchoolExamItem[]
   attachments: SchoolPaperAttachment[]
 }
@@ -581,6 +583,67 @@ export interface SchoolExamSyncSource {
   max_file_bytes: number
 }
 
+export interface K12100SyncedReportExam {
+  exam_id: string
+  subject: SchoolSubject
+  subject_label: string
+  exam_title: string
+  exam_date: string
+  earned_points: number
+  max_points: number
+  confirmed_by_user: boolean
+  draft_count: number
+  confirmed_item_count: number
+  attachment_count: number
+  class_rank?: number | null
+  grade_rank?: number | null
+  participants?: number | null
+  class_highest?: number | null
+  grade_highest?: number | null
+  rank_synced_count?: number
+}
+
+export interface K12100SyncedReportUnlinkedSubject {
+  subject: SchoolSubject
+  subject_label: string
+  score: number | null
+  max_score: number | null
+}
+
+export interface K12100SyncedReportSummary {
+  id: string
+  title: string | null
+  external_exam_id: string | null
+  exam_date: string | null
+  academic_year: string | null
+  grade: string | null
+  exam_type: string | null
+  status: string
+  match_state: string
+  report_total_score: number | null
+  report_total_max: number | null
+  total_class_rank?: number | null
+  total_grade_rank?: number | null
+  total_participants?: number | null
+  total_class_highest?: number | null
+  total_grade_highest?: number | null
+  pages: number
+  updated_at: string | null
+  exams: K12100SyncedReportExam[]
+  unlinked_subjects: K12100SyncedReportUnlinkedSubject[]
+  completeness?: {
+    complete: boolean
+    missing: string[]
+  }
+}
+
+export interface K12100SyncReadiness {
+  total_reports: number
+  complete_reports: number
+  incomplete_reports: number
+  all_complete: boolean
+}
+
 export interface SchoolExamSyncCenter {
   source: SchoolExamSyncSource
   latest_scan: SchoolExamScanRun | null
@@ -592,6 +655,8 @@ export interface SchoolExamSyncCenter {
     rejected: number
   }
   papers: SchoolExamPaper[]
+  synced_reports?: K12100SyncedReportSummary[]
+  sync_readiness?: K12100SyncReadiness
 }
 
 export interface SchoolExamScanResult {
@@ -616,6 +681,7 @@ export interface SchoolExamRank {
   rank_value: number
   participant_count: number | null
   percentile: number | null
+  highest_score?: number | null
   source_name: string
   source_field: string
   ownership_status: 'verified' | 'unverified' | 'conflict' | string
@@ -627,7 +693,19 @@ export interface SchoolExamRank {
 
 export interface SchoolExamRanksPayload {
   exam_id: string
+  class_highest?: number | null
+  grade_highest?: number | null
   ranks: SchoolExamRank[]
+  total_ranks?: SchoolExamRank[]
+  report_total?: {
+    report_total_score: number | null
+    report_total_max: number | null
+    total_class_rank: number | null
+    total_grade_rank: number | null
+    total_participants: number | null
+    total_class_highest: number | null
+    total_grade_highest: number | null
+  } | null
   missing_scopes: string[]
   disclaimer: string
 }
@@ -683,8 +761,96 @@ export interface K12100BackfillResult {
   knowledge_evidence_created: number
 }
 
+export interface K12100HomeExamSummary {
+  external_exam_id: string
+  exam_name: string
+  exam_date: string
+  grade: string
+  academic_year: string
+  exam_type: string
+  already_synced: boolean
+}
+
+export interface K12100ReportSubjectAction {
+  subject: SchoolSubject
+  subject_label: string
+  action:
+    | 'created'
+    | 'updated'
+    | 'filled'
+    | 'unchanged'
+    | 'locked_conflict'
+    | 'identity_conflict'
+    | 'awaiting_exam_date'
+    | 'ambiguous'
+    | 'skipped'
+  exam_id: string
+  exam_title: string
+  exam_date: string
+  earned_points: number | null
+  max_points: number | null
+  confirmed_by_user: boolean
+  filled_fields: string[]
+  conflict_fields: string[]
+  message: string
+  report_id: string
+  report_title: string
+  external_exam_id: string | null
+  report_exam_date: string | null
+  academic_year: string | null
+  grade: string | null
+  exam_type: string | null
+}
+
+export interface K12100ReportJobResult {
+  home_exams: K12100HomeExamSummary[]
+  reports: Array<{
+    report_id: string
+    title: string | null
+    external_exam_id: string | null
+    exam_date: string | null
+    academic_year: string | null
+    grade: string | null
+    exam_type: string | null
+    match_state: string
+    counts: Record<string, number>
+    drafts_created: number
+    drafts_updated: number
+    cards_synced: number
+  }>
+  subject_actions: K12100ReportSubjectAction[]
+  totals: {
+    home_exams: number
+    skipped_existing: number
+    downloaded: number
+    reports_registered: number
+    created_exams: number
+    updated_exams: number
+    filled_exams: number
+    unchanged_exams: number
+    locked_conflicts: number
+    identity_conflicts: number
+    awaiting_exam_date: number
+    ambiguous_exams: number
+    drafts_created: number
+    drafts_updated: number
+    auto_mapped: number
+    cards_created: number
+    cards_synced: number
+    failures: number
+  }
+  failures: Array<{
+    external_exam_id?: string
+    exam_name?: string
+    code: string
+    reason: string
+  }>
+  knowledge_evidence_created: number
+}
+
 export interface K12100SyncJob {
   job_id: string
+  kind?: 'report' | 'legacy_collect'
   state: 'queued' | 'collecting' | 'backfilling' | 'completed' | 'failed'
   stage_message: string
   created_at: string
@@ -694,6 +860,7 @@ export interface K12100SyncJob {
   error_code: string | null
   error_message: string | null
   result: K12100BackfillResult | null
+  report_result?: K12100ReportJobResult | null
 }
 
 export interface K12100RuntimeStatus {
@@ -768,11 +935,15 @@ export interface SchoolExamReport {
   exam_type: string | null
   exam_sequence: number | null
   report_time: string | null
+  external_exam_id?: string | null
+  exam_date?: string | null
   report_total_score: number | null
   report_total_max: number | null
   total_class_rank: number | null
   total_grade_rank: number | null
   total_participants: number | null
+  total_class_highest?: number | null
+  total_grade_highest?: number | null
   listed_subject_score: number | null
   listed_subject_max: number | null
   scope_status: string
@@ -993,6 +1164,16 @@ export interface Client {
   schoolExamRanks(examId: string): Promise<SchoolExamRanksPayload>
   confirmSchoolExamRank(examId: string, rankId: string): Promise<SchoolExamRank>
   startK12100SyncJob(options?: K12100BackfillOptions): Promise<K12100SyncJob>
+  startK12100ReportJob(options?: { maxExams?: number; headless?: boolean }): Promise<K12100SyncJob>
+  hydrateK12100LocalReports(): Promise<{
+    deduped_reports: number
+    reparsed_reports: number
+    ranks_synced: number
+    cards_synced: number
+    drafts_created: number
+    synced_reports: K12100SyncedReportSummary[]
+    sync_readiness?: K12100SyncReadiness
+  }>
   collectSchoolExamPaper(
     paperId: string,
     options?: {
@@ -1369,6 +1550,21 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         use_ai: options.useAi ?? true,
         headless: options.headless ?? true,
       }),
+    startK12100ReportJob: (options = {}) =>
+      call<K12100SyncJob>('/api/school-exams/k12100-sync/report-jobs', 'POST', {
+        max_exams: options.maxExams ?? 3,
+        headless: options.headless ?? false,
+      }),
+    hydrateK12100LocalReports: () =>
+      call<{
+        deduped_reports: number
+        reparsed_reports: number
+        ranks_synced: number
+        cards_synced: number
+        drafts_created: number
+        synced_reports: K12100SyncedReportSummary[]
+        sync_readiness?: K12100SyncReadiness
+      }>('/api/school-exams/k12100-sync/hydrate-local', 'POST'),
     k12100SyncJob: jobId => call<K12100SyncJob>(`/api/school-exams/k12100-sync/jobs/${encodeURIComponent(jobId)}`),
     importK12100Bundle: (bundle, options = {}) =>
       call<K12100BackfillResult>('/api/school-exams/k12100-sync/import-bundle', 'POST', {
@@ -1495,6 +1691,10 @@ const API_CODE_TEXT: Record<string, string> = {
   K12100_INVALID_BUNDLE: '采集数据包结构无效，请使用本地命令行采集脚本生成的最新脱敏文件。',
   K12100_UNSAFE_CARD_URL: '检测到不安全的答题卡图片链接（仅允许官方安全加密域名且拒绝内网地址），已安全拦截。',
   K12100_CARD_DOWNLOAD_FAILED: '答题卡图片下载失败（签名链接可能已过期），请重新采集含内嵌图片的数据包后导入。',
+  K12100_REPORT_NOT_PDF: '从 k12100 下载的报告文件不是合法 PDF 或超出大小限制。',
+  K12100_LOGIN_REQUIRED: 'k12100 会话已失效，请勾选可见浏览器窗口重新登录后再试。',
+  K12100_CIRCUIT_BREAKER: '检测到验证码或频控响应，已立即熔断止损。',
+  K12100_BROWSER_FAILED: '浏览器未能完成报告下载，请检查网络或改用本地报告导入。',
   SOURCE_NOT_CONFIGURED: '未配置真实授权学校试卷来源；本地扫描仍可用，系统不会伪造远程下载。',
   INBOX_PERMISSIONS_TOO_WIDE: '私有收件箱权限过宽，必须收紧为 0700 后才可扫描。',
   INBOX_SYMLINK_REJECTED: '私有收件箱本身是符号链接，已拒绝读取。',

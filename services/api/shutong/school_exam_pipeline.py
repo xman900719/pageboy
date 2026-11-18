@@ -20,7 +20,7 @@ import re
 from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import models as m
@@ -31,6 +31,8 @@ from .school_report_parser import classify_report_text
 from .school_exam_matcher import (
     ExamIdentity,
     match_exam_identity,
+    normalize_grade,
+    reports_represent_same_exam,
 )
 
 MAX_SCAN_FILES = 200
@@ -665,6 +667,316 @@ def latest_scan_run(db: Session, *, owner: str) -> m.SchoolExamScanRun | None:
     ).scalars().first()
 
 
+_SCHOOL_SUBJECT_ORDER = ("chinese", "math", "english", "physics", "ethics")
+_SCHOOL_SUBJECT_CN = {
+    "chinese": "语文",
+    "math": "数学",
+    "english": "英语",
+    "physics": "物理",
+    "ethics": "道德与法治",
+}
+
+
+def _evaluate_report_completeness(
+    report: m.SchoolExamReport,
+    by_subj: dict[str, m.SchoolExam],
+    item_counts: dict[str, dict[str, int]],
+    attachment_counts: dict[str, int],
+    rank_keys_by_exam: dict[str, set[tuple[str, str]]],
+) -> dict[str, Any]:
+    missing: list[str] = []
+    if not report.exam_date:
+        missing.append("考试日期")
+
+    subjects_list = [item for item in (report.subjects or []) if isinstance(item, dict)]
+    question_subjs = {str(q.get("subject") or "") for q in (report.questions or []) if isinstance(q, dict) and q.get("subject")}
+    card_subjs = {str(k) for k, pages in (report.answer_card_pages or {}).items() if pages}
+    has_total_rank = report.total_class_rank is not None or report.total_grade_rank is not None
+
+    for item in subjects_list:
+        subj = str(item.get("subject") or "").strip()
+        if subj not in _SCHOOL_SUBJECT_CN:
+            continue
+        cn = _SCHOOL_SUBJECT_CN[subj]
+        ex = by_subj.get(subj)
+        if ex is None:
+            missing.append(f"{cn}建档")
+            continue
+        if subj in question_subjs:
+            cnt = item_counts.get(ex.id, {"draft": 0, "confirmed": 0})
+            if cnt["draft"] + cnt["confirmed"] == 0:
+                missing.append(f"{cn}逐题")
+        if subj in card_subjs and attachment_counts.get(ex.id, 0) == 0:
+            missing.append(f"{cn}答题卡")
+        exam_ranks = rank_keys_by_exam.get(ex.id, set())
+        if item.get("class_rank") is not None and (subj, "class") not in exam_ranks:
+            missing.append(f"{cn}班排")
+        if item.get("grade_rank") is not None and (subj, "grade") not in exam_ranks:
+            missing.append(f"{cn}年排")
+        if item.get("class_highest") is not None and ex.class_highest is None:
+            missing.append(f"{cn}班最高")
+        if item.get("grade_highest") is not None and ex.grade_highest is None:
+            missing.append(f"{cn}年最高")
+        if has_total_rank:
+            if report.total_class_rank is not None and ("total", "class") not in exam_ranks:
+                if "总分排名" not in missing:
+                    missing.append("总分排名")
+            if report.total_grade_rank is not None and ("total", "grade") not in exam_ranks:
+                if "总分排名" not in missing:
+                    missing.append("总分排名")
+
+    return {"complete": len(missing) == 0 and bool(subjects_list), "missing": missing}
+
+
+def select_canonical_reports(all_reports: list[m.SchoolExamReport]) -> list[m.SchoolExamReport]:
+    """按读写同源的同场等价规则无副作用归并报告（读路径去重与持久化共用一套口径）。"""
+    clusters: list[list[m.SchoolExamReport]] = []
+    for rep in all_reports:
+        rep_links = [
+            str(link.get("exam_id") or "")
+            for link in (rep.linked_exam_ids or [])
+            if isinstance(link, dict) and link.get("exam_id")
+        ]
+        placed = False
+        for grp in clusters:
+            if any(
+                reports_represent_same_exam(
+                    a_ext_id=rep.external_exam_id,
+                    a_year=rep.academic_year,
+                    a_grade=rep.grade,
+                    a_type=rep.exam_type,
+                    a_seq=rep.exam_sequence,
+                    a_title=rep.title,
+                    a_date=rep.exam_date,
+                    a_linked_ids=rep_links,
+                    b=anchor,
+                )
+                for anchor in grp
+            ):
+                grp.append(rep)
+                placed = True
+                break
+        if not placed:
+            clusters.append([rep])
+
+    winners: list[m.SchoolExamReport] = []
+    for grp in clusters:
+        grp.sort(
+            key=lambda r: (
+                bool(r.external_exam_id),
+                len(r.subjects or []),
+                len(r.questions or []),
+                r.pages or 0,
+                bool(r.exam_date),
+                r.created_at.isoformat() if r.created_at else "",
+            ),
+            reverse=True,
+        )
+        winners.append(grp[0])
+    return sorted(
+        winners,
+        key=lambda r: (
+            str(r.exam_date or ""),
+            r.created_at.isoformat() if r.created_at else "",
+            r.id,
+        ),
+        reverse=True,
+    )
+
+
+def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]]:
+    """从数据库读取已同步的 k12100/报告册及其关联各科实时档案状态，避免依赖易失任务内存。"""
+    all_reports = [
+        report
+        for report in db.execute(
+            select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner)
+        ).scalars().all()
+        if report.external_exam_id
+        or str(report.source_ref or "").startswith("k12100/")
+        or bool(report.linked_exam_ids)
+    ]
+    if not all_reports:
+        return []
+
+    reports = select_canonical_reports(all_reports)
+
+    linked_ids = {
+        str(link.get("exam_id") or "").strip()
+        for r in reports
+        for link in (r.linked_exam_ids or [])
+        if isinstance(link, dict) and link.get("exam_id")
+    }
+    ext_ids = {str(r.external_exam_id).strip() for r in reports if r.external_exam_id}
+
+    exam_filters = []
+    if linked_ids:
+        exam_filters.append(m.SchoolExam.id.in_(linked_ids))
+    if ext_ids:
+        exam_filters.append(m.SchoolExam.external_exam_id.in_(ext_ids))
+    exams = (
+        db.execute(
+            select(m.SchoolExam).where(
+                m.SchoolExam.learner_id == owner,
+                or_(*exam_filters),
+            )
+        ).scalars().all()
+        if exam_filters
+        else []
+    )
+    exams_by_id = {exam.id: exam for exam in exams}
+    exams_by_ext: dict[str, list[m.SchoolExam]] = {}
+    for exam in exams:
+        if exam.external_exam_id:
+            exams_by_ext.setdefault(exam.external_exam_id, []).append(exam)
+
+    fetched_ids = list(exams_by_id.keys())
+    item_counts: dict[str, dict[str, int]] = {}
+    attachment_counts: dict[str, int] = {}
+    rank_keys_by_exam: dict[str, set[tuple[str, str]]] = {}
+    if fetched_ids:
+        for exam_id, confirmed, cnt in db.execute(
+            select(
+                m.SchoolExamItem.school_exam_id,
+                m.SchoolExamItem.confirmed_by_user,
+                func.count(m.SchoolExamItem.id),
+            )
+            .where(m.SchoolExamItem.school_exam_id.in_(fetched_ids))
+            .group_by(m.SchoolExamItem.school_exam_id, m.SchoolExamItem.confirmed_by_user)
+        ).all():
+            bucket = item_counts.setdefault(exam_id, {"draft": 0, "confirmed": 0})
+            bucket["confirmed" if confirmed else "draft"] += int(cnt or 0)
+        for exam_id, cnt in db.execute(
+            select(
+                m.SchoolPaperAttachment.school_exam_id,
+                func.count(m.SchoolPaperAttachment.id),
+            )
+            .where(m.SchoolPaperAttachment.school_exam_id.in_(fetched_ids))
+            .group_by(m.SchoolPaperAttachment.school_exam_id)
+        ).all():
+            attachment_counts[exam_id] = int(cnt or 0)
+        for exam_id, s_scope, r_scope in db.execute(
+            select(
+                m.SchoolExamRankSnapshot.school_exam_id,
+                m.SchoolExamRankSnapshot.subject_scope,
+                m.SchoolExamRankSnapshot.scope,
+            ).where(m.SchoolExamRankSnapshot.school_exam_id.in_(fetched_ids))
+        ).all():
+            rank_keys_by_exam.setdefault(exam_id, set()).add((str(s_scope), str(r_scope)))
+
+    subj_rank = {code: idx for idx, code in enumerate(_SCHOOL_SUBJECT_ORDER)}
+    out: list[dict[str, Any]] = []
+    for report in reports:
+        by_subj: dict[str, m.SchoolExam] = {}
+        for link in report.linked_exam_ids or []:
+            if not isinstance(link, dict):
+                continue
+            exam = exams_by_id.get(str(link.get("exam_id") or ""))
+            if exam is not None:
+                by_subj.setdefault(exam.subject, exam)
+        if report.external_exam_id:
+            for exam in exams_by_ext.get(report.external_exam_id, []):
+                by_subj.setdefault(exam.subject, exam)
+
+        report_subj_map = {
+            str(entry.get("subject") or ""): entry
+            for entry in (report.subjects or [])
+            if isinstance(entry, dict) and entry.get("subject")
+        }
+        sorted_exams = sorted(
+            by_subj.values(),
+            key=lambda ex: (subj_rank.get(ex.subject, 99), ex.subject, ex.id),
+        )
+        exams_out = []
+        for ex in sorted_exams:
+            s_entry = report_subj_map.get(ex.subject, {})
+            subj_rank_keys = rank_keys_by_exam.get(ex.id, set())
+            rank_synced_count = sum(1 for sc, _ in subj_rank_keys if sc == ex.subject)
+            exams_out.append(
+                {
+                    "exam_id": ex.id,
+                    "subject": ex.subject,
+                    "subject_label": _SCHOOL_SUBJECT_CN.get(ex.subject, ex.subject),
+                    "exam_title": ex.title,
+                    "exam_date": str(ex.exam_date),
+                    "earned_points": ex.earned_points,
+                    "max_points": ex.max_points,
+                    "confirmed_by_user": bool(ex.confirmed_by_user),
+                    "draft_count": item_counts.get(ex.id, {}).get("draft", 0),
+                    "confirmed_item_count": item_counts.get(ex.id, {}).get("confirmed", 0),
+                    "attachment_count": attachment_counts.get(ex.id, 0),
+                    "class_rank": s_entry.get("class_rank"),
+                    "grade_rank": s_entry.get("grade_rank"),
+                    "participants": s_entry.get("participants"),
+                    "class_highest": ex.class_highest if ex.class_highest is not None else s_entry.get("class_highest"),
+                    "grade_highest": ex.grade_highest if ex.grade_highest is not None else s_entry.get("grade_highest"),
+                    "rank_synced_count": rank_synced_count,
+                }
+            )
+        seen_subjs = {ex.subject for ex in sorted_exams}
+        unlinked_subjects: list[dict[str, Any]] = []
+        seen_unlinked: set[str] = set()
+        for entry in report.subjects or []:
+            if not isinstance(entry, dict):
+                continue
+            subj = str(entry.get("subject") or "").strip()
+            if not subj or subj in seen_subjs or subj in seen_unlinked or subj not in _SCHOOL_SUBJECT_CN:
+                continue
+            seen_unlinked.add(subj)
+            unlinked_subjects.append(
+                {
+                    "subject": subj,
+                    "subject_label": _SCHOOL_SUBJECT_CN[subj],
+                    "score": entry.get("score"),
+                    "max_score": entry.get("max_score"),
+                }
+            )
+
+        completeness = _evaluate_report_completeness(
+            report,
+            by_subj,
+            item_counts,
+            attachment_counts,
+            rank_keys_by_exam,
+        )
+        out.append(
+            {
+                "id": report.id,
+                "title": report.title,
+                "external_exam_id": report.external_exam_id,
+                "exam_date": report.exam_date,
+                "academic_year": report.academic_year,
+                "grade": normalize_grade(report.grade) or report.grade,
+                "exam_type": report.exam_type,
+                "status": report.status,
+                "match_state": report.match_state,
+                "report_total_score": report.report_total_score,
+                "report_total_max": report.report_total_max,
+                "total_class_rank": report.total_class_rank,
+                "total_grade_rank": report.total_grade_rank,
+                "total_participants": report.total_participants,
+                "total_class_highest": report.total_class_highest,
+                "total_grade_highest": report.total_grade_highest,
+                "pages": report.pages,
+                "updated_at": report.updated_at.isoformat() if report.updated_at else None,
+                "exams": exams_out,
+                "unlinked_subjects": unlinked_subjects,
+                "completeness": completeness,
+            }
+        )
+    return out
+
+
+def _sync_readiness(synced_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(synced_reports)
+    complete = sum(1 for item in synced_reports if item.get("completeness", {}).get("complete"))
+    return {
+        "total_reports": total,
+        "complete_reports": complete,
+        "incomplete_reports": total - complete,
+        "all_complete": total > 0 and complete == total,
+    }
+
+
 def get_sync_center(db: Session, *, owner: str, environment: str | None = None) -> dict[str, Any]:
     status = inspect_source_status(environment)
     run = latest_scan_run(db, owner=owner)
@@ -685,6 +997,7 @@ def get_sync_center(db: Session, *, owner: str, environment: str | None = None) 
         "imported": sum(1 for item in papers if item.status == "imported"),
         "rejected": sum(1 for item in papers if item.status == "rejected"),
     }
+    synced_reports = _serialize_synced_reports(db, owner=owner)
     return {
         "source": status.as_public_dict(),
         "latest_scan": (
@@ -706,6 +1019,8 @@ def get_sync_center(db: Session, *, owner: str, environment: str | None = None) 
         ),
         "counts": counts,
         "papers": [serialize_paper(item, exams.get(item.school_exam_id or "")) for item in papers],
+        "synced_reports": synced_reports,
+        "sync_readiness": _sync_readiness(synced_reports),
     }
 
 
@@ -1039,6 +1354,8 @@ def persist_rank_entries(
             )
         ).scalars().first()
         if existing is not None:
+            if existing.highest_score is None and entry.get("highest_score") is not None:
+                existing.highest_score = float(entry["highest_score"])
             continue
         record = m.SchoolExamRankSnapshot(
             school_exam_id=exam.id,
@@ -1048,6 +1365,7 @@ def persist_rank_entries(
             rank_value=int(entry["rank_value"]),
             participant_count=entry.get("participant_count"),
             percentile=entry.get("percentile"),
+            highest_score=float(entry["highest_score"]) if entry.get("highest_score") is not None else None,
             source_name=source_name,
             source_field=entry["source_field"],
             content_hash=digest,
@@ -1063,14 +1381,7 @@ def persist_rank_entries(
     return created
 
 
-def rank_payload(db: Session, *, exam: m.SchoolExam, owner: str) -> dict[str, Any]:
-    if exam.learner_id != owner:
-        raise HTTPException(404, detail="exam not found")
-    rows = db.execute(
-        select(m.SchoolExamRankSnapshot)
-        .where(m.SchoolExamRankSnapshot.school_exam_id == exam.id)
-        .order_by(m.SchoolExamRankSnapshot.captured_at.desc(), m.SchoolExamRankSnapshot.created_at.desc())
-    ).scalars().all()
+def _serialize_rank_rows(rows: list[m.SchoolExamRankSnapshot]) -> tuple[list[dict[str, Any]], set[str]]:
     latest: dict[str, m.SchoolExamRankSnapshot] = {}
     history_counts: dict[str, int] = {}
     for row in rows:
@@ -1085,6 +1396,7 @@ def rank_payload(db: Session, *, exam: m.SchoolExam, owner: str) -> dict[str, An
             "rank_value": row.rank_value,
             "participant_count": row.participant_count,
             "percentile": row.percentile,
+            "highest_score": row.highest_score,
             "source_name": row.source_name,
             "source_field": row.source_field,
             "ownership_status": row.ownership_status,
@@ -1095,10 +1407,57 @@ def rank_payload(db: Session, *, exam: m.SchoolExam, owner: str) -> dict[str, An
         }
         for row in sorted(latest.values(), key=lambda item: order.get(item.scope, 9))
     ]
+    return serialized, set(latest.keys())
+
+
+def rank_payload(db: Session, *, exam: m.SchoolExam, owner: str) -> dict[str, Any]:
+    if exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    rows = db.execute(
+        select(m.SchoolExamRankSnapshot)
+        .where(m.SchoolExamRankSnapshot.school_exam_id == exam.id)
+        .order_by(m.SchoolExamRankSnapshot.captured_at.desc(), m.SchoolExamRankSnapshot.created_at.desc())
+    ).scalars().all()
+    subject_rows = [row for row in rows if row.subject_scope != "total"]
+    total_rows = [row for row in rows if row.subject_scope == "total"]
+    primary_rows = subject_rows if subject_rows else rows
+    serialized, present_scopes = _serialize_rank_rows(primary_rows)
+    total_serialized, _ = _serialize_rank_rows(total_rows)
+
+    linked_report: m.SchoolExamReport | None = None
+    if exam.external_exam_id:
+        linked_report = db.execute(
+            select(m.SchoolExamReport).where(
+                m.SchoolExamReport.learner_id == owner,
+                m.SchoolExamReport.external_exam_id == exam.external_exam_id,
+            )
+        ).scalars().first()
+    if linked_report is None:
+        for cand in db.execute(select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner)).scalars().all():
+            if any(isinstance(l, dict) and l.get("exam_id") == exam.id for l in (cand.linked_exam_ids or [])):
+                linked_report = cand
+                break
+
     return {
         "exam_id": exam.id,
+        "class_highest": exam.class_highest,
+        "grade_highest": exam.grade_highest,
         "ranks": serialized,
-        "missing_scopes": [scope for scope in ("class", "grade", "school", "region") if scope not in latest],
+        "total_ranks": total_serialized,
+        "report_total": (
+            {
+                "report_total_score": linked_report.report_total_score,
+                "report_total_max": linked_report.report_total_max,
+                "total_class_rank": linked_report.total_class_rank,
+                "total_grade_rank": linked_report.total_grade_rank,
+                "total_participants": linked_report.total_participants,
+                "total_class_highest": linked_report.total_class_highest,
+                "total_grade_highest": linked_report.total_grade_highest,
+            }
+            if linked_report is not None
+            else None
+        ),
+        "missing_scopes": [scope for scope in ("class", "grade", "school", "region") if scope not in present_scopes],
         "disclaimer": "本人排名仅为平台来源快照，不进入知识点能力画像，也不预测中考成绩。",
     }
 

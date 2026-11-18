@@ -24,9 +24,10 @@ from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
 from . import k12100_backfill
+from . import k12100_report_sync
 from . import school_exam_pipeline as exam_pipeline
 from . import school_report_pipeline as report_pipeline
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -790,6 +791,38 @@ def start_k12100_sync_job_endpoint(
     )
 
 
+@app.post("/api/school-exams/k12100-sync/report-jobs", status_code=202)
+def start_k12100_report_sync_job_endpoint(
+    payload: K12100ReportJobStartIn | None = None,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """从 k12100 首页读取场次日期并下载未同步场次的「总分」分析报告，新建/更新/补全考试档案与草稿。"""
+    opts = payload or K12100ReportJobStartIn()
+    return k12100_report_sync.start_k12100_report_job(
+        db,
+        owner=owner,
+        auto_map_fn=_auto_map_report_items,
+        max_exams=opts.max_exams,
+        headless=opts.headless,
+    )
+
+
+@app.post("/api/school-exams/k12100-sync/hydrate-local")
+def hydrate_k12100_local_reports_endpoint(
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """不联网 k12100：无损合并历史重复报告并从本地已存 PDF 补全排名、班级/年级最高分及缺失答题卡。"""
+    summary = report_pipeline.hydrate_incomplete_local_reports(
+        db,
+        owner=owner,
+        auto_map_fn=_auto_map_report_items,
+    )
+    center = exam_pipeline.get_sync_center(db, owner=owner)
+    return {**summary, "synced_reports": center["synced_reports"], "sync_readiness": center["sync_readiness"]}
+
+
 @app.get("/api/school-exams/k12100-sync/jobs/{job_id}")
 def get_k12100_sync_job_endpoint(job_id: str, owner: str = Depends(require_admin)):
     """轮询单个手动同步任务的进度与逐科结果摘要。"""
@@ -853,7 +886,7 @@ def list_school_exam_reports(owner: str = Depends(require_admin), db: Session = 
     rows = db.execute(
         select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner).order_by(m.SchoolExamReport.created_at.desc())
     ).scalars().all()
-    return [report_pipeline.serialize_report(item) for item in rows]
+    return [report_pipeline.serialize_report(item) for item in exam_pipeline.select_canonical_reports(rows)]
 
 
 def _auto_map_report_items(db: Session, report: m.SchoolExamReport) -> int:
@@ -1456,6 +1489,7 @@ def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db
             "exam_type_label": exam.exam_type_label,
             "academic_year": exam.academic_year, "term": exam.term, "series_title": exam.series_title,
             "external_exam_id": exam.external_exam_id, "source_kind": exam.source_kind,
+            "class_highest": exam.class_highest, "grade_highest": exam.grade_highest,
             "items": _serialize_school_exam_items_with_names(db, exam.subject, items),
             "attachments": [{"id": a.id, "filename": a.filename, "media_type": a.media_type, "sha256": a.sha256,
                              "byte_size": a.byte_size, "created_at": a.created_at} for a in attachments]}
