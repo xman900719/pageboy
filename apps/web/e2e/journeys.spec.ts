@@ -330,6 +330,7 @@ test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明�
   await examRegion.getByLabel('获得分数').fill('86')
   await examRegion.getByLabel('考试满分').fill('100')
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
+  await expect(examRegion.locator('.exam-detail')).toContainText('虚构测试数据：九月诊断月考')
   await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：九月诊断月考')
 
