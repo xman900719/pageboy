@@ -1390,15 +1390,156 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 .domain-filter-strip { display: flex; gap: 8px; flex-wrap: wrap }
 
 .graph-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; align-items: start }
-.choice3-board { display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.graph-workspace.graph-wide { grid-template-columns: minmax(0, 1fr); gap: 12px }
 
-.cross-matrix-card {
-  border: 1px solid var(--amber-line); border-radius: var(--radius-s);
-  background: #fffcf5; padding: 12px 14px;
+/* ---------- Vue Flow 交互式知识点关系图谱（暖阳书房主题） ---------- */
+.kg-flow-shell {
+  display: flex; flex-direction: column; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-s);
+  background: #fcfaf6; overflow: hidden;
 }
-.cross-matrix-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 8px }
-.cross-matrix-head h3 { margin: 0; font-size: 0.94rem; color: var(--ink) }
-.matrix-table-scroll { overflow-x: auto; max-width: 100% }
+.kg-flow-shell.is-fullscreen {
+  position: fixed; inset: 10px; z-index: 90;
+  border-radius: var(--radius); box-shadow: 0 24px 60px rgba(44, 38, 35, 0.32);
+}
+.kg-flow-shell.is-fullscreen .kg-flow-viewport {
+  flex: 1 1 auto; height: auto; min-height: 0;
+}
+.kg-flow-toolbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; border-bottom: 1px solid var(--line-soft); background: var(--card-warm);
+}
+.kg-flow-toolbar-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+button.flow-ctrl-btn {
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 8px; padding: 5px 10px; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+button.flow-ctrl-btn.icon-only { padding: 5px 9px; min-width: 30px }
+button.flow-ctrl-btn:hover:not(:disabled) { border-color: var(--primary); background: var(--primary); color: #fff }
+button.flow-ctrl-btn.active { background: var(--teal-soft); border-color: var(--teal); color: var(--teal) }
+button.flow-ctrl-btn.active:hover:not(:disabled) { background: var(--teal); color: #fff }
+button.flow-ctrl-btn:disabled { opacity: 0.45; cursor: not-allowed }
+.flow-zoom-readout { font-size: 0.76rem; font-weight: 700; color: var(--ink-2); min-width: 38px; text-align: center }
+
+.kg-flow-viewport {
+  position: relative; width: 100%; height: clamp(540px, 74vh, 800px); min-width: 0;
+  background: #fcfaf6;
+}
+.kg-flow-viewport .vue-flow {
+  color-scheme: light;
+  --xy-background-color: #fcfaf6;
+  --xy-edge-label-color: #000000;
+}
+.kg-flow-viewport .vue-flow__pane {
+  z-index: 1;
+}
+.kg-flow-viewport .vue-flow__edges {
+  z-index: 2;
+}
+.kg-flow-viewport .vue-flow__node-domainGroup {
+  background: transparent; border: none; padding: 0; box-shadow: none; pointer-events: none !important;
+  z-index: 0 !important;
+}
+.kg-flow-viewport .vue-flow__node-knowledgeLeaf {
+  background: transparent; border: none; padding: 0; box-shadow: none; pointer-events: all !important;
+  z-index: 3 !important;
+}
+.kg-flow-viewport .vue-flow__edge-textbg { display: none !important }
+.kg-flow-viewport .vue-flow__edge-text { fill: #000000 !important }
+.kg-flow-viewport .vue-flow__minimap {
+  border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 12px rgba(44, 38, 35, 0.1);
+}
+
+.kg-domain-group {
+  width: 100%; height: 100%;
+  border: 1.5px dashed var(--primary-line); border-radius: var(--radius);
+  background: rgba(251, 249, 245, 0.78);
+  display: flex; flex-direction: column;
+}
+.kg-domain-group-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px dashed var(--line);
+}
+.kg-domain-group-title { font-size: 0.86rem; font-weight: 800; color: var(--primary-strong) }
+.kg-domain-group-badge {
+  font-size: 0.72rem; font-weight: 700; color: var(--ink-2);
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
+}
+
+.kg-leaf-wrap { position: relative; width: 100%; height: 100% }
+.kg-handle { opacity: 0; width: 6px; height: 6px; pointer-events: none }
+button.kg-leaf-card-btn {
+  width: 100%; height: 100%; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+  padding: 7px 10px; display: flex; flex-direction: column; justify-content: space-between; gap: 4px;
+  box-shadow: 0 2px 6px rgba(44, 38, 35, 0.06);
+  transition: opacity 0.18s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+button.kg-leaf-card-btn.mastered { border-left: 4px solid var(--green) }
+button.kg-leaf-card-btn.weak { border-left: 4px solid var(--red); background: #fffaf9 }
+button.kg-leaf-card-btn.insufficient { border-left: 4px solid var(--amber-accent); background: #fffdf8 }
+button.kg-leaf-card-btn.untested { border-left: 4px solid #b5aa9c }
+button.kg-leaf-card-btn.is-dimmed {
+  background: #f4efe7;
+  border-color: #dcd3c5;
+  box-shadow: none;
+}
+button.kg-leaf-card-btn.is-dimmed .kg-leaf-title { color: var(--ink-2) }
+button.kg-leaf-card-btn.is-upstream {
+  border-color: var(--amber-accent); box-shadow: 0 0 0 3px rgba(217, 119, 36, 0.18);
+}
+button.kg-leaf-card-btn.is-downstream {
+  border-color: var(--teal); box-shadow: 0 0 0 3px rgba(38, 93, 117, 0.18);
+}
+button.kg-leaf-card-btn.is-selected {
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 4px rgba(42, 111, 78, 0.2), 0 8px 16px -8px rgba(42, 111, 78, 0.28);
+}
+button.kg-leaf-card-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--card); color: var(--ink);
+}
+.kg-leaf-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px }
+.kg-leaf-title {
+  font-size: 0.78rem; font-weight: 700; line-height: 1.3; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.kg-role-tag {
+  flex-shrink: 0; font-size: 0.64rem; font-weight: 800; padding: 1px 5px; border-radius: 5px; color: #fff;
+}
+.kg-role-tag.sel { background: var(--primary) }
+.kg-role-tag.up { background: var(--amber-accent) }
+.kg-role-tag.down { background: var(--teal) }
+.kg-leaf-meta-row { display: flex; justify-content: space-between; align-items: center; gap: 4px }
+.kg-leaf-badge {
+  font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+}
+.kg-leaf-badge.mastered { background: var(--green-soft); color: var(--green) }
+.kg-leaf-badge.weak { background: var(--red-soft); color: var(--red) }
+.kg-leaf-badge.insufficient { background: var(--amber-soft); color: var(--amber) }
+.kg-leaf-badge.untested { background: #f2ece2; color: var(--ink-2) }
+.kg-leaf-lock {
+  font-size: 0.64rem; font-weight: 800; color: var(--red); background: var(--red-soft);
+  border: 1px solid var(--red-line); border-radius: 5px; padding: 1px 5px; white-space: nowrap;
+}
+
+.kg-flow-empty { padding: 36px 16px; text-align: center }
+.kg-cross-strip {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 10px; border-top: 1px solid var(--line-soft); background: #fffdf8;
+}
+.kg-cross-label { font-size: 0.75rem; font-weight: 700; color: var(--ink-2) }
+button.kg-cross-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--teal-line); background: var(--teal-soft); color: var(--teal);
+  border-radius: 999px; padding: 3px 9px; font-size: 0.72rem; font-weight: 700; cursor: pointer;
+}
+button.kg-cross-pill.has-warn { border-color: var(--red-line); background: var(--red-soft); color: var(--red) }
+button.kg-cross-pill.active,
+button.kg-cross-pill:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff }
+
 .rel-matrix-table { width: 100%; border-collapse: collapse; font-size: 0.8rem }
 .rel-matrix-table th {
   text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
@@ -1407,91 +1548,6 @@ footer { font-size: 0.74rem; color: var(--ink-3); text-align: center; margin-top
 .rel-matrix-table td {
   padding: 7px 8px; border-bottom: 1px dashed var(--line-soft); vertical-align: middle;
 }
-.matrix-domain-tag {
-  display: inline-block; padding: 3px 8px; border-radius: 6px; font-weight: 600;
-  background: var(--primary-soft); color: var(--primary); white-space: nowrap; font-size: 0.74rem;
-}
-.matrix-domain-tag.target { background: var(--teal-soft); color: var(--teal) }
-.matrix-bridge-list { display: flex; gap: 6px; flex-wrap: wrap }
-.matrix-bridge-pill {
-  display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  padding: 5px 10px; border-radius: 0; border: 1px solid var(--amber-line);
-  background: #ffffff; color: var(--ink); font-size: 0.75rem; font-weight: 600; cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.matrix-bridge-pill:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff }
-.matrix-bridge-pill:hover:not(:disabled) .bridge-src,
-.matrix-bridge-pill:hover:not(:disabled) .bridge-rel,
-.matrix-bridge-pill:hover:not(:disabled) .bridge-tgt { color: #fff }
-.matrix-bridge-pill.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary) }
-.matrix-bridge-pill.active:hover:not(:disabled) { background: var(--primary-strong); color: #fff }
-.matrix-bridge-pill.has-warn { border-color: var(--red-line); background: #fff7f5 }
-.matrix-bridge-pill.has-warn:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff }
-.bridge-rel { font-size: 0.71rem; color: var(--amber); font-weight: 700 }
-.bridge-warn-dot { font-size: 0.74rem }
-
-.nested-domains-grid { display: flex; flex-direction: column; gap: 14px }
-.domain-container-card {
-  border: 1.5px dashed var(--primary-line); border-radius: var(--radius);
-  background: var(--card-warm); padding: 14px;
-}
-.domain-container-head {
-  display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
-}
-.domain-head-title h3 { margin: 0 0 2px; font-size: 1rem; color: var(--primary-strong) }
-.domain-head-stats { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
-.mini-stat { font-size: 0.74rem; font-weight: 700; padding: 2px 8px; border-radius: 999px }
-.mini-stat.good { background: var(--green-soft); color: var(--green) }
-.mini-stat.bad { background: var(--red-soft); color: var(--red) }
-
-.module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 10px }
-.module-subbox {
-  border: 1px solid var(--line); border-radius: var(--radius-s);
-  background: #f5efe6; padding: 10px; display: flex; flex-direction: column; gap: 8px;
-}
-.module-subbox-head { display: flex; justify-content: space-between; align-items: center; gap: 8px }
-.module-subbox-title { font-size: 0.84rem; font-weight: 700; color: var(--ink) }
-
-.leaf-rel-list { display: flex; flex-direction: column; gap: 7px }
-.leaf-rel-item {
-  border: 1px solid var(--line); border-radius: 9px; background: var(--card);
-  padding: 8px 10px; transition: opacity 0.2s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.leaf-rel-item.dimmed { opacity: 0.3 }
-.leaf-rel-item.mastered { border-left: 4px solid var(--green) }
-.leaf-rel-item.weak { border-left: 4px solid var(--red); background: #fffaf9 }
-.leaf-rel-item.insufficient { border-left: 4px solid var(--amber-accent); background: #fffdf7 }
-.leaf-rel-item.untested { border-left: 4px solid #b5aa9c }
-.leaf-rel-item.selected {
-  border-color: var(--primary); box-shadow: 0 0 0 2px #2a6f4e33; background: var(--primary-soft);
-}
-.leaf-rel-btn {
-  width: 100%; text-align: left; background: transparent; border: none; padding: 4px 6px;
-  border-radius: 6px; color: var(--ink); font-weight: 600; cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.leaf-rel-btn:hover:not(:disabled) { background: var(--primary); color: #fff }
-.leaf-rel-btn:hover:not(:disabled) .leaf-rel-title { color: #fff }
-.leaf-rel-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px }
-.leaf-rel-title { font-size: 0.84rem; font-weight: 700; color: var(--ink); line-height: 1.4 }
-.leaf-status-badge {
-  flex-shrink: 0; font-size: 0.71rem; font-weight: 700; padding: 2px 7px; border-radius: 999px;
-  white-space: nowrap;
-}
-.leaf-status-badge.mastered { background: var(--green-soft); color: var(--green) }
-.leaf-status-badge.weak { background: var(--red-soft); color: var(--red) }
-.leaf-status-badge.insufficient { background: var(--amber-soft); color: var(--amber) }
-.leaf-status-badge.untested { background: #f2ece2; color: var(--ink-2) }
-
-.leaf-rel-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px }
-.mini-rel-chip {
-  font-size: 0.69rem; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line);
-  background: var(--card-warm); color: var(--ink-2); line-height: 1.4;
-}
-.mini-rel-chip.alert { background: var(--red-soft); border-color: var(--red-line); color: var(--red); font-weight: 700 }
-.mini-rel-chip.prereq { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber) }
-.mini-rel-chip.down { background: var(--teal-soft); border-color: var(--teal-line); color: var(--teal) }
 
 .graph-list-fallback { max-height: 540px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px; background: var(--card-warm) }
 .kg-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px }
