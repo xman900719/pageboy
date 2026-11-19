@@ -5,6 +5,7 @@ import {
   SCHOOL_SUBJECTS,
   SCHOOL_SUBJECT_LABELS,
   type ApiClient,
+  type SchoolCoachDraft,
   type SchoolErrorCategory,
   type SchoolSubject,
   type StudentSchoolReflectionItem,
@@ -12,6 +13,7 @@ import {
 } from '../api'
 import { fmtPoints } from '../copy'
 import { RichText } from '../rich'
+import ReflectionCoachPanel from '../components/ReflectionCoachPanel.vue'
 import { getSchoolErrorCategoryLabel } from '../config/knowledge'
 import {
   FIX_STARTERS,
@@ -41,11 +43,13 @@ type ReflectionFilter = 'pending' | 'all' | 'completed'
 type GuideStep = 1 | 2 | 3
 
 interface ReflectionDraft {
+  mode: 'guide' | 'coach'
   step: GuideStep
   scene: ReflectionScene | ''
   errorCategory: SchoolErrorCategory | ''
   stuckPoint: string
   fixStrategy: string
+  coachDraftHint: string
   feedback: string
   submitting: boolean
   editingCompleted: boolean
@@ -69,11 +73,13 @@ function createInitialDraft(row: StudentSchoolReflectionItem): ReflectionDraft {
         ? 2
         : 1
   return {
+    mode: 'guide',
     step: initialStep,
     scene: '',
     errorCategory: row.error_category ?? '',
     stuckPoint: row.stuck_point ?? '',
     fixStrategy: row.fix_strategy ?? '',
+    coachDraftHint: '',
     feedback: '',
     submitting: false,
     editingCompleted: false,
@@ -190,6 +196,23 @@ function goStep(itemId: string, nextStep: GuideStep) {
   }
   d.feedback = ''
   d.step = nextStep
+}
+
+function applyCoachDraft(itemId: string, draft: SchoolCoachDraft) {
+  const d = drafts.value[itemId]
+  if (!d) return
+  if (draft.error_category) d.errorCategory = draft.error_category
+  if (draft.stuck_point) d.stuckPoint = draft.stuck_point
+  if (draft.fix_strategy) d.fixStrategy = draft.fix_strategy
+  d.mode = 'guide'
+  d.step = d.errorCategory && d.stuckPoint ? 3 : 2
+  d.feedback = ''
+  d.coachDraftHint = '书童按你刚才聊的内容起草了草稿，看看要不要改一改，再点「收好提醒卡 ✓」吧！'
+}
+
+function updateCoachTurnCount(itemId: string, count: number) {
+  const target = items.value.find(it => it.item_id === itemId)
+  if (target) target.coach_turn_count = count
 }
 
 async function submitReflection(item: StudentSchoolReflectionItem) {
@@ -468,9 +491,45 @@ watch(
               </div>
             </div>
 
-            <!-- 三步引导复盘工作区 -->
+            <!-- 三步引导 / 书童陪你想 双轨工作区 -->
             <div v-else-if="drafts[it.item_id]" class="reflection-form">
-              <div class="reflection-step-bar" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 复盘步骤`">
+              <div class="reflection-mode-bar" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 复盘方式`">
+                <button
+                  type="button"
+                  :class="['chip-btn', drafts[it.item_id].mode === 'guide' ? 'selected' : '']"
+                  @click="drafts[it.item_id].mode = 'guide'"
+                >
+                  三步引导卡片
+                </button>
+                <button
+                  type="button"
+                  :class="['chip-btn coach-toggle', drafts[it.item_id].mode === 'coach' ? 'selected' : '']"
+                  @click="drafts[it.item_id].mode = 'coach'"
+                >
+                  <img class="coach-mini-icon" src="/icons/apple-touch-icon.png" alt="" aria-hidden="true" width="16" height="16" />
+                  <span>
+                    书童陪你想{{ (it.coach_turn_count ?? 0) > 0 ? `（${it.coach_turn_count} 条对话）` : '' }}
+                  </span>
+                </button>
+              </div>
+
+              <ReflectionCoachPanel
+                v-if="drafts[it.item_id].mode === 'coach'"
+                :client="client"
+                :item-id="it.item_id"
+                :question-heading="formatQuestionLabelHeading(it.question_label)"
+                :scene-hint="drafts[it.item_id].scene"
+                @back-to-guide="drafts[it.item_id].mode = 'guide'"
+                @apply-draft="draft => applyCoachDraft(it.item_id, draft)"
+                @turns-updated="cnt => updateCoachTurnCount(it.item_id, cnt)"
+              />
+
+              <template v-else>
+                <p v-if="drafts[it.item_id].coachDraftHint" class="reflection-coach-hint">
+                  {{ drafts[it.item_id].coachDraftHint }}
+                </p>
+
+                <div class="reflection-step-bar" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 复盘步骤`">
                 <button
                   type="button"
                   :class="['reflection-step-pill', drafts[it.item_id].step === 1 ? 'active' : 'done']"
@@ -645,6 +704,7 @@ watch(
                   </div>
                 </div>
               </div>
+              </template>
             </div>
             </li>
           </ul>

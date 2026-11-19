@@ -746,6 +746,39 @@ test('J4c 校考待核对明细：纯文字卷提取、题号自然排序、分�
   await expect(q1StuCard).toContainText('家长留言：请补充说明判别式具体算成了多少')
   await expect(q1StuCard.locator('.reflection-stem-box .katex')).toBeVisible()
   await expect(q1StuCard.locator('.reflection-stem-box')).toContainText('x = 2')
+
+  // ST-023：校考复盘「书童陪你想」对话 → 2轮后整理草稿回填三步卡 → 收好提醒卡 → 管理端只读回溯
+  await q1StuCard.getByRole('button', { name: /书童陪你想/ }).click()
+  const coachPanel = q1StuCard.getByRole('region', { name: '第1题 书童陪你想' })
+  await expect(coachPanel).toBeVisible()
+  await expect(coachPanel.locator('.msg-row.ai')).toHaveCount(1)
+
+  await coachPanel.getByLabel('第1题 给书童发消息').fill('我去分母移项的时候把负号弄反了')
+  await coachPanel.getByRole('button', { name: '发送' }).click()
+  await expect(coachPanel.locator('.msg-row.stu')).toHaveCount(1)
+  await expect(coachPanel).toContainText('1/2')
+
+  await coachPanel.getByLabel('第1题 给书童发消息').fill('下次移项我先圈出负号再代回原式验算')
+  await coachPanel.getByRole('button', { name: '发送' }).click()
+  await expect(coachPanel.locator('.msg-row.stu')).toHaveCount(2)
+
+  await coachPanel.getByRole('button', { name: /把刚才聊明白的整理成提醒卡草稿/ }).click()
+  await expect(q1StuCard.locator('.reflection-coach-hint')).toContainText('书童按你刚才聊的内容起草了草稿')
+  await expect(q1StuCard.getByLabel('第1题 给下次的提醒')).toHaveValue(/代回原式验算/)
+  await q1StuCard.getByRole('button', { name: '收好提醒卡 ✓' }).click()
+  await expect(page.getByRole('status')).toContainText('提醒卡已收好')
+
+  // 切回管理端第四阶段第 4 步：折叠展开只读查看学生与书童对话过程
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+  const adminExamRegion2 = page.getByRole('region', { name: '学校考试总分' })
+  await adminExamRegion2.locator('button.exam-pick', { hasText: '十月数学待核明细演示' }).click()
+  await adminExamRegion2.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  const adminAnalysisPanel2 = adminExamRegion2.locator('#exam-panel-analysis')
+  await adminAnalysisPanel2.getByRole('button', { name: /4\. 失分题干与学生复盘/ }).click()
+  const q1AdminRow2 = adminAnalysisPanel2.locator('li.attachment-row', { hasText: '第1题' }).first()
+  await q1AdminRow2.getByRole('button', { name: /查看书童对话过程/ }).click()
+  await expect(q1AdminRow2.locator('.admin-coach-readonly')).toContainText('把负号弄反了')
 })
 
 /* ---------- J5 审核台：录入真题全闭环 ---------- */

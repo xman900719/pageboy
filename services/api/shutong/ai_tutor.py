@@ -447,3 +447,211 @@ def request_error_root_cause_analysis(
     )
     parsed = parse_error_root_cause_json(raw_reply)
     return parsed, model_used
+
+
+_SCHOOL_COACH_ALLOWED_CATEGORIES = {"concept", "calculation", "reading", "method", "norm", "other"}
+_SCHOOL_COACH_LEAK_PATTERNS = (
+    r"(?:正确|最终|标准|参考)答案(?:应该)?(?:就是|是|为|选)\s*[:：]?\s*[^\s，。；！？]{1,30}",
+    r"(?:所以|因此|故|应该|应当)选(?:择|项)?\s*[:：]?\s*[A-Da-d](?![A-Za-z])",
+    r"(?:完整解答|解题过程|标准解析)\s*[:：]",
+)
+_SCHOOL_COACH_SCENE_LABELS = {
+    "had_idea": "一看就有思路",
+    "stuck_midway": "有思路但中途卡住",
+    "no_idea": "完全没头绪",
+    "no_time": "时间不够没做完",
+}
+
+
+def sanitize_reflection_coach_reply(
+    reply: str,
+    *,
+    topic: str,
+    has_stem: bool,
+) -> tuple[str, bool]:
+    """校考「书童陪你想」防泄题守卫：拦截直接报答案或甩标准解析，改为温和苏格拉底反问。"""
+    cleaned = (reply or "").strip()
+    kp = (topic or "").strip() or "本题考点"
+    if not cleaned:
+        if has_stem:
+            return (
+                f"我们慢慢来，先围绕「{kp}」看看题目里最关键的已知条件是什么，你当时第一步是怎么想的？",
+                False,
+            )
+        return (
+            f"我现在暂时看不到原卷文字，你能先用一句话告诉我这道关于「{kp}」的题问什么、你当时第一步是怎么想的吗？",
+            False,
+        )
+
+    for pat in _SCHOOL_COACH_LEAK_PATTERNS:
+        if re.search(pat, cleaned, flags=re.IGNORECASE):
+            if has_stem:
+                fallback = (
+                    f"先不急着看最终结论哦。回到「{kp}」，你能说说题目里哪一个条件在你的步骤里没用上，"
+                    "或者哪一步最容易算岔吗？"
+                )
+            else:
+                fallback = (
+                    f"先不急着看结论哦。围绕「{kp}」，你回想一下自己当时写到哪一步开始觉得不确定了？"
+                )
+            return fallback, True
+    return cleaned, False
+
+
+def build_school_reflection_coach_prompt(
+    *,
+    subject: str,
+    topic: str,
+    question_label: str,
+    earned_points: float,
+    max_points: float,
+    stem_text: str | None,
+    student_answer_text: str | None,
+    scene_hint: str | None = None,
+) -> str:
+    """构建校考复盘「书童陪你想」三阶段微支架提示词（绝不泄答、无题干绝不编造）。"""
+    kp = (topic or "").strip() or "本题考点"
+    scene_cn = _SCHOOL_COACH_SCENE_LABELS.get(str(scene_hint or "").strip(), "")
+    scene_line = f"学生自述考场状态：{scene_cn}\n" if scene_cn else ""
+    if stem_text and stem_text.strip():
+        stem_block = f"已确认原题题干：{stem_text.strip()}\n"
+        honest_rule = "请结合上方已确认原题题干进行针对性提问。"
+    else:
+        stem_block = "已确认原题题干：暂无（系统尚未录入原卷文字）。\n"
+        honest_rule = (
+            "【诚实铁律】当前系统没有原卷题干文字，你绝不可以猜测或编造任何题目条件、数值或图形；"
+            "开场必须先温和请学生用一句话描述这题问什么、以及当时第一步是怎么想的。"
+        )
+    ans_line = (
+        f"学生考试时的作答：{student_answer_text.strip()}\n"
+        if student_answer_text and student_answer_text.strip()
+        else "学生考试时的作答：暂未录入\n"
+    )
+    partial_hint = (
+        f"学生本题拿到了一部分步骤分（{earned_points:g}/{max_points:g} 分），请先简短肯定他已经做对的部分。"
+        if earned_points > 0
+        else f"学生本题失分（{earned_points:g}/{max_points:g} 分），请先温和接住情绪，避免评判和说教。"
+    )
+    return (
+        "你是初中生的学习伙伴「我的书童」，正在「校考复盘」里一对一陪学生复盘一道校考失分题。\n"
+        "目标不是把答案讲给学生听，而是用 2~4 轮简短对话陪学生自己想明白错在哪、以及下次怎么防。\n\n"
+        "【核心规则】\n"
+        "1. 严禁直接说出最终答案、正确选项字母或完整解题过程；哪怕学生索要答案也不要直接给。\n"
+        "2. 每次回复控制在 120 字以内，每次**只问 1 个具体、容易回答的小问题**，不要一次抛多个问题。\n"
+        "3. 对话按三个小阶段自然推进：① 共情并还原考场思路 → ② 帮学生指认具体卡在哪一步/漏了哪个条件 → "
+        "③ 引导学生用「如果再看到…我就先…」定一个下次能直接用上的小动作。聊清楚后鼓励他点击「整理成提醒卡草稿」。\n"
+        f"4. {partial_hint}\n"
+        f"5. {honest_rule}\n\n"
+        f"学科：{subject}｜题号：{question_label}｜考点：{kp}\n"
+        f"{scene_line}"
+        f"{stem_block}"
+        f"{ans_line}"
+    )
+
+
+def request_school_reflection_coach_reply(
+    *,
+    system_prompt: str,
+    history_turns: list[dict[str, str]],
+    topic: str,
+    has_stem: bool,
+) -> tuple[str, bool, str]:
+    """生成「书童陪你想」开场或追问回复，并经过服务端防泄题守卫净化。"""
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for item in history_turns:
+        role = item.get("role", "user")
+        content = (item.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+
+    raw_reply, model_used = _post_chat_completion(
+        messages,
+        temperature=0.45,
+        max_tokens=280,
+        error_label="校考书童对话",
+    )
+    safe_reply, sanitized = sanitize_reflection_coach_reply(
+        raw_reply,
+        topic=topic,
+        has_stem=has_stem,
+    )
+    return safe_reply, sanitized, model_used
+
+
+def parse_school_reflection_summary_json(raw_text: str) -> dict[str, Any]:
+    """容错解析书童整理的复盘草稿 JSON，确保错因在合法枚举内、字数受控。"""
+    text = (raw_text or "").strip()
+    if not text:
+        raise AiTutorUnavailableError("整理提醒卡草稿返回为空")
+
+    fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fence_match:
+        text = fence_match.group(1).strip()
+    elif not text.startswith("{"):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start : end + 1]
+
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
+        try:
+            parsed = json.loads(repaired)
+        except ValueError as exc:
+            raise AiTutorUnavailableError("整理提醒卡草稿返回的 JSON 格式无效") from exc
+
+    if not isinstance(parsed, dict):
+        raise AiTutorUnavailableError("整理提醒卡草稿必须返回 JSON 对象")
+
+    raw_cat = str(parsed.get("error_category") or "").strip()
+    error_category = raw_cat if raw_cat in _SCHOOL_COACH_ALLOWED_CATEGORIES else None
+    stuck_point = str(parsed.get("stuck_point") or "").strip()[:280]
+    fix_strategy = str(parsed.get("fix_strategy") or "").strip()[:280]
+    ready = bool(stuck_point and fix_strategy)
+    return {
+        "error_category": error_category,
+        "stuck_point": stuck_point,
+        "fix_strategy": fix_strategy,
+        "ready": ready,
+    }
+
+
+def request_school_reflection_summary(
+    *,
+    subject: str,
+    topic: str,
+    question_label: str,
+    dialogue_turns: list[dict[str, str]],
+) -> tuple[dict[str, Any], str]:
+    """基于学生真实对话发言忠实整理复盘草稿（绝不替学生凭空编造未说过的内容）。"""
+    formatted_turns = [
+        f"{idx + 1}. [{'学生' if t.get('role') == 'user' else '书童'}]: {str(t.get('content') or '').strip()}"
+        for idx, t in enumerate(dialogue_turns)
+        if str(t.get("content") or "").strip()
+    ]
+    dialogue_text = "\n".join(formatted_turns)
+    prompt = (
+        f"请根据以下学生与书童关于【{subject} · {question_label}（考点：{topic}）】的复盘对话，"
+        "用第一人称（“我”）忠实整理出一份校考复盘草稿，方便学生修改后保存为自己的提醒卡。\n"
+        "【硬性要求】\n"
+        "1. 只输出严格 JSON 对象，字段如下：\n"
+        '   {"error_category": "concept|calculation|reading|method|norm|other|null", '
+        '"stuck_point": "学生自己说出的具体卡点或错因（15~120字；若学生还没说清则留空字符串）", '
+        '"fix_strategy": "学生自己说出的下次提醒动作，建议用如果…我就先…句式（15~120字；若学生还没说到下次做法则留空字符串）"}\n'
+        "2. 只能忠实提炼学生在对话中真实表达过的内容，绝不凭空编造学生没提到的解法或步骤，也不要给出标准答案。\n\n"
+        f"完整对话：\n{dialogue_text}\n"
+    )
+    raw_reply, model_used = _post_chat_completion(
+        [
+            {"role": "system", "content": "你是初中学习复盘整理助手，只输出严格 JSON 对象，忠实归纳学生自己的表达。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=500,
+        error_label="整理提醒卡草稿",
+        response_format={"type": "json_object"},
+        min_timeout_seconds=30.0,
+    )
+    return parse_school_reflection_summary_json(raw_reply), model_used

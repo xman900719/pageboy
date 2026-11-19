@@ -1616,6 +1616,140 @@ components:
       - target_year
       title: RunIn
       type: object
+    SchoolCoachDraftOut:
+      description: 书童基于学生对话忠实归纳的提醒卡草稿（绝不自动提交）。
+      properties:
+        error_category:
+          anyOf:
+          - enum:
+            - concept
+            - calculation
+            - reading
+            - method
+            - norm
+            - other
+            type: string
+          - type: 'null'
+          title: Error Category
+        fix_strategy:
+          default: ''
+          title: Fix Strategy
+          type: string
+        ready:
+          default: false
+          title: Ready
+          type: boolean
+        stuck_point:
+          default: ''
+          title: Stuck Point
+          type: string
+      title: SchoolCoachDraftOut
+      type: object
+    SchoolCoachMessageIn:
+      description: 学生端在「书童陪你想」中发送一条复盘思考消息。
+      properties:
+        content:
+          maxLength: 400
+          minLength: 1
+          title: Content
+          type: string
+      required:
+      - content
+      title: SchoolCoachMessageIn
+      type: object
+    SchoolCoachSessionOut:
+      description: 校考失分题「书童陪你想」对话会话状态。
+      properties:
+        can_summarize:
+          default: false
+          title: Can Summarize
+          type: boolean
+        draft_summary:
+          anyOf:
+          - $ref: '#/components/schemas/SchoolCoachDraftOut'
+          - type: 'null'
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        item_id:
+          title: Item Id
+          type: string
+        max_user_turns:
+          default: 12
+          title: Max User Turns
+          type: integer
+        started:
+          default: false
+          title: Started
+          type: boolean
+        status:
+          default: inactive
+          title: Status
+          type: string
+        turns:
+          items:
+            $ref: '#/components/schemas/SchoolCoachTurnOut'
+          title: Turns
+          type: array
+        user_turn_count:
+          default: 0
+          title: User Turn Count
+          type: integer
+      required:
+      - item_id
+      title: SchoolCoachSessionOut
+      type: object
+    SchoolCoachStartIn:
+      description: 开启校考「书童陪你想」对话可选考场情境提示。
+      properties:
+        scene_hint:
+          anyOf:
+          - maxLength: 32
+            type: string
+          - type: 'null'
+          title: Scene Hint
+      title: SchoolCoachStartIn
+      type: object
+    SchoolCoachTurnOut:
+      description: 校考书童单轮对话条目。
+      properties:
+        content:
+          title: Content
+          type: string
+        created_at:
+          title: Created At
+          type: string
+        id:
+          title: Id
+          type: string
+        model_used:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Used
+        role:
+          enum:
+          - user
+          - assistant
+          title: Role
+          type: string
+        sanitized_guard_triggered:
+          default: false
+          title: Sanitized Guard Triggered
+          type: boolean
+        turn_index:
+          title: Turn Index
+          type: integer
+      required:
+      - id
+      - turn_index
+      - role
+      - content
+      - created_at
+      title: SchoolCoachTurnOut
+      type: object
     SchoolExamAutoAssociateIn:
       description: 按三层混合管线为校考待核对明细补全所属知识点与 Top-3 候选考点。
       properties:
@@ -2965,6 +3099,10 @@ components:
           - type: string
           - type: 'null'
           title: Ai Audit Mode
+        coach_turn_count:
+          default: 0
+          title: Coach Turn Count
+          type: integer
         earned_points:
           title: Earned Points
           type: number
@@ -6798,6 +6936,45 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Update School Exam Item Analysis
+  /api/school-exams/{exam_id}/items/{item_id}/coach:
+    get:
+      description: 管理端第四阶段只读查看学生与书童的校考复盘对话过程（零 AI 调用）。
+      operationId: get_admin_school_exam_item_coach_api_school_exams__exam_id__items__item_id__coach_get
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolCoachSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Admin School Exam Item Coach
   /api/school-exams/{exam_id}/items/{item_id}/confirm:
     post:
       description: 仅 ocr_draft 草稿可人工确认（可修正得分、满分、考点与错因）；确认后不可变（INV-04）。
@@ -7279,6 +7456,160 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Submit Student School Exam Reflection
+      tags:
+      - learning
+  /api/student/school-exam-reflections/{item_id}/coach:
+    get:
+      description: 只读读取校考失分题的「书童陪你想」历史对话（零 AI 调用）。
+      operationId: get_student_school_reflection_coach_api_student_school_exam_reflections__item_id__coach_get
+      parameters:
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolCoachSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Student School Reflection Coach
+      tags:
+      - learning
+  /api/student/school-exam-reflections/{item_id}/coach/message:
+    post:
+      description: 学生在「书童陪你想」中追加一条发言，返回书童最新引导追问（单题上限 12 轮用户发言）。
+      operationId: send_student_school_reflection_coach_message_api_student_school_exam_reflections__item_id__coach_message_post
+      parameters:
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolCoachMessageIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolCoachSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Send Student School Reflection Coach Message
+      tags:
+      - learning
+  /api/student/school-exam-reflections/{item_id}/coach/start:
+    post:
+      description: 幂等开启「书童陪你想」对话；若已有轮次则直接恢复，绝不重复调用 AI。
+      operationId: start_student_school_reflection_coach_api_student_school_exam_reflections__item_id__coach_start_post
+      parameters:
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SchoolCoachStartIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolCoachSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Start Student School Reflection Coach
+      tags:
+      - learning
+  /api/student/school-exam-reflections/{item_id}/coach/summarize:
+    post:
+      description: 基于学生真实对话忠实整理提醒卡草稿（至少 2 轮学生发言，绝不自动提交复盘）。
+      operationId: summarize_student_school_reflection_coach_api_student_school_exam_reflections__item_id__coach_summarize_post
+      parameters:
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolCoachSessionOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Summarize Student School Reflection Coach
       tags:
       - learning
   /api/student/verify:

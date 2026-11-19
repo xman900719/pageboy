@@ -5,6 +5,7 @@ import {
   describeError,
   SCHOOL_SUBJECT_LABELS,
   type ApiClient,
+  type SchoolCoachSession,
   type SchoolErrorCategory,
   type SchoolExam,
   type SchoolExamDetail,
@@ -236,6 +237,9 @@ const stemExtractStatus = ref<{
   errorReason: string | null
 } | null>(null)
 const confirmingAllStems = ref(false)
+const adminCoachOpenId = ref<string | null>(null)
+const adminCoachLoadingId = ref<string | null>(null)
+const adminCoachCache = ref<Record<string, SchoolCoachSession>>({})
 const stemEdits = ref<
   Record<
     string,
@@ -670,6 +674,8 @@ watch(
     returningItemId.value = null
     returnReasonInput.value = ''
     stemExtractStatus.value = null
+    adminCoachOpenId.value = null
+    adminCoachCache.value = {}
     lastParseInitExamId.value = null
     selectedParseAttachmentIds.value = []
     parseDraftError.value = ''
@@ -690,6 +696,8 @@ async function selectExam(examId: string) {
   returningItemId.value = null
   returnReasonInput.value = ''
   stemExtractStatus.value = null
+  adminCoachOpenId.value = null
+  adminCoachCache.value = {}
   confirmDeleteExamId.value = null
   await loadDetail(examId)
 }
@@ -1355,6 +1363,26 @@ async function saveItemStem(it: SchoolExamItem, confirm: boolean) {
     props.notify(describeError(e), 'error')
   } finally {
     edit.saving = false
+  }
+}
+
+async function toggleAdminCoachView(itemId: string) {
+  if (!selectedDetail.value) return
+  if (adminCoachOpenId.value === itemId) {
+    adminCoachOpenId.value = null
+    return
+  }
+  adminCoachOpenId.value = itemId
+  if (adminCoachCache.value[itemId]) return
+  adminCoachLoadingId.value = itemId
+  try {
+    const res = await props.client.getAdminSchoolExamItemCoach(selectedDetail.value.id, itemId)
+    adminCoachCache.value = { ...adminCoachCache.value, [itemId]: res }
+  } catch (e) {
+    props.notify(describeError(e), 'error')
+    adminCoachOpenId.value = null
+  } finally {
+    adminCoachLoadingId.value = null
   }
 }
 
@@ -3031,6 +3059,37 @@ async function handleSyncPapersImported(examId: string) {
                     >
                       {{ returningItemId === it.id ? '收起退回框' : '退回重写' }}
                     </button>
+                    <button
+                      v-if="(it.coach_turn_count ?? 0) > 0"
+                      type="button"
+                      class="ghost small"
+                      @click="toggleAdminCoachView(it.id)"
+                    >
+                      {{
+                        adminCoachOpenId === it.id
+                          ? '收起书童对话'
+                          : `查看书童对话过程（${it.coach_turn_count} 条）`
+                      }}
+                    </button>
+                  </div>
+
+                  <div v-if="adminCoachOpenId === it.id" class="admin-coach-readonly" style="margin-top: 8px;">
+                    <p v-if="adminCoachLoadingId === it.id" class="muted tiny" style="margin: 0;">
+                      正在加载学生与书童的复盘对话记录…
+                    </p>
+                    <template v-else-if="adminCoachCache[it.id]?.turns.length">
+                      <div
+                        v-for="t in adminCoachCache[it.id].turns"
+                        :key="t.id"
+                        :class="['admin-coach-turn', t.role === 'assistant' ? 'is-ai' : 'is-stu']"
+                      >
+                        <span class="admin-reflection-field-label">
+                          {{ t.role === 'assistant' ? '我的书童' : '学生' }}
+                        </span>
+                        <p class="item-error-note"><RichText :text="t.content" /></p>
+                      </div>
+                    </template>
+                    <p v-else class="muted tiny" style="margin: 0;">暂无对话记录。</p>
                   </div>
 
                   <div v-if="stemEdits[it.id].expanded" class="inline-analysis-editor" style="margin-top: 8px;">

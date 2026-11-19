@@ -48,3 +48,4 @@ flowchart TB
 - **纯领域计算不变**：`guidance.py` 继续严格保持零 HTTP / DB / SDK 依赖（`compute_knowledge_mastery`、`summarize_growth`、`compose_practice_plan`）。
 - **AI 错题引导适配器**：OpenAI 兼容接口（如 DeepSeek）调用集中隔离在 `ai_tutor.py`，并内置服务端防直接泄题守卫；服务未配置或超时返回 503，绝不替代正式判分。
 - **失分题题干与作答抽取**：管理端按需调用 `extract_lost_item_stems_with_deepseek`（外发前执行答题卡顶部脱敏、只转写不解题），服务端以逐题状态机与原子认领保证同一道题仅 AI 解析一次，且必须经家长确认后才对学生端与 AI 审阅可见。
+- **校考「书童陪你想」对话复盘**：复用 `ai_tutor.py` 文本模型与持久化对话表（`school_reflection_coach_sessions` / `turns`），内置防泄题守卫、无题干禁编造诚实约束与「≥ 2 轮学生实质发言后才可整理草稿、绝不自动提交」防代写门禁；管理端第四阶段可只读回溯思考过程。

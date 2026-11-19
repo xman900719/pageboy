@@ -17,7 +17,7 @@ from .taxonomy_bridge import resolve_question_to_candidate_codes
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .fourcorpus import router as corpus_router
-from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence
+from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence, serialize_school_coach_session
 from .research import official_reject_reason
 from .database import get_db
 from .home import HomeIdentityError
@@ -28,7 +28,7 @@ from . import k12100_backfill
 from . import k12100_report_sync
 from . import school_exam_pipeline as exam_pipeline
 from . import school_report_pipeline as report_pipeline
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolItemStemExtractIn, SchoolItemStemExtractOut, SchoolItemStemPatchIn, SchoolExamStemsConfirmOut, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolCoachSessionOut, SchoolItemStemExtractIn, SchoolItemStemExtractOut, SchoolItemStemPatchIn, SchoolExamStemsConfirmOut, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, question_label_sort_key, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -340,7 +340,12 @@ def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str =
 CORE_SUBJECTS = ("math", "chinese", "english", "physics")
 
 
-def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None = None) -> dict:
+def _serialize_school_exam_item(
+    i: m.SchoolExamItem,
+    knowledge_name: str | None = None,
+    *,
+    coach_turn_count: int = 0,
+) -> dict:
     """统一序列化校考逐题明细（含失分、结构化复盘状态与自动解析草稿元数据）。"""
     parsed_ref = paper_parser.parse_structured_reflection_note(
         i.error_note,
@@ -370,6 +375,7 @@ def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None 
         "student_answer_text": i.student_answer_text,
         "stem_state": i.stem_state,
         "stem_source": i.stem_source,
+        "coach_turn_count": coach_turn_count,
     }
     if knowledge_name is not None:
         out["knowledge_name"] = knowledge_name
@@ -379,11 +385,32 @@ def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None 
 def _serialize_school_exam_items_with_names(
     db: Session, subject: str, items: list[m.SchoolExamItem]
 ) -> list[dict]:
-    """批量附带课标知识点中文名称序列化校考逐题记录。"""
+    """批量附带课标知识点中文名称及书童对话轮次计数序列化校考逐题记录。"""
     if not items:
         return []
     _, _, name_map, _ = _resolve_school_knowledge_meta(db, subject, {it.knowledge_id for it in items})
-    return [_serialize_school_exam_item(it, knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id)) for it in items]
+    item_ids = [it.id for it in items]
+    cnt_rows = db.execute(
+        select(
+            m.SchoolReflectionCoachSession.school_exam_item_id,
+            func.count(m.SchoolReflectionCoachTurn.id),
+        )
+        .join(
+            m.SchoolReflectionCoachTurn,
+            m.SchoolReflectionCoachTurn.session_id == m.SchoolReflectionCoachSession.id,
+        )
+        .where(m.SchoolReflectionCoachSession.school_exam_item_id.in_(item_ids))
+        .group_by(m.SchoolReflectionCoachSession.school_exam_item_id)
+    ).all()
+    turn_counts = {str(r[0]): int(r[1]) for r in cnt_rows}
+    return [
+        _serialize_school_exam_item(
+            it,
+            knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id),
+            coach_turn_count=turn_counts.get(it.id, 0),
+        )
+        for it in items
+    ]
 
 
 def _apply_school_item_confirmation(item: m.SchoolExamItem, payload: SchoolItemConfirmIn) -> None:
@@ -1794,6 +1821,29 @@ def confirm_school_exam_item_stems(
     db.commit()
     return SchoolExamStemsConfirmOut(confirmed_count=confirmed_count)
 
+@app.get("/api/school-exams/{exam_id}/items/{item_id}/coach", response_model=SchoolCoachSessionOut)
+def get_admin_school_exam_item_coach(
+    exam_id: str,
+    item_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端第四阶段只读查看学生与书童的校考复盘对话过程（零 AI 调用）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == owner,
+        )
+    ).scalar_one_or_none()
+    return serialize_school_coach_session(db, item_id, session_obj)
+
+
 @app.delete("/api/school-exams/{exam_id}")
 def delete_school_exam(
     exam_id: str,
@@ -1835,6 +1885,25 @@ def delete_school_exam(
         paper.imported_at = None
         paper.error_code = None
         paper.updated_at = m.now()
+    item_ids = [it.id for it in items]
+    if item_ids:
+        coach_sessions = db.execute(
+            select(m.SchoolReflectionCoachSession).where(
+                m.SchoolReflectionCoachSession.school_exam_item_id.in_(item_ids)
+            )
+        ).scalars().all()
+        coach_session_ids = [cs.id for cs in coach_sessions]
+        if coach_session_ids:
+            db.execute(
+                delete(m.SchoolReflectionCoachTurn).where(
+                    m.SchoolReflectionCoachTurn.session_id.in_(coach_session_ids)
+                )
+            )
+            db.execute(
+                delete(m.SchoolReflectionCoachSession).where(
+                    m.SchoolReflectionCoachSession.id.in_(coach_session_ids)
+                )
+            )
     for row in [*items, *attachments, *ranks]:
         db.delete(row)
     db.delete(exam)

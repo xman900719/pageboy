@@ -363,6 +363,56 @@ class StudentSchoolReflectionItemOut(BaseModel):
     fix_strategy: str = ""
     return_reason: str | None = None
     ai_audit_mode: str | None = None
+    coach_turn_count: int = 0
+
+
+class SchoolCoachStartIn(BaseModel):
+    """开启校考「书童陪你想」对话可选考场情境提示。"""
+    scene_hint: str | None = Field(default=None, max_length=32)
+
+
+class SchoolCoachMessageIn(BaseModel):
+    """学生端在「书童陪你想」中发送一条复盘思考消息。"""
+    content: str = Field(min_length=1, max_length=400)
+
+    @model_validator(mode="after")
+    def strip_content(self):
+        self.content = self.content.strip()
+        if not self.content:
+            raise ValueError("消息内容不能为空")
+        return self
+
+
+class SchoolCoachTurnOut(BaseModel):
+    """校考书童单轮对话条目。"""
+    id: str
+    turn_index: int
+    role: Literal["user", "assistant"]
+    content: str
+    model_used: str | None = None
+    sanitized_guard_triggered: bool = False
+    created_at: str
+
+
+class SchoolCoachDraftOut(BaseModel):
+    """书童基于学生对话忠实归纳的提醒卡草稿（绝不自动提交）。"""
+    error_category: SchoolErrorCategory | None = None
+    stuck_point: str = ""
+    fix_strategy: str = ""
+    ready: bool = False
+
+
+class SchoolCoachSessionOut(BaseModel):
+    """校考失分题「书童陪你想」对话会话状态。"""
+    id: str | None = None
+    item_id: str
+    started: bool = False
+    status: str = "inactive"
+    user_turn_count: int = 0
+    max_user_turns: int = 12
+    can_summarize: bool = False
+    draft_summary: SchoolCoachDraftOut | None = None
+    turns: list[SchoolCoachTurnOut] = Field(default_factory=list)
 
 
 class StudentSchoolReflectionsResponseOut(BaseModel):

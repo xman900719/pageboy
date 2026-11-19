@@ -433,6 +433,36 @@ export interface SchoolExamItem {
   student_answer_text?: string | null
   stem_state?: StemState | null
   stem_source?: string | null
+  coach_turn_count?: number
+}
+
+export interface SchoolCoachTurn {
+  id: string
+  turn_index: number
+  role: 'user' | 'assistant'
+  content: string
+  model_used?: string | null
+  sanitized_guard_triggered?: boolean
+  created_at: string
+}
+
+export interface SchoolCoachDraft {
+  error_category?: SchoolErrorCategory | null
+  stuck_point: string
+  fix_strategy: string
+  ready: boolean
+}
+
+export interface SchoolCoachSession {
+  id?: string | null
+  item_id: string
+  started: boolean
+  status: string
+  user_turn_count: number
+  max_user_turns: number
+  can_summarize: boolean
+  draft_summary?: SchoolCoachDraft | null
+  turns: SchoolCoachTurn[]
 }
 
 export interface StudentSchoolReflectionItem {
@@ -454,6 +484,7 @@ export interface StudentSchoolReflectionItem {
   fix_strategy: string
   return_reason?: string | null
   ai_audit_mode?: string | null
+  coach_turn_count?: number
 }
 
 export interface StudentSchoolReflectionsPayload {
@@ -1294,6 +1325,11 @@ export interface Client {
     itemId: string,
     input: { errorCategory: SchoolErrorCategory; stuckPoint: string; fixStrategy: string },
   ): Promise<StudentSchoolReflectionItem>
+  getSchoolReflectionCoach(itemId: string): Promise<SchoolCoachSession>
+  startSchoolReflectionCoach(itemId: string, sceneHint?: string | null): Promise<SchoolCoachSession>
+  sendSchoolReflectionCoachMessage(itemId: string, content: string): Promise<SchoolCoachSession>
+  summarizeSchoolReflectionCoach(itemId: string): Promise<SchoolCoachSession>
+  getAdminSchoolExamItemCoach(examId: string, itemId: string): Promise<SchoolCoachSession>
   schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
   schoolExamReports(): Promise<SchoolExamReport[]>
   scanSchoolExamReports(): Promise<SchoolExamReportScanResult>
@@ -1655,6 +1691,29 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
           fix_strategy: fixStrategy,
         },
       ),
+    getSchoolReflectionCoach: itemId =>
+      call<SchoolCoachSession>(`/api/student/school-exam-reflections/${encodeURIComponent(itemId)}/coach`),
+    startSchoolReflectionCoach: (itemId, sceneHint) =>
+      call<SchoolCoachSession>(
+        `/api/student/school-exam-reflections/${encodeURIComponent(itemId)}/coach/start`,
+        'POST',
+        sceneHint ? { scene_hint: sceneHint } : {},
+      ),
+    sendSchoolReflectionCoachMessage: (itemId, content) =>
+      call<SchoolCoachSession>(
+        `/api/student/school-exam-reflections/${encodeURIComponent(itemId)}/coach/message`,
+        'POST',
+        { content },
+      ),
+    summarizeSchoolReflectionCoach: itemId =>
+      call<SchoolCoachSession>(
+        `/api/student/school-exam-reflections/${encodeURIComponent(itemId)}/coach/summarize`,
+        'POST',
+      ),
+    getAdminSchoolExamItemCoach: (examId, itemId) =>
+      call<SchoolCoachSession>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/coach`,
+      ),
     schoolExamErrorAnalysis: examId =>
       call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
     schoolExamReports: () => call<SchoolExamReport[]>('/api/school-exams/reports'),
@@ -1911,6 +1970,9 @@ const API_CODE_TEXT: Record<string, string> = {
   VISION_PARSER_UNAVAILABLE: '暂时无法连接智能多模态服务（网络中断或服务不可达），请稍后重试。',
   VISION_PARSER_TRUNCATED: 'AI 模型思考/输出长度达到上限被提前截断，未能返回完整 JSON（已自动保留已完成题目，可再次点击继续）。',
   VISION_PARSER_INVALID_JSON: 'AI 模型返回的内容不是有效 JSON 结构（可能返回了纯文本说明或格式异常），无法自动转入草稿。',
+  COACH_NOT_CONFIGURED: '我的书童暂时休息中（未配置 AI 密钥），可以直接切回三步卡片完成复盘。',
+  COACH_TURN_LIMIT_REACHED: '这道题已经聊得很充分啦，点下方按钮把刚才的想法整理成提醒卡吧。',
+  COACH_DIALOGUE_TOO_SHORT: '先和书童多聊一两句，说出自己的真实思路后再整理提醒卡哦。',
   NO_EMBEDDED_TEXT_FOR_SKELETON: '所选附件不含可机读文字层（属纯扫描件），无法本地提取骨架；请改用智能多模态模式。',
   UNSUPPORTED_ATTACHMENT_FOR_PARSING: '所选附件格式不支持自动提取（支持文档或图片格式）。',
   ATTACHMENT_NOT_FOUND: '未找到选中的附件，请刷新列表后重试。',
@@ -1949,6 +2011,9 @@ export function describeError(error: unknown): string {
     const httpMatch = /^VISION_PARSER_HTTP_(\d+)$/.exec(error.code)
     if (httpMatch) {
       return `上游 AI 视觉接口返回 HTTP ${httpMatch[1]} 错误（请检查模型名称、API Key 额度或服务状态）。`
+    }
+    if (error.code.startsWith('COACH_UNAVAILABLE:')) {
+      return error.code.replace(/^COACH_UNAVAILABLE:\s*/i, '') || '我的书童暂时连不上，可以先切回三步卡片完成复盘。'
     }
     return API_CODE_TEXT[error.code] ?? error.code
   }
