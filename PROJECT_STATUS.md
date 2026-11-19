@@ -147,3 +147,10 @@ Docs as Code/可访问性/契约与 CI 全面核对完成：README 功能清单�
     3. 解决双 worktree `0014` 迁移号冲突，重排线性链 `0013 → 0014(R2) → 0015(reports) → 0016(report_cards)`，将共享开发库无损升级至 `0016`，安全清理两个旧 worktree 并留存冷备份；
     4. 生成开发基准线记录 [2026-11-16 开发基准线](docs/quality/dev-baseline-2026-11-16.md) 并通过特性分支提交 PR 触发远端五作业 CI 验证。
   - **本地验收与边界**：`make verify`（346 passed, 25 skipped）、`zensical build --strict`、Vitest（26 passed）、`npm run build`、Chromium E2E（26 passed, 5 skipped）、iPad WebKit E2E（29 passed, 2 skipped）、`check_env_isolation.sh` 及 Owner 模拟机 16 项人工确认均已通过；PostgreSQL 16 迁移往返由远端 CI `pg-migration` 作业验证；真实 `k12100` 采集保持 `BLOCKED`；生产栈保持 `v1.6.1` 未触碰。
+- **2026-11-19 开发基准线收口（PR #15–#23 合并至 `main`，Alembic `0022`）**：
+  - **实施内容**：
+    1. 完成 `pageboy-dev`/`pageboy-ops` 工作区插件配置对齐、管理端分阶段单卡流程、三列台账与学科隔离及全量中文本地化（PR #15–#18）；
+    2. 完成 `k12100` 报告同步与去重/排名 SSoT 不变量、主题 10–13 校考待核对工作台与阶段重组（Alembic `0017–0019`）；
+    3. 完成学生端方案 A 错题工作台与管理端 AI 错因诊断（PR #20，Alembic `0020`）、ST-021~ST-023 校考苏格拉底复盘闭环（PR #21，Alembic `0021–0022`）、知识合成工坊/迷雾科技树双游戏及 Vue Flow + Dagre 交互图谱（PR #22–#23）；
+    4. 生成开发基准线记录 [2026-11-19 开发基准线](docs/quality/dev-baseline-2026-11-19.md) 并同步工程索引文档。
+  - **本地验收与边界**：`make verify`（376 passed, 25 skipped）、`zensical build --strict`、隔离 SQLite `alembic upgrade head`（`0022`）、Vitest（47 passed）、`npm run build`、Chromium E2E（30 passed, 5 skipped）、iPad WebKit E2E（33 passed, 2 skipped）、`check_env_isolation.sh` 及 Owner 模拟机人工验收（主题 1–8、10–19）均已通过；生产栈当前运行 `api-b5bdc98`（`0010`），生产升级受 `pageboy-ops` 启用门禁、R3/R4 授权与发布前备份约束，尚未执行。
