@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -161,7 +162,7 @@ def build_socratic_system_prompt(
     kp_line = "、".join(knowledge_titles) if knowledge_titles else "综合知识点"
     hint_line = f"教研提示参考：{official_hint}\n" if official_hint else ""
     return (
-        "你是初中阶段学习助手「书童」，正在一对一用苏格拉底启发式方法辅导学生订正错题。\n"
+        "你是初中阶段学习伙伴「我的书童」，正在一对一用苏格拉底启发式方法陪伴学生订正错题。\n"
         "【核心铁律】\n"
         "1. 绝对不要直接说出正确答案、最终选项字母（例如“选A/答案是B”）或完整最终数值/结论，哪怕学生主动索要答案也不能直接给。\n"
         "2. 每次只推进 1 个小思考步骤：先肯定学生已有思路或定位错因方向，再提出 1 个简短、具体、可回答的引导问题。\n"
@@ -175,6 +176,69 @@ def build_socratic_system_prompt(
         f"参考标准答案（仅用于你判断学生思考方向是否正确，严禁向学生泄露）：{correct_answer}\n"
         f"{hint_line}"
     )
+
+
+def _open_httpx_client(timeout_seconds: float, *, trust_env: bool) -> httpx.Client:
+    """构造 httpx 客户端；宿主机若开启 socks5 全局代理但缺 socksio 则回退直连上游。"""
+    try:
+        return httpx.Client(timeout=timeout_seconds, trust_env=trust_env)
+    except ImportError:
+        return httpx.Client(timeout=timeout_seconds, trust_env=False)
+
+
+def _post_chat_completion(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    error_label: str,
+    response_format: dict[str, str] | None = None,
+    min_timeout_seconds: float | None = None,
+) -> tuple[str, str]:
+    """调用 OpenAI 兼容 /chat/completions 接口并返回 (文本内容, 实际模型名)。"""
+    cfg = load_ai_tutor_config()
+    endpoint = f"{cfg.base_url}/v1/chat/completions"
+    # DeepSeek 兼容 /v1/chat/completions 与 /chat/completions；默认统一按 OpenAI 规范 /v1/chat/completions
+    if cfg.base_url.endswith("/v1"):
+        endpoint = f"{cfg.base_url}/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {cfg.api_key}",
+        "Content-Type": "application/json",
+    }
+    payload: dict[str, Any] = {
+        "model": cfg.model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+
+    timeout = max(cfg.timeout_seconds, min_timeout_seconds) if min_timeout_seconds else cfg.timeout_seconds
+    # 对本机回环地址绕过环境代理（如 socks5://），避免本地模拟或内网网关因缺少 socksio 或代理转发失败
+    is_loopback = (urlparse(endpoint).hostname or "") in {"127.0.0.1", "localhost", "::1"}
+    try:
+        with _open_httpx_client(timeout, trust_env=not is_loopback) as client:
+            resp = client.post(endpoint, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException as exc:
+        raise AiTutorUnavailableError(f"{error_label}请求超时，请稍后重试") from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 0
+        raise AiTutorUnavailableError(f"{error_label}上游返回异常状态 ({status_code})") from exc
+    except (httpx.RequestError, ValueError) as exc:
+        raise AiTutorUnavailableError(f"无法连接{error_label}服务") from exc
+
+    raw_reply = ""
+    try:
+        choices_payload = data.get("choices") or []
+        if choices_payload:
+            raw_reply = (choices_payload[0].get("message") or {}).get("content") or ""
+    except (AttributeError, IndexError, TypeError) as exc:
+        raise AiTutorUnavailableError(f"{error_label}返回格式异常") from exc
+    return raw_reply, str(data.get("model") or cfg.model)
 
 
 def request_socratic_reply(
@@ -191,7 +255,6 @@ def request_socratic_reply(
 
     返回：(最终安全回复文本, 是否触发防泄密改写, 实际使用模型名)。
     """
-    cfg = load_ai_tutor_config()
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     for item in history_turns:
         role = item.get("role", "user")
@@ -199,44 +262,12 @@ def request_socratic_reply(
         if role in {"user", "assistant"} and content:
             messages.append({"role": role, "content": content})
 
-    endpoint = f"{cfg.base_url}/v1/chat/completions"
-    # DeepSeek 兼容 /v1/chat/completions 与 /chat/completions；默认统一按 OpenAI 规范 /v1/chat/completions
-    if cfg.base_url.endswith("/v1"):
-        endpoint = f"{cfg.base_url}/chat/completions"
-
-    headers = {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "Content-Type": "application/json",
-    }
-    payload: dict[str, Any] = {
-        "model": cfg.model,
-        "messages": messages,
-        "temperature": 0.4,
-        "max_tokens": 320,
-    }
-
-    # 对本机回环地址绕过环境代理（如 socks5://），避免本地模拟或内网网关因缺少 socksio 或代理转发失败
-    is_loopback = (urlparse(endpoint).hostname or "") in {"127.0.0.1", "localhost", "::1"}
-    try:
-        with httpx.Client(timeout=cfg.timeout_seconds, trust_env=not is_loopback) as client:
-            resp = client.post(endpoint, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException as exc:
-        raise AiTutorUnavailableError("AI 错题引导请求超时，请稍后重试") from exc
-    except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code if exc.response is not None else 0
-        raise AiTutorUnavailableError(f"AI 错题引导上游返回异常状态 ({status_code})") from exc
-    except (httpx.RequestError, ValueError) as exc:
-        raise AiTutorUnavailableError("无法连接 AI 错题引导服务") from exc
-
-    raw_reply = ""
-    try:
-        choices_payload = data.get("choices") or []
-        if choices_payload:
-            raw_reply = (choices_payload[0].get("message") or {}).get("content") or ""
-    except (AttributeError, IndexError, TypeError) as exc:
-        raise AiTutorUnavailableError("AI 错题引导返回格式异常") from exc
+    raw_reply, model_used = _post_chat_completion(
+        messages,
+        temperature=0.4,
+        max_tokens=320,
+        error_label="AI 错题引导",
+    )
 
     safe_reply, sanitized = sanitize_socratic_reply(
         raw_reply,
@@ -246,4 +277,173 @@ def request_socratic_reply(
         knowledge_titles=knowledge_titles,
         hint_level=hint_level,
     )
-    return safe_reply, sanitized, str(data.get("model") or cfg.model)
+    return safe_reply, sanitized, model_used
+
+
+ALLOWED_COGNITIVE_GAP_TYPES = {
+    "concept_confusion",
+    "condition_omission",
+    "method_misuse",
+    "reasoning_break",
+    "calculation_slip",
+}
+
+
+def build_error_root_cause_prompt(
+    *,
+    subject: str,
+    stem: str,
+    choices: list[str] | None,
+    correct_answer: str,
+    student_answer: str,
+    knowledge_titles: list[str],
+    dialogue_turns: list[dict[str, str]],
+) -> str:
+    """构建管理端「错因深度剖析 + 三套可选解决对策」提示词。"""
+    choice_lines = ""
+    if choices:
+        labels = "ABCDEFGH"
+        formatted = [f"{labels[i] if i < len(labels) else str(i + 1)}. {c}" for i, c in enumerate(choices)]
+        choice_lines = "选项：\n" + "\n".join(formatted) + "\n"
+    kp_line = "、".join(knowledge_titles) if knowledge_titles else "综合知识点"
+
+    if dialogue_turns:
+        formatted_turns = [
+            f"{idx + 1}. [{'学生' if t.get('role') == 'user' else 'AI 引导'}]: {str(t.get('content') or '').strip()}"
+            for idx, t in enumerate(dialogue_turns)
+            if str(t.get("content") or "").strip()
+        ]
+        dialogue_block = "学生与 AI 引导订正的完整对话记录：\n" + "\n".join(formatted_turns)
+    else:
+        dialogue_block = "学生与 AI 引导订正对话记录：暂无（请结合题目特征、标准答案与学生错误作答客观分析最可能的深层卡点）。"
+
+    return (
+        "你是面向家长与教研老师的初中中考学情诊断专家。请根据错题详情与学生在 AI 引导订正过程中的对话记录，"
+        "深入剖析学生做错这道题的**真正根因**（不要只说“粗心”或复述做错了），并给出**恰好 3 个互不重复、切入维度不同的可选解决方法**供家长/老师选择执行。\n\n"
+        "【输出格式铁律】\n"
+        "只输出一个合法 JSON 对象（不要用 Markdown 代码块以外的多余解释），字段严格如下：\n"
+        "{\n"
+        '  "cognitive_gap_type": "concept_confusion | condition_omission | method_misuse | reasoning_break | calculation_slip",\n'
+        '  "root_cause_summary": "100~220字，直指知识漏洞或思维误区的真正原因",\n'
+        '  "evidence_from_dialogue": "60~150字，结合引导对话或错误作答中的具体表现给出证据",\n'
+        '  "solutions": [\n'
+        "    {\n"
+        '      "option_id": "opt_1",\n'
+        '      "title": "方案一简短标题（如：前置概念辨析微练）",\n'
+        '      "approach_focus": "侧重维度（如：概念纠偏）",\n'
+        '      "rationale": "为什么这个方案针对该错因有效",\n'
+        '      "action_steps": ["具体可执行动作1", "具体可执行动作2", "具体可执行动作3"]\n'
+        "    },\n"
+        '    {"option_id": "opt_2", "...": "..."},\n'
+        '    {"option_id": "opt_3", "...": "..."}\n'
+        "  ]\n"
+        "}\n"
+        "要求：\n"
+        "1. solutions 数组必须严格包含 3 个元素，且分别从不同维度切入（例如：概念本质纠偏、审题与条件提取习惯、同类变式巩固）。\n"
+        "2. 每个方案的 action_steps 包含 2~3 条学生和家长可直接落地的具体动作。\n\n"
+        f"学科：{subject}\n"
+        f"关联知识点：{kp_line}\n"
+        f"题干：{stem}\n"
+        f"{choice_lines}"
+        f"参考答案：{correct_answer}\n"
+        f"学生作答：{student_answer}\n"
+        f"{dialogue_block}\n"
+    )
+
+
+def parse_error_root_cause_json(raw_text: str) -> dict[str, Any]:
+    """解析并严格校验 AI 返回的错因诊断 JSON（必须包含真正错因与 3 个完整可选对策）。"""
+    text = (raw_text or "").strip()
+    if not text:
+        raise AiTutorUnavailableError("AI 错因分析返回为空")
+
+    # 允许模型外层包裹 ```json ... ``` 代码块，提取最外层 JSON 对象
+    fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fence_match:
+        text = fence_match.group(1).strip()
+    elif not text.startswith("{"):
+        brace_start = text.find("{")
+        brace_end = text.rfind("}")
+        if brace_start != -1 and brace_end > brace_start:
+            text = text[brace_start : brace_end + 1]
+
+    try:
+        parsed = json.loads(text)
+    except ValueError as exc:
+        raise AiTutorUnavailableError("AI 错因分析返回的 JSON 格式无效") from exc
+
+    if not isinstance(parsed, dict):
+        raise AiTutorUnavailableError("AI 错因分析返回结构必须为 JSON 对象")
+
+    root_cause = str(parsed.get("root_cause_summary") or "").strip()
+    evidence = str(parsed.get("evidence_from_dialogue") or "").strip()
+    gap_type = str(parsed.get("cognitive_gap_type") or "").strip()
+    if gap_type not in ALLOWED_COGNITIVE_GAP_TYPES:
+        gap_type = "reasoning_break"
+
+    raw_solutions = parsed.get("solutions")
+    if not root_cause or not evidence or not isinstance(raw_solutions, list) or len(raw_solutions) != 3:
+        raise AiTutorUnavailableError("AI 错因分析未返回完整的错因摘要与 3 个可选解决方法")
+
+    normalized_solutions: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_solutions):
+        if not isinstance(item, dict):
+            raise AiTutorUnavailableError("AI 错因分析方案条目格式错误")
+        title = str(item.get("title") or "").strip()
+        focus = str(item.get("approach_focus") or "").strip()
+        rationale = str(item.get("rationale") or "").strip()
+        raw_steps = item.get("action_steps")
+        steps = [str(s).strip() for s in raw_steps if str(s).strip()] if isinstance(raw_steps, list) else []
+        if not title or not focus or not rationale or not steps:
+            raise AiTutorUnavailableError("AI 错因分析方案缺少标题、切入角度或可执行步骤")
+        normalized_solutions.append(
+            {
+                "option_id": f"opt_{idx + 1}",
+                "title": title,
+                "approach_focus": focus,
+                "rationale": rationale,
+                "action_steps": steps[:4],
+            }
+        )
+
+    return {
+        "root_cause_summary": root_cause,
+        "cognitive_gap_type": gap_type,
+        "evidence_from_dialogue": evidence,
+        "solutions": normalized_solutions,
+    }
+
+
+def request_error_root_cause_analysis(
+    *,
+    subject: str,
+    stem: str,
+    choices: list[str] | None,
+    correct_answer: str,
+    student_answer: str,
+    knowledge_titles: list[str],
+    dialogue_turns: list[dict[str, str]],
+) -> tuple[dict[str, Any], str]:
+    """调用 LLM 分析学生错题真正原因并生成 3 个可选解决方法。"""
+    prompt = build_error_root_cause_prompt(
+        subject=subject,
+        stem=stem,
+        choices=choices,
+        correct_answer=correct_answer,
+        student_answer=student_answer,
+        knowledge_titles=knowledge_titles,
+        dialogue_turns=dialogue_turns,
+    )
+    raw_reply, model_used = _post_chat_completion(
+        [
+            {"role": "system", "content": "你是一位严谨的初中中考学情诊断与教研专家，只输出严格符合要求的结构化 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=1100,
+        error_label="AI 错因诊断",
+        response_format={"type": "json_object"},
+        min_timeout_seconds=45.0,
+    )
+    parsed = parse_error_root_cause_json(raw_reply)
+    return parsed, model_used

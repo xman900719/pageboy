@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import {
   describeError,
   type ApiClient,
   type TutorSession,
   type WrongQuestionSummary,
 } from '../api'
+import { resolveAnswerContent } from '../copy'
 import { RichText } from '../rich'
 
 const props = defineProps<{
@@ -22,12 +23,20 @@ const loading = ref(false)
 const sending = ref(false)
 const error = ref('')
 const draft = ref('')
+const messagesRef = ref<HTMLElement | null>(null)
 
 const QUICK_REPLIES = [
-  '我先梳理一下题目给出的已知条件',
-  '我选这个答案是因为没看清关键词，提示我下一步检查什么？',
-  '这道题具体卡在解题的第二步了',
+  '为什么我选的答案不对？',
+  '这道题第一步该怎么想？',
+  '我明白了，再考我一个小问题',
 ]
+
+async function scrollToBottom() {
+  await nextTick()
+  const el = messagesRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+}
 
 async function initTutor() {
   loading.value = true
@@ -39,6 +48,7 @@ async function initTutor() {
     } else {
       session.value = await props.client.startTutorForAttempt(props.wrongItem.attempt_id)
     }
+    await scrollToBottom()
   } catch (e) {
     error.value = describeError(e)
   } finally {
@@ -54,12 +64,20 @@ async function sendText(text?: string) {
   try {
     session.value = await props.client.sendTutorMessage(session.value.id, content)
     if (!text) draft.value = ''
+    await scrollToBottom()
   } catch (e) {
     error.value = describeError(e)
   } finally {
     sending.value = false
   }
 }
+
+watch(
+  () => session.value?.turns.length ?? 0,
+  () => {
+    void scrollToBottom()
+  }
+)
 
 watch(
   () => props.wrongItem.attempt_id,
@@ -73,67 +91,84 @@ watch(
 </script>
 
 <template>
-  <section class="tutor-drawer" aria-label="AI 错题引导讲解">
-    <div class="tutor-head">
-      <div>
-        <span class="eyebrow">苏格拉底启发式引导 · 不直接给答案</span>
-        <h3>错题 AI 引导订正</h3>
+  <section class="tutor-drawer chat-window" aria-label="AI 错题引导讲解">
+    <div class="chat-header">
+      <div class="chat-agent">
+        <img
+          class="ai-avatar-img"
+          src="/icons/apple-touch-icon.png"
+          alt="我的书童"
+          width="36"
+          height="36"
+        />
+        <div class="chat-agent-title">
+          <h3>
+            <span class="online-dot" aria-hidden="true" />
+            我的书童
+          </h3>
+          <div class="chat-answer-pills">
+            <span class="chip bad">
+              错答：<RichText :text="resolveAnswerContent(wrongItem.student_answer, wrongItem.options)" />
+            </span>
+            <span v-if="wrongItem.correct_answer" class="chip good">
+              正解：<RichText :text="resolveAnswerContent(wrongItem.correct_answer, wrongItem.options)" />
+            </span>
+          </div>
+        </div>
       </div>
       <button type="button" class="ghost small" @click="emit('close')">
-        收起讲解
+        收起
       </button>
     </div>
 
-    <div class="tutor-question-brief">
-      <div class="tutor-tags">
-        <span
-          v-for="title in wrongItem.knowledge_titles"
-          :key="title"
-          class="chip"
-        >
-          {{ title }}
-        </span>
-        <span class="chip bad">你的作答：{{ wrongItem.student_answer }}</span>
-      </div>
-      <p class="tutor-stem">
-        <RichText :text="wrongItem.stem" />
-      </p>
+    <slot name="banner" />
+
+    <div v-if="loading" class="chat-loading-box">
+      我的书童正在看题，马上开始对话…
     </div>
 
-    <div v-if="loading" class="tutor-loading">
-      正在请 AI 老师阅读题目与你的作答思路，生成第一步引导问题…
-    </div>
-
-    <div v-else-if="error && !session" class="tutor-error-box">
-      <p>{{ error }}</p>
+    <div v-else-if="error && !session" class="chat-loading-box">
+      <p style="margin: 0 0 8px;">{{ error }}</p>
       <button type="button" class="primary small" @click="initTutor">
-        重新发起引导
+        重新唤醒我的书童
       </button>
     </div>
 
-    <div v-if="session" class="tutor-chat">
-      <div class="tutor-turns" aria-live="polite">
+    <template v-if="session">
+      <div ref="messagesRef" class="tutor-turns chat-messages" aria-live="polite">
         <div
           v-for="turn in session.turns"
           :key="turn.id"
-          :class="['tutor-bubble', turn.role === 'assistant' ? 'ai' : 'student']"
+          :class="['msg-row', turn.role === 'assistant' ? 'ai' : 'stu']"
         >
-          <div class="bubble-meta">
-            <b>{{ turn.role === 'assistant' ? '书童引导' : '我的思考' }}</b>
-            <span v-if="turn.sanitized_guard_triggered" class="guard-pill">已开启防直接泄题保护</span>
+          <img
+            v-if="turn.role === 'assistant'"
+            class="msg-avatar-img"
+            src="/icons/apple-touch-icon.png"
+            alt=""
+            aria-hidden="true"
+            width="28"
+            height="28"
+          />
+          <span v-else class="msg-avatar" aria-hidden="true">我</span>
+          <div class="msg-bubble-wrap">
+            <div class="msg-sender">
+              <b>{{ turn.role === 'assistant' ? '我的书童' : '我' }}</b>
+              <span v-if="turn.sanitized_guard_triggered" class="guard-pill">引导模式</span>
+            </div>
+            <p class="msg-bubble">
+              <RichText :text="turn.content" />
+            </p>
           </div>
-          <p class="bubble-text">
-            <RichText :text="turn.content" />
-          </p>
         </div>
       </div>
 
-      <div class="quick-replies" aria-label="快捷思考回复">
+      <div class="chat-quick-bar" aria-label="快捷思考回复">
         <button
           v-for="preset in QUICK_REPLIES"
           :key="preset"
           type="button"
-          class="chip-btn"
+          class="quick-chip"
           :disabled="sending"
           @click="sendText(preset)"
         >
@@ -141,25 +176,25 @@ watch(
         </button>
       </div>
 
-      <p v-if="error" class="form-error">{{ error }}</p>
+      <p v-if="error" class="form-error" style="padding: 0 12px;">{{ error }}</p>
 
-      <form class="tutor-input-row" @submit.prevent="sendText()">
-        <label class="sr-only" for="tutor-reply-input">输入你的思考或疑问</label>
+      <form class="chat-composer" @submit.prevent="sendText()">
+        <label class="sr-only" for="tutor-reply-input">跟我的书童对话</label>
         <textarea
           id="tutor-reply-input"
           v-model="draft"
-          rows="2"
+          rows="1"
           :disabled="sending"
-          placeholder="写下你的推理步骤、卡住的地方或新发现的线索…"
+          placeholder="跟我的书童说说你的想法，或哪里卡住了…"
         />
         <button
           type="submit"
-          class="primary"
+          class="chat-send-btn"
           :disabled="sending || !draft.trim()"
         >
-          {{ sending ? '思考中…' : '发送思路' }}
+          {{ sending ? '回复中…' : '发送' }}
         </button>
       </form>
-    </div>
+    </template>
   </section>
 </template>

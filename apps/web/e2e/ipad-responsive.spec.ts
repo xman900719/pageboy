@@ -58,11 +58,17 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   expect(await page.evaluate(() => 'ontouchstart' in window)).toBe(true)
   expect(await page.evaluate(() => innerWidth)).toBe(810)
 
-  // 练习（默认视图）：810px 下 .lobby-controls 保持桌面双列布局（720 断点未触发），且不产生曝光。
+  // 练习（默认视图）：810px 下 .lobby-controls 保持网格布局（720 断点未触发），且可切换至近期错题回顾工作台无溢出。
   await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
   const lobbyGridDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('.lobby-controls')!).display)
-  expect(lobbyGridDisplay, '810px 应保持双列控制网格（720 断点未触发）').toBe('grid')
+  expect(lobbyGridDisplay, '810px 应保持控制网格（720 断点未触发）').toBe('grid')
   await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('tab', { name: /近期错题回顾/ }).click()
+  await expect(page.getByRole('region', { name: '近期错题与引导复习' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('tab', { name: /开始新练习/ }).click()
+  await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
 
   // 成长状态视图：只读加载（不修改目标、不消耗未见题），度量双列与雷达无溢出。
   await navTab(page, /成长状态/).click()
@@ -117,6 +123,10 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
 
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '知识点库' }).click()
   await expect(page.getByRole('region', { name: '知识点工作台总览' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '错题诊断' }).click()
+  await expect(page.getByRole('region', { name: '错题 AI 深度诊断工作台' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

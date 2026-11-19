@@ -411,3 +411,298 @@ def test_batch_review_and_full_taxonomy_audit_publish(client, admin_auth):
         assert rel_list[0]["total_nodes"] == 48
     finally:
         db.close()
+
+
+def test_alembic_0020_roundtrip(tmp_path):
+    """正例：Alembic 0020 在空库上 upgrade head -> downgrade 0019 -> upgrade head 完整可逆。"""
+    db_file = tmp_path / "alembic_0020.sqlite3"
+    api_root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "DATABASE_URL": f"sqlite:///{db_file}"}
+
+    up1 = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=api_root, env=env, capture_output=True, text=True)
+    assert up1.returncode == 0, up1.stderr
+
+    engine = make_engine(f"sqlite:///{db_file}")
+    insp = inspect(engine)
+    assert "ai_error_diagnoses" in set(insp.get_table_names())
+    turn_cols = {col["name"] for col in insp.get_columns("ai_tutor_turns")}
+    assert "sanitized_guard_triggered" in turn_cols
+    engine.dispose()
+
+    down = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "0019"], cwd=api_root, env=env, capture_output=True, text=True)
+    assert down.returncode == 0, down.stderr
+
+    engine2 = make_engine(f"sqlite:///{db_file}")
+    insp2 = inspect(engine2)
+    assert "ai_error_diagnoses" not in set(insp2.get_table_names())
+    turn_cols2 = {col["name"] for col in insp2.get_columns("ai_tutor_turns")}
+    assert "sanitized_guard_triggered" not in turn_cols2
+    engine2.dispose()
+
+    up2 = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=api_root, env=env, capture_output=True, text=True)
+    assert up2.returncode == 0, up2.stderr
+
+
+def test_admin_wrong_diagnostics_and_level2_solution_loop(client, admin_auth, student_auth, monkeypatch):
+    """端到端：引导对话持久化 -> 管理端回放与 AI 错因三选一 -> 选定对策透出至学生端（Level 2）。"""
+    import json as json_lib
+
+    _publish_mapped_questions(
+        client,
+        admin_auth,
+        [
+            {"stem": "虚构测试数据：已知 2x - 4 = 0，求 x", "knowledge_ids": ["math.num.real"], "correct_answer": "A"},
+            {"stem": "虚构测试数据：已知 x + 3 = 5，求 x", "knowledge_ids": ["math.func.linear"], "correct_answer": "A"},
+        ],
+    )
+
+    # 1. 双令牌隔离：学生 Token 访问管理端诊断接口一律 403
+    assert client.get("/api/admin/wrong-diagnostics?subject=math", headers=student_auth).status_code == 403
+
+    # 2. 学生做 2 题：第 1 题答对（满分），第 2 题答错（选 B）
+    sess = client.post("/api/practice/sessions", json={"subject": "math", "target_count": 2}, headers=student_auth).json()
+    q1 = sess["current_item"]
+    att1 = client.post(
+        "/api/practice/attempts",
+        json={"client_attempt_id": str(uuid.uuid4()), "exposure_id": q1["exposure_id"], "answer": "A", "hints_used": False},
+        headers=student_auth,
+    ).json()
+    sess2 = client.post(f"/api/practice/sessions/{sess['id']}/next", headers=student_auth).json()
+    q2 = sess2["current_item"]
+    att2 = client.post(
+        "/api/practice/attempts",
+        json={"client_attempt_id": str(uuid.uuid4()), "exposure_id": q2["exposure_id"], "answer": "B", "hints_used": False},
+        headers=student_auth,
+    ).json()
+    wrong_id = att2["id"]
+    right_id = att1["id"]
+
+    # 反例：满分作答不可用于错因诊断
+    assert client.get(f"/api/admin/wrong-diagnostics/{right_id}", headers=admin_auth).status_code == 422
+
+    # 3. 无引导对话前，管理端列表可见错题且允许手动触发分析
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("SHUTONG_AI_BASE_URL", "https://api.deepseek.com")
+
+    class FakeResp:
+        def __init__(self, content: str):
+            self._content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"model": "deepseek-chat", "choices": [{"message": {"content": self._content}}]}
+
+    # 3a. 反例：上游返回非 3 个方案 JSON -> 503 Fail-Closed
+    class BadAnalysisClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            return FakeResp(json_lib.dumps({"root_cause_summary": "x", "evidence_from_dialogue": "y", "solutions": []}))
+
+    monkeypatch.setattr(ai_tutor.httpx, "Client", BadAnalysisClient)
+    fail_analyze = client.post(f"/api/admin/wrong-diagnostics/{wrong_id}/analyze", headers=admin_auth)
+    assert fail_analyze.status_code == 503
+
+    # 4. 学生开启引导并多轮对话，验证对话及 sanitized_guard_triggered 落库
+    tutor_replies = iter(["先把题目里的常数项看清楚，移项时符号怎么变化？", "对的，移到等号右侧后要变号。"])
+
+    class GoodTutorClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            return FakeResp(next(tutor_replies))
+
+    monkeypatch.setattr(ai_tutor.httpx, "Client", GoodTutorClient)
+    ts = client.post(f"/api/tutor/attempts/{wrong_id}/start", headers=student_auth).json()
+    client.post(f"/api/tutor/sessions/{ts['id']}/message", json={"content": "移项后我忘记变号了"}, headers=student_auth)
+
+    # 管理端列表与详情应能完整回放已保存的多轮引导对话
+    list_res = client.get("/api/admin/wrong-diagnostics?subject=math", headers=admin_auth)
+    assert list_res.status_code == 200
+    rows = list_res.json()
+    assert len(rows) == 1
+    assert rows[0]["attempt_id"] == wrong_id
+    assert rows[0]["tutor_turn_count"] == 3
+    assert rows[0]["has_diagnosis"] is False
+
+    detail_before = client.get(f"/api/admin/wrong-diagnostics/{wrong_id}", headers=admin_auth)
+    assert detail_before.status_code == 200
+    assert detail_before.json()["correct_answer"] == "A"
+    assert len(detail_before.json()["tutor_turns"]) == 3
+    assert detail_before.json()["tutor_turns"][1]["content"] == "移项后我忘记变号了"
+
+    # 反例：未生成诊断前不能直接选方案
+    assert (
+        client.post(
+            f"/api/admin/wrong-diagnostics/{wrong_id}/select-solution",
+            json={"option_id": "opt_1"},
+            headers=admin_auth,
+        ).status_code
+        == 404
+    )
+
+    # 5. 管理端手动触发 AI 错因分析，返回真正原因 + 3 个可选方案并落库
+    valid_analysis = {
+        "cognitive_gap_type": "concept_confusion",
+        "root_cause_summary": "学生对等式基本性质（移项变号本质）理解不牢，机械记忆移项步骤导致符号出错。",
+        "evidence_from_dialogue": "学生在引导第2轮主动承认“移项后忘记变号”，反映对等式两边同时加减的本质缺乏条件反射。",
+        "solutions": [
+            {
+                "option_id": "opt_1",
+                "title": "等式天平原理手写推导",
+                "approach_focus": "概念纠偏",
+                "rationale": "从两边同减同加消除机械移项错误。",
+                "action_steps": ["先写完整两边同减步骤", "再对照省略形式口述变号依据"],
+            },
+            {
+                "option_id": "opt_2",
+                "title": "移项符号双色圈画法",
+                "approach_focus": "习惯与审题",
+                "rationale": "通过视觉锚点防止跨等号丢符号。",
+                "action_steps": ["跨过等号前先用红笔圈出正负号", "重写一遍新符号再合并同类项"],
+            },
+            {
+                "option_id": "opt_3",
+                "title": "3 题同构含负号变式微练",
+                "approach_focus": "变式迁移",
+                "rationale": "用不同符号组合巩固迁移稳定性。",
+                "action_steps": ["连续完成3道含负号移项小题", "每题做完代入原式口算验根"],
+            },
+        ],
+    }
+
+    class GoodAnalysisClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            return FakeResp(f"```json\n{json_lib.dumps(valid_analysis, ensure_ascii=False)}\n```")
+
+    monkeypatch.setattr(ai_tutor.httpx, "Client", GoodAnalysisClient)
+    analyzed = client.post(f"/api/admin/wrong-diagnostics/{wrong_id}/analyze", headers=admin_auth)
+    assert analyzed.status_code == 200
+    adata = analyzed.json()
+    assert adata["diagnosis"] is not None
+    assert adata["diagnosis"]["cognitive_gap_type"] == "concept_confusion"
+    assert len(adata["diagnosis"]["solutions"]) == 3
+
+    # 6. 管理员选定方案 opt_2 + 备注，并验证 Level 2 透出到学生端 wrong-attempts（且不泄参考答案）
+    assert client.post(
+        f"/api/admin/wrong-diagnostics/{wrong_id}/select-solution",
+        json={"option_id": "opt_9"},
+        headers=admin_auth,
+    ).status_code == 422
+
+    selected = client.post(
+        f"/api/admin/wrong-diagnostics/{wrong_id}/select-solution",
+        json={"option_id": "opt_2", "admin_note": "今晚先用红笔圈出移项符号练习 5 分钟"},
+        headers=admin_auth,
+    )
+    assert selected.status_code == 200
+    assert selected.json()["diagnosis"]["selected_option_id"] == "opt_2"
+    assert selected.json()["diagnosis"]["admin_note"] == "今晚先用红笔圈出移项符号练习 5 分钟"
+
+    # 学生端历史错题回顾透出 adopted_solution 与错答/正解对照（做题中与刚交卷仍不提前泄答）
+    student_wrongs = client.get("/api/practice/wrong-attempts?subject=math", headers=student_auth)
+    assert student_wrongs.status_code == 200
+    wlist = student_wrongs.json()
+    assert len(wlist) == 1
+    assert wlist[0]["student_answer"] == "B"
+    assert wlist[0]["correct_answer"] == "A"
+    assert wlist[0]["adopted_solution"] is not None
+    assert wlist[0]["adopted_solution"]["option_id"] == "opt_2"
+    assert wlist[0]["adopted_solution"]["title"] == "移项符号双色圈画法"
+    assert wlist[0]["adopted_solution"]["admin_note"] == "今晚先用红笔圈出移项符号练习 5 分钟"
+
+
+def test_ai_tutor_socks_proxy_import_error_fallback(monkeypatch):
+    """回归：宿主机存在 socks5 环境变量但缺 socksio 时，_post_chat_completion 必须回退 trust_env=False 而非抛 ImportError(500)。"""
+    import json as json_lib
+
+    monkeypatch.setenv("SHUTONG_AI_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("SHUTONG_AI_BASE_URL", "https://api.deepseek.com")
+
+    calls: list[bool] = []
+    valid_json = json_lib.dumps(
+        {
+            "cognitive_gap_type": "condition_omission",
+            "root_cause_summary": "审题遗漏限定条件。",
+            "evidence_from_dialogue": "学生未列出条件约束。",
+            "solutions": [
+                {"option_id": "opt_1", "title": "方案1", "approach_focus": "审题", "rationale": "r1", "action_steps": ["s1"]},
+                {"option_id": "opt_2", "title": "方案2", "approach_focus": "概念", "rationale": "r2", "action_steps": ["s2"]},
+                {"option_id": "opt_3", "title": "方案3", "approach_focus": "变式", "rationale": "r3", "action_steps": ["s3"]},
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"model": "deepseek-chat", "choices": [{"message": {"content": valid_json}}]}
+
+    class ProxyFailingClient:
+        def __init__(self, *args, **kwargs):
+            trust_env = kwargs.get("trust_env", True)
+            calls.append(trust_env)
+            if trust_env:
+                raise ImportError("Using SOCKS proxy, but the 'socksio' package is not installed.")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            return FakeResp()
+
+    monkeypatch.setattr(ai_tutor.httpx, "Client", ProxyFailingClient)
+
+    parsed, model_used = ai_tutor.request_error_root_cause_analysis(
+        subject="math",
+        stem="测试题干",
+        choices=["A. 1", "B. 2"],
+        correct_answer="A",
+        student_answer="B",
+        knowledge_titles=["实数"],
+        dialogue_turns=[],
+    )
+    assert calls == [True, False]
+    assert model_used == "deepseek-chat"
+    assert len(parsed["solutions"]) == 3
+
+
+def test_safe_stem_excerpt_preserves_latex_pairs():
+    """正例：公式横跨截断长度时延展至闭合 $，不产生奇数个 $ 导致前端乱码。"""
+    from shutong.learning_api import _safe_stem_excerpt
+
+    stem = "方程组 $\\begin{cases} x - y = 3 \\\\ 3x - 8y = 14 \\end{cases}$ 的解为（    ）且满足额外条件"
+    excerpt = _safe_stem_excerpt(stem, max_len=24)
+    assert excerpt.count("$") % 2 == 0
+    assert "\\end{cases}$" in excerpt

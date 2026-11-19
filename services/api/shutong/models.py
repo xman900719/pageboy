@@ -434,7 +434,29 @@ class AiTutorTurn(Base):
     role: Mapped[str] = mapped_column(String(20))  # user / assistant
     content: Mapped[str] = mapped_column(Text)
     model_used: Mapped[str | None] = mapped_column(String(80))
+    sanitized_guard_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AiErrorDiagnosis(Base):
+    """管理端 AI 错因深度剖析与三选一解决对策记录（按错题作答绑定）。"""
+    __tablename__ = "ai_error_diagnoses"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("answer_attempts.id"), unique=True)
+    tutor_session_id: Mapped[str | None] = mapped_column(ForeignKey("ai_tutor_sessions.id"), nullable=True)
+    question_version_id: Mapped[str] = mapped_column(ForeignKey("question_versions.id"))
+    subject: Mapped[str] = mapped_column(String(20), index=True)
+    root_cause_summary: Mapped[str] = mapped_column(Text)
+    cognitive_gap_type: Mapped[str] = mapped_column(String(40))
+    evidence_from_dialogue: Mapped[str] = mapped_column(Text)
+    solutions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    selected_option_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_used: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SchoolExamReport(Base):

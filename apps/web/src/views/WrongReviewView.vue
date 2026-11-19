@@ -11,7 +11,7 @@ import {
   type Subject,
   type WrongQuestionSummary,
 } from '../api'
-import { fmtPoints } from '../copy'
+import { fmtPoints, resolveAnswerContent } from '../copy'
 import { getSchoolErrorCategoryLabel, SCHOOL_ERROR_CATEGORY_OPTIONS } from '../config/knowledge'
 import {
   formatQuestionLabelHeading,
@@ -435,8 +435,8 @@ watch(
     >
       <div class="card-head">
         <div>
-          <h3>{{ SCHOOL_SUBJECT_LABELS[activeSubject] }}日常练习错题引导</h3>
-          <p class="card-sub">同步回顾日常智能练习中的错题，随时开启苏格拉底式 AI 引导。</p>
+          <h3>{{ SCHOOL_SUBJECT_LABELS[activeSubject] }}日常练习错题回顾</h3>
+          <p class="card-sub">同步回顾日常智能练习中的错题，随时与「我的书童」对话理清思路。</p>
         </div>
       </div>
       <div class="wrong-review-layout">
@@ -448,14 +448,15 @@ watch(
               :class="['wrong-item-card', activeTutorItem?.attempt_id === w.attempt_id ? 'active' : '']"
             >
               <div class="wrong-meta">
-                <span class="chip bad">作答：{{ w.student_answer }}</span>
+                <span class="chip bad">错答：<RichText :text="resolveAnswerContent(w.student_answer, w.options)" /></span>
+                <span v-if="w.correct_answer" class="chip good">正解：<RichText :text="resolveAnswerContent(w.correct_answer, w.options)" /></span>
                 <span class="muted">{{ fmtPoints(w.earned_points ?? 0) }} / {{ fmtPoints(w.max_points) }}</span>
               </div>
               <p class="wrong-stem"><RichText :text="w.stem" /></p>
               <div class="wrong-foot">
                 <span v-for="t in w.knowledge_titles" :key="t" class="chip">{{ t }}</span>
                 <button type="button" class="ghost small" @click="activeTutorItem = w">
-                  {{ w.tutor_session_id ? '继续 AI 引导' : 'AI 引导讲解' }}
+                  {{ w.tutor_session_id ? '继续对话' : '问我的书童' }}
                 </button>
               </div>
             </li>

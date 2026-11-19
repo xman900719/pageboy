@@ -162,18 +162,18 @@ test('J2 智能综合练习与 AI 错题引导：整轮作答、结算错题与�
 
   const tutor = page.getByRole('region', { name: 'AI 错题引导讲解' })
   await expect(tutor).toBeVisible()
-  await expect(tutor).toContainText('苏格拉底启发式引导 · 不直接给答案')
+  await expect(tutor).toContainText('我的书童')
   const turns = tutor.locator('.tutor-turns')
   await expect(turns).toContainText('我们先不急着下结论')
   expect(await turns.innerText()).not.toContain('正确答案是 A')
 
   // 学生输入思考内容，触发 AI 多轮启发式回应
   await tutor.locator('#tutor-reply-input').fill('我先看清题干里的实数条件')
-  await tutor.getByRole('button', { name: '发送思路' }).click()
+  await tutor.getByRole('button', { name: '发送' }).click()
   await expect(turns).toContainText('我先看清题干里的实数条件')
   await expect(turns).toContainText('思路很对')
 
-  await tutor.getByRole('button', { name: '收起讲解' }).click()
+  await tutor.getByRole('button', { name: '收起' }).click()
   await expect(tutor).toHaveCount(0)
 
   // 作答溯源区域保留可读记录
@@ -2365,4 +2365,53 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
   expect(bundleBody).not.toBeNull()
   expect(bundleBody?.confirm_total_scores).toBe(false)
   await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
+
+/* ---------- J10 方案 A 错题工作台 + 管理端 AI 错因三选一 + Level 2 闭环 ---------- */
+
+test('J10 学生端方案 A 错题工作台与管理端 AI 错因诊断三选一闭环', async ({ page }) => {
+  // 1. 学生端练习页方案 2 错题卡显示错答与正解具体内容、统一称呼「我的书童」并回放 J2 对话
+  await enterSpace(page)
+  await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
+  await page.getByRole('tab', { name: /近期错题回顾/ }).click()
+  const reviewRegion = page.getByRole('region', { name: '近期错题与引导复习' })
+  await expect(reviewRegion).toBeVisible()
+  await expect(reviewRegion).toContainText('错答：乙')
+  await expect(reviewRegion).toContainText('正解：甲')
+  // J3 错题在最前已被默认选中，点击另一条「继续对话」即打开 J2 保留多轮思考的错题
+  await reviewRegion.getByRole('button', { name: /继续对话/ }).first().click()
+  await expect(reviewRegion).toContainText('我先看清题干里的实数条件')
+
+  // 2. 管理端「错题诊断」方案 A（汇总信息卡 + 三步锁步流）：选错题 -> 对话回放与 AI 剖析 -> 3 列方案选定
+  await enterAdminSpace(page)
+  await adminNavTab(page, /错题诊断/).click()
+  const diag = page.getByRole('region', { name: '错题 AI 深度诊断工作台' })
+  await expect(diag).toBeVisible()
+  await expect(diag.getByRole('region', { name: '错题诊断工作台总览' })).toBeVisible()
+
+  await diag.getByRole('button', { name: /对话 3 轮/ }).click()
+  await expect(diag).toContainText('我先看清题干里的实数条件')
+
+  await diag.getByRole('button', { name: 'AI 分析真正错因' }).click()
+  await expect(diag).toContainText('学生在审题阶段忽略了题干的限定条件')
+  await diag.getByRole('button', { name: /下一步：从 3 个解决对策中拍板/ }).click()
+
+  await diag.getByRole('radio', { name: /选项逐项反代检验训练/ }).click()
+  await diag.getByPlaceholder(/今晚先用红笔/).fill('先代回原题干验证一遍再提交')
+  await diag.getByRole('button', { name: /确认采用此方案/ }).click()
+  await expect(diag).toContainText('当前已采纳：选项逐项反代检验训练')
+
+  // 3. 学生端重新进入「近期错题回顾」工作台，看到 Level 2 改进对策并可一键跳转定向练一轮
+  await enterSpace(page)
+  await page.getByRole('tab', { name: /近期错题回顾/ }).click()
+  const reviewRegionAfter = page.getByRole('region', { name: '近期错题与引导复习' })
+  await reviewRegionAfter.getByRole('button', { name: /继续对话/ }).first().click()
+  const adoptedBox = page.getByLabel('家长或老师选定的改进对策')
+  await expect(adoptedBox).toBeVisible()
+  await expect(adoptedBox).toContainText('选项逐项反代检验训练')
+  await expect(adoptedBox).toContainText('先代回原题干验证一遍再提交')
+
+  await adoptedBox.getByRole('button', { name: /练一轮/ }).click()
+  await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '智能综合练习编排' })).toContainText('已锁定知识点定向突破')
 })

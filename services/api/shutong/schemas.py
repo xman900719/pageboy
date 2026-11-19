@@ -602,8 +602,19 @@ class PracticeSessionOut(BaseModel):
     current_item: PracticeQuestionPayloadOut | None = None
 
 
+class AdoptedSolutionOut(BaseModel):
+    """管理端已采纳的改进方案（Level 2 透出给学生端的精简对策视图）。"""
+
+    option_id: str
+    title: str
+    approach_focus: str
+    action_steps: list[str]
+    admin_note: str | None = None
+    selected_at: datetime | None = None
+
+
 class WrongQuestionSummaryOut(BaseModel):
-    """错题汇总卡片信息（不直接下发标准答案，由 AI 引导启发）。"""
+    """错题汇总卡片信息（本轮刚交卷结算时不下发参考答案，由我的书童引导启发）。"""
 
     attempt_id: str
     question_version_id: str
@@ -618,7 +629,14 @@ class WrongQuestionSummaryOut(BaseModel):
     knowledge_codes: list[str]
     knowledge_titles: list[str]
     tutor_session_id: str | None = None
+    adopted_solution: AdoptedSolutionOut | None = None
     created_at: datetime | None = None
+
+
+class HistoricalWrongQuestionSummaryOut(WrongQuestionSummaryOut):
+    """历史近期错题回顾卡片信息（已作答历史错题展示错答与正确答案对照）。"""
+
+    correct_answer: str
 
 
 class PracticeSessionCompleteOut(BaseModel):
@@ -804,3 +822,92 @@ class SchoolExamReportSubjectIn(BaseModel):
     participants: int | None = Field(default=None, ge=1)
     class_highest: float | None = Field(default=None, ge=0)
     grade_highest: float | None = Field(default=None, ge=0)
+
+
+CognitiveGapType = Literal[
+    "concept_confusion",
+    "condition_omission",
+    "method_misuse",
+    "reasoning_break",
+    "calculation_slip",
+]
+
+
+class DiagnosisSolutionOptionOut(BaseModel):
+    """AI 为管理员提供的单个可选解决对策。"""
+
+    option_id: Literal["opt_1", "opt_2", "opt_3"]
+    title: str
+    approach_focus: str
+    rationale: str
+    action_steps: list[str]
+
+
+class AdminErrorDiagnosisOut(BaseModel):
+    """管理端 AI 错因深度分析与三套可选解决方法。"""
+
+    id: str
+    attempt_id: str
+    tutor_session_id: str | None = None
+    root_cause_summary: str
+    cognitive_gap_type: CognitiveGapType
+    evidence_from_dialogue: str
+    solutions: list[DiagnosisSolutionOptionOut]
+    selected_option_id: Literal["opt_1", "opt_2", "opt_3"] | None = None
+    admin_note: str | None = None
+    model_used: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    selected_at: datetime | None = None
+
+
+class AdminWrongDiagnosticListItemOut(BaseModel):
+    """管理端错题诊断工作台左侧列表项。"""
+
+    attempt_id: str
+    question_version_id: str
+    subject: Subject
+    stem_excerpt: str
+    kind: Literal["single_choice", "short_answer", "subjective"]
+    options: list[str] = Field(default_factory=list)
+    correct_answer: str = ""
+    student_answer: str
+    earned_points: float | None = None
+    max_points: float
+    knowledge_codes: list[str]
+    knowledge_titles: list[str]
+    tutor_session_id: str | None = None
+    tutor_turn_count: int = 0
+    has_diagnosis: bool = False
+    selected_option_id: str | None = None
+    selected_solution_title: str | None = None
+    cognitive_gap_type: str | None = None
+    created_at: datetime
+
+
+class AdminWrongDiagnosticDetailOut(BaseModel):
+    """管理端错题详情：含参考答案、完整数据库引导对话回放与 AI 诊断报告。"""
+
+    attempt_id: str
+    question_version_id: str
+    subject: Subject
+    stem: str
+    kind: Literal["single_choice", "short_answer", "subjective"]
+    options: list[str]
+    correct_answer: str
+    student_answer: str
+    earned_points: float | None = None
+    max_points: float
+    knowledge_codes: list[str]
+    knowledge_titles: list[str]
+    tutor_session_id: str | None = None
+    tutor_turns: list[TutorTurnOut] = Field(default_factory=list)
+    diagnosis: AdminErrorDiagnosisOut | None = None
+    created_at: datetime
+
+
+class AdminSelectSolutionIn(BaseModel):
+    """管理员选定其中一套解决对策并附加备注。"""
+
+    option_id: Literal["opt_1", "opt_2", "opt_3"]
+    admin_note: str | None = Field(default=None, max_length=500)
