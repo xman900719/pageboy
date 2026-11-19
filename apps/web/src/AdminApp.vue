@@ -16,6 +16,7 @@ import Gate from './components/Gate.vue'
 import AdminView, { type LedgerSubTab } from './views/AdminView.vue'
 import SchoolExamCard from './components/admin/SchoolExamCard.vue'
 import KnowledgeReviewCard from './components/admin/KnowledgeReviewCard.vue'
+import WrongDiagnosisCenter from './components/admin/WrongDiagnosisCenter.vue'
 
 // P0-1 安全整改：管理端令牌仅当前页面内存保存，不再写入 localStorage，杜绝同源本地持久化串用风险
 const token = ref('')
@@ -192,6 +193,14 @@ function signOut() {
           :notify="notify"
         />
       </div>
+
+      <div v-else-if="view === 'diagnostics'" class="admin-diagnostics-full">
+        <WrongDiagnosisCenter
+          :client="client"
+          :subject="subject"
+          :notify="notify"
+        />
+      </div>
     </main>
 
     <Gate v-else :on-enter="enter" :allow-remember="false" role="admin" />
@@ -203,7 +212,8 @@ function signOut() {
 
 <style scoped>
 .admin-exams-full,
-.admin-knowledge-full {
+.admin-knowledge-full,
+.admin-diagnostics-full {
   width: 100%;
   max-width: 100%;
 }

@@ -17,13 +17,22 @@ export const MASTERY_LABELS: Record<string, string> = {
   untested: '暂未测验',
 }
 
-export type AdminViewId = 'ledger' | 'exams' | 'knowledge'
+export type AdminViewId = 'ledger' | 'exams' | 'knowledge' | 'diagnostics'
 
 export const ADMIN_VIEWS: { id: AdminViewId; label: string; hint: string }[] = [
   { id: 'ledger', label: '题库', hint: '题源 · 附件 · 审核 · 余量' },
   { id: 'exams', label: '学校考试', hint: '台账 · 草稿 · 分析 · 同步' },
   { id: 'knowledge', label: '知识点库', hint: '审定 · 课标 · 映射 · 快照' },
+  { id: 'diagnostics', label: '错题诊断', hint: 'AI 错因 · 对话回溯 · 三选一对策' },
 ]
+
+export const COGNITIVE_GAP_LABELS: Record<string, string> = {
+  concept_confusion: '概念理解混淆',
+  condition_omission: '审题漏掉条件',
+  method_misuse: '解题方法误用',
+  reasoning_break: '推理链条断层',
+  calculation_slip: '计算或符号失误',
+}
 
 export const GAP_LABELS: Record<GapType, string> = {
   INSUFFICIENT_EVIDENCE: '证据不足',
@@ -139,4 +148,19 @@ export function splitOption(option: string): { key: string; text: string } {
   const match = /^([A-Za-z0-9]{1,4})\s*[.、．:：]\s*(.*)$/.exec(option)
   if (match) return { key: match[1], text: match[2] || match[1] }
   return { key: option.trim(), text: option.trim() }
+}
+
+/** 将选择题作答/答案字母解析为选项具体内容；填空/简答题直接返回原文本。 */
+export function resolveAnswerContent(answer: string | null | undefined, options?: string[] | null): string {
+  const raw = (answer ?? '').trim()
+  if (!raw) return ''
+  if (!options || options.length === 0) return raw
+  const normalized = raw.toUpperCase()
+  for (const opt of options) {
+    const parsed = splitOption(opt)
+    if (parsed.key.toUpperCase() === normalized) {
+      return parsed.text || opt.trim()
+    }
+  }
+  return raw
 }

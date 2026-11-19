@@ -1,5 +1,83 @@
 components:
   schemas:
+    AdminErrorDiagnosisOut:
+      description: 管理端 AI 错因深度分析与三套可选解决方法。
+      properties:
+        admin_note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin Note
+        attempt_id:
+          title: Attempt Id
+          type: string
+        cognitive_gap_type:
+          enum:
+          - concept_confusion
+          - condition_omission
+          - method_misuse
+          - reasoning_break
+          - calculation_slip
+          title: Cognitive Gap Type
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        evidence_from_dialogue:
+          title: Evidence From Dialogue
+          type: string
+        id:
+          title: Id
+          type: string
+        model_used:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Used
+        root_cause_summary:
+          title: Root Cause Summary
+          type: string
+        selected_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Selected At
+        selected_option_id:
+          anyOf:
+          - enum:
+            - opt_1
+            - opt_2
+            - opt_3
+            type: string
+          - type: 'null'
+          title: Selected Option Id
+        solutions:
+          items:
+            $ref: '#/components/schemas/DiagnosisSolutionOptionOut'
+          title: Solutions
+          type: array
+        tutor_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tutor Session Id
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - attempt_id
+      - root_cause_summary
+      - cognitive_gap_type
+      - evidence_from_dialogue
+      - solutions
+      - created_at
+      - updated_at
+      title: AdminErrorDiagnosisOut
+      type: object
     AdminReturnReflectionIn:
       description: 管理端退回学生重写复盘的理由载荷。
       properties:
@@ -10,6 +88,252 @@ components:
           title: Reason
           type: string
       title: AdminReturnReflectionIn
+      type: object
+    AdminSelectSolutionIn:
+      description: 管理员选定其中一套解决对策并附加备注。
+      properties:
+        admin_note:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Admin Note
+        option_id:
+          enum:
+          - opt_1
+          - opt_2
+          - opt_3
+          title: Option Id
+          type: string
+      required:
+      - option_id
+      title: AdminSelectSolutionIn
+      type: object
+    AdminWrongDiagnosticDetailOut:
+      description: 管理端错题详情：含参考答案、完整数据库引导对话回放与 AI 诊断报告。
+      properties:
+        attempt_id:
+          title: Attempt Id
+          type: string
+        correct_answer:
+          title: Correct Answer
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        diagnosis:
+          anyOf:
+          - $ref: '#/components/schemas/AdminErrorDiagnosisOut'
+          - type: 'null'
+        earned_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Earned Points
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_codes:
+          items:
+            type: string
+          title: Knowledge Codes
+          type: array
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        question_version_id:
+          title: Question Version Id
+          type: string
+        stem:
+          title: Stem
+          type: string
+        student_answer:
+          title: Student Answer
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        tutor_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tutor Session Id
+        tutor_turns:
+          items:
+            $ref: '#/components/schemas/TutorTurnOut'
+          title: Tutor Turns
+          type: array
+      required:
+      - attempt_id
+      - question_version_id
+      - subject
+      - stem
+      - kind
+      - options
+      - correct_answer
+      - student_answer
+      - max_points
+      - knowledge_codes
+      - knowledge_titles
+      - created_at
+      title: AdminWrongDiagnosticDetailOut
+      type: object
+    AdminWrongDiagnosticListItemOut:
+      description: 管理端错题诊断工作台左侧列表项。
+      properties:
+        attempt_id:
+          title: Attempt Id
+          type: string
+        cognitive_gap_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cognitive Gap Type
+        correct_answer:
+          default: ''
+          title: Correct Answer
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        earned_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Earned Points
+        has_diagnosis:
+          default: false
+          title: Has Diagnosis
+          type: boolean
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_codes:
+          items:
+            type: string
+          title: Knowledge Codes
+          type: array
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        question_version_id:
+          title: Question Version Id
+          type: string
+        selected_option_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Selected Option Id
+        selected_solution_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Selected Solution Title
+        stem_excerpt:
+          title: Stem Excerpt
+          type: string
+        student_answer:
+          title: Student Answer
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        tutor_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tutor Session Id
+        tutor_turn_count:
+          default: 0
+          title: Tutor Turn Count
+          type: integer
+      required:
+      - attempt_id
+      - question_version_id
+      - subject
+      - stem_excerpt
+      - kind
+      - student_answer
+      - max_points
+      - knowledge_codes
+      - knowledge_titles
+      - created_at
+      title: AdminWrongDiagnosticListItemOut
+      type: object
+    AdoptedSolutionOut:
+      description: 管理端已采纳的改进方案（Level 2 透出给学生端的精简对策视图）。
+      properties:
+        action_steps:
+          items:
+            type: string
+          title: Action Steps
+          type: array
+        admin_note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin Note
+        approach_focus:
+          title: Approach Focus
+          type: string
+        option_id:
+          title: Option Id
+          type: string
+        selected_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Selected At
+        title:
+          title: Title
+          type: string
+      required:
+      - option_id
+      - title
+      - approach_focus
+      - action_steps
+      title: AdoptedSolutionOut
       type: object
     AttachmentOut:
       properties:
@@ -158,6 +482,38 @@ components:
       - review_status
       - review_opinion
       title: BatchNodeReviewItem
+      type: object
+    DiagnosisSolutionOptionOut:
+      description: AI 为管理员提供的单个可选解决对策。
+      properties:
+        action_steps:
+          items:
+            type: string
+          title: Action Steps
+          type: array
+        approach_focus:
+          title: Approach Focus
+          type: string
+        option_id:
+          enum:
+          - opt_1
+          - opt_2
+          - opt_3
+          title: Option Id
+          type: string
+        rationale:
+          title: Rationale
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - option_id
+      - title
+      - approach_focus
+      - rationale
+      - action_steps
+      title: DiagnosisSolutionOptionOut
       type: object
     DomainRadarItemOut:
       description: 一级知识领域掌握度聚合统计（供成长状态雷达/条形展示）。
@@ -404,6 +760,96 @@ components:
           title: Detail
           type: array
       title: HTTPValidationError
+      type: object
+    HistoricalWrongQuestionSummaryOut:
+      description: 历史近期错题回顾卡片信息（已作答历史错题展示错答与正确答案对照）。
+      properties:
+        adopted_solution:
+          anyOf:
+          - $ref: '#/components/schemas/AdoptedSolutionOut'
+          - type: 'null'
+        attempt_id:
+          title: Attempt Id
+          type: string
+        correct_answer:
+          title: Correct Answer
+          type: string
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created At
+        earned_points:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Earned Points
+        kind:
+          enum:
+          - single_choice
+          - short_answer
+          - subjective
+          title: Kind
+          type: string
+        knowledge_codes:
+          items:
+            type: string
+          title: Knowledge Codes
+          type: array
+        knowledge_titles:
+          items:
+            type: string
+          title: Knowledge Titles
+          type: array
+        max_points:
+          title: Max Points
+          type: number
+        options:
+          items:
+            type: string
+          title: Options
+          type: array
+        question_version_id:
+          title: Question Version Id
+          type: string
+        selection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Selection Reason
+        stem:
+          title: Stem
+          type: string
+        student_answer:
+          title: Student Answer
+          type: string
+        subject:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+        tutor_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tutor Session Id
+      required:
+      - attempt_id
+      - question_version_id
+      - subject
+      - stem
+      - kind
+      - options
+      - student_answer
+      - max_points
+      - knowledge_codes
+      - knowledge_titles
+      - correct_answer
+      title: HistoricalWrongQuestionSummaryOut
       type: object
     ImportConfirmationIn:
       properties:
@@ -2730,8 +3176,12 @@ components:
       title: ValidationError
       type: object
     WrongQuestionSummaryOut:
-      description: 错题汇总卡片信息（不直接下发标准答案，由 AI 引导启发）。
+      description: 错题汇总卡片信息（本轮刚交卷结算时不下发参考答案，由我的书童引导启发）。
       properties:
+        adopted_solution:
+          anyOf:
+          - $ref: '#/components/schemas/AdoptedSolutionOut'
+          - type: 'null'
         attempt_id:
           title: Attempt Id
           type: string
@@ -4114,6 +4564,170 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Verify Admin
+  /api/admin/wrong-diagnostics:
+    get:
+      description: 管理端：列出指定学科近期错题及关联的 AI 引导对话轮次、AI 错因诊断与采纳状态。
+      operationId: list_admin_wrong_diagnostics_api_admin_wrong_diagnostics_get
+      parameters:
+      - in: query
+        name: subject
+        required: true
+        schema:
+          enum:
+          - math
+          - chinese
+          - english
+          - physics
+          title: Subject
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Limit
+          type: integer
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AdminWrongDiagnosticListItemOut'
+                title: Response List Admin Wrong Diagnostics Api Admin Wrong Diagnostics
+                  Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Admin Wrong Diagnostics
+      tags:
+      - learning
+  /api/admin/wrong-diagnostics/{attempt_id}:
+    get:
+      description: 管理端：读取单道错题的标准答案、完整数据库引导对话回放与 AI 错因诊断结果。
+      operationId: get_admin_wrong_diagnostic_detail_api_admin_wrong_diagnostics__attempt_id__get
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWrongDiagnosticDetailOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Admin Wrong Diagnostic Detail
+      tags:
+      - learning
+  /api/admin/wrong-diagnostics/{attempt_id}/analyze:
+    post:
+      description: 管理端：手动触发 AI 结合错题与持久化引导对话，剖析真正错因并生成 3 个可选解决方法。
+      operationId: analyze_admin_wrong_diagnostic_api_admin_wrong_diagnostics__attempt_id__analyze_post
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWrongDiagnosticDetailOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Analyze Admin Wrong Diagnostic
+      tags:
+      - learning
+  /api/admin/wrong-diagnostics/{attempt_id}/select-solution:
+    post:
+      description: 管理端：从 AI 给出的 3 个解决对策中选定 1 项并保存备注（Level 2 联动学生端展示）。
+      operationId: select_admin_wrong_diagnostic_solution_api_admin_wrong_diagnostics__attempt_id__select_solution_post
+      parameters:
+      - in: path
+        name: attempt_id
+        required: true
+        schema:
+          title: Attempt Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSelectSolutionIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWrongDiagnosticDetailOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Select Admin Wrong Diagnostic Solution
+      tags:
+      - learning
   /api/goals:
     post:
       operationId: set_goal_api_goals_post
@@ -4747,7 +5361,7 @@ paths:
       - learning
   /api/practice/wrong-attempts:
     get:
-      description: 列出学生指定学科近期错题记录，支持随时打开 AI 苏格拉底引导复习。
+      description: 列出学生指定学科近期错题记录（含错答与正确答案对照），支持随时与「我的书童」对话复习。
       operationId: list_wrong_attempts_api_practice_wrong_attempts_get
       parameters:
       - in: query
@@ -4784,7 +5398,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/WrongQuestionSummaryOut'
+                  $ref: '#/components/schemas/HistoricalWrongQuestionSummaryOut'
                 title: Response List Wrong Attempts Api Practice Wrong Attempts Get
                 type: array
           description: Successful Response

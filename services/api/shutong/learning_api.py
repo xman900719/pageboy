@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import ai_tutor
 from . import models as m
 from . import private_files as files
-from .auth import require_student
+from .auth import require_admin, require_student
 from .database import get_db
 from .guidance import (
     Evidence,
@@ -31,7 +31,14 @@ from .school_paper_parser import (
     validate_reflection_not_perfunctory,
 )
 from .schemas import (
+    AdminErrorDiagnosisOut,
+    AdminSelectSolutionIn,
+    AdminWrongDiagnosticDetailOut,
+    AdminWrongDiagnosticListItemOut,
+    AdoptedSolutionOut,
+    DiagnosisSolutionOptionOut,
     GrowthStatusOut,
+    HistoricalWrongQuestionSummaryOut,
     KnowledgeGraphOut,
     PracticeQuestionPayloadOut,
     PracticeSessionCompleteOut,
@@ -636,6 +643,7 @@ def complete_practice_session(
             select(m.AiTutorSession).where(m.AiTutorSession.attempt_id.in_(attempt_ids))
         ).scalars().all():
             tutor_by_attempt[ts.attempt_id] = ts.id
+    adopted_by_attempt = _load_adopted_solutions_by_attempt(db, attempt_ids)
 
     answered_count = 0
     correct_count = 0
@@ -677,6 +685,7 @@ def complete_practice_session(
                 knowledge_codes=codes,
                 knowledge_titles=titles,
                 tutor_session_id=tutor_by_attempt.get(att.id),
+                adopted_solution=adopted_by_attempt.get(att.id),
                 created_at=att.created_at,
             )
         )
@@ -692,14 +701,14 @@ def complete_practice_session(
     )
 
 
-@router.get("/api/practice/wrong-attempts", response_model=list[WrongQuestionSummaryOut])
+@router.get("/api/practice/wrong-attempts", response_model=list[HistoricalWrongQuestionSummaryOut])
 def list_wrong_attempts(
     subject: Subject,
     limit: int = Query(default=20, ge=1, le=50),
     student: str = Depends(require_student),
     db: Session = Depends(get_db),
 ):
-    """列出学生指定学科近期错题记录，支持随时打开 AI 苏格拉底引导复习。"""
+    """列出学生指定学科近期错题记录（含错答与正确答案对照），支持随时与「我的书童」对话复习。"""
     nodes, _ = _load_effective_knowledge_nodes(db, subject)
     name_map = {n["code"]: n["name"] for n in nodes}
 
@@ -724,12 +733,13 @@ def list_wrong_attempts(
             select(m.AiTutorSession).where(m.AiTutorSession.attempt_id.in_(attempt_ids))
         ).scalars().all():
             tutor_by_attempt[ts.attempt_id] = ts.id
+    adopted_by_attempt = _load_adopted_solutions_by_attempt(db, attempt_ids)
 
-    out: list[WrongQuestionSummaryOut] = []
+    out: list[HistoricalWrongQuestionSummaryOut] = []
     for att, v in rows:
         codes, titles = _resolve_question_knowledge(subject, v.knowledge_ids, name_map)
         out.append(
-            WrongQuestionSummaryOut(
+            HistoricalWrongQuestionSummaryOut(
                 attempt_id=att.id,
                 question_version_id=v.id,
                 subject=subject,
@@ -737,22 +747,18 @@ def list_wrong_attempts(
                 kind=v.kind,
                 options=list(v.options or []),
                 student_answer=att.answer,
+                correct_answer=v.correct_answer,
                 earned_points=att.earned_points,
                 max_points=att.max_points,
                 selection_reason=None,
                 knowledge_codes=codes,
                 knowledge_titles=titles,
                 tutor_session_id=tutor_by_attempt.get(att.id),
+                adopted_solution=adopted_by_attempt.get(att.id),
                 created_at=att.created_at,
             )
         )
     return out
-
-
-def _encode_turn_model(model_name: str | None, sanitized: bool) -> str | None:
-    if not model_name:
-        return "[guarded]" if sanitized else None
-    return f"{model_name}[guarded]" if sanitized else model_name
 
 
 def _decode_turn_model(model_used: str | None) -> tuple[str | None, bool]:
@@ -764,23 +770,51 @@ def _decode_turn_model(model_used: str | None) -> tuple[str | None, bool]:
     return model_used, False
 
 
-def _serialize_tutor_session(
-    db: Session,
-    session_obj: m.AiTutorSession,
-    stem: str,
-    student_answer: str,
-    knowledge_titles: list[str],
-) -> TutorSessionOut:
-    """序列化 AI 错题引导会话与完整对话轮次。"""
+def _extract_adopted_solution(diag: m.AiErrorDiagnosis) -> AdoptedSolutionOut | None:
+    if not diag.selected_option_id:
+        return None
+    for item in list(diag.solutions or []):
+        if isinstance(item, dict) and item.get("option_id") == diag.selected_option_id:
+            return AdoptedSolutionOut(
+                option_id=str(item["option_id"]),
+                title=str(item.get("title") or ""),
+                approach_focus=str(item.get("approach_focus") or ""),
+                action_steps=[str(s) for s in (item.get("action_steps") or []) if str(s).strip()],
+                admin_note=diag.admin_note,
+                selected_at=diag.selected_at,
+            )
+    return None
+
+
+def _load_adopted_solutions_by_attempt(
+    db: Session, attempt_ids: list[str]
+) -> dict[str, AdoptedSolutionOut]:
+    if not attempt_ids:
+        return {}
+    diags = db.execute(
+        select(m.AiErrorDiagnosis).where(
+            m.AiErrorDiagnosis.attempt_id.in_(attempt_ids),
+            m.AiErrorDiagnosis.selected_option_id.is_not(None),
+        )
+    ).scalars().all()
+    result: dict[str, AdoptedSolutionOut] = {}
+    for diag in diags:
+        adopted = _extract_adopted_solution(diag)
+        if adopted is not None:
+            result[diag.attempt_id] = adopted
+    return result
+
+
+def _serialize_tutor_turns(db: Session, tutor_session_id: str) -> tuple[list[TutorTurnOut], str | None]:
     turns = db.execute(
         select(m.AiTutorTurn)
-        .where(m.AiTutorTurn.tutor_session_id == session_obj.id)
+        .where(m.AiTutorTurn.tutor_session_id == tutor_session_id)
         .order_by(m.AiTutorTurn.turn_index.asc())
     ).scalars().all()
     latest_model: str | None = None
     out_turns: list[TutorTurnOut] = []
     for t in turns:
-        clean_model, guarded = _decode_turn_model(t.model_used)
+        clean_model, legacy_guarded = _decode_turn_model(t.model_used)
         if clean_model:
             latest_model = clean_model
         out_turns.append(
@@ -789,10 +823,22 @@ def _serialize_tutor_session(
                 turn_index=t.turn_index,
                 role=t.role,
                 content=t.content,
-                sanitized_guard_triggered=guarded,
+                sanitized_guard_triggered=bool(t.sanitized_guard_triggered) or legacy_guarded,
                 created_at=t.created_at,
             )
         )
+    return out_turns, latest_model
+
+
+def _serialize_tutor_session(
+    db: Session,
+    session_obj: m.AiTutorSession,
+    stem: str,
+    student_answer: str,
+    knowledge_titles: list[str],
+) -> TutorSessionOut:
+    """序列化 AI 错题引导会话与完整对话轮次。"""
+    out_turns, latest_model = _serialize_tutor_turns(db, session_obj.id)
     return TutorSessionOut(
         started=True,
         id=session_obj.id,
@@ -906,7 +952,8 @@ def start_tutor_for_attempt(
             turn_index=1,
             role="assistant",
             content=reply,
-            model_used=_encode_turn_model(model_name, sanitized),
+            model_used=model_name,
+            sanitized_guard_triggered=sanitized,
         )
     )
     try:
@@ -979,6 +1026,7 @@ def send_tutor_message(
             role="user",
             content=user_text,
             model_used=None,
+            sanitized_guard_triggered=False,
         )
     )
     db.add(
@@ -987,7 +1035,8 @@ def send_tutor_message(
             turn_index=next_idx + 1,
             role="assistant",
             content=reply,
-            model_used=_encode_turn_model(model_name, sanitized),
+            model_used=model_name,
+            sanitized_guard_triggered=sanitized,
         )
     )
     tutor_session.updated_at = datetime.now(timezone.utc)
@@ -1298,3 +1347,327 @@ def submit_student_school_exam_reflection(
         return_reason=parsed["return_reason"],
         ai_audit_mode=audit_mode,
     )
+
+
+def _serialize_admin_diagnosis(diag: m.AiErrorDiagnosis | None) -> AdminErrorDiagnosisOut | None:
+    if diag is None:
+        return None
+    return AdminErrorDiagnosisOut(
+        id=diag.id,
+        attempt_id=diag.attempt_id,
+        tutor_session_id=diag.tutor_session_id,
+        root_cause_summary=diag.root_cause_summary,
+        cognitive_gap_type=diag.cognitive_gap_type,
+        evidence_from_dialogue=diag.evidence_from_dialogue,
+        solutions=[
+            DiagnosisSolutionOptionOut(
+                option_id=item["option_id"],
+                title=item["title"],
+                approach_focus=item["approach_focus"],
+                rationale=item["rationale"],
+                action_steps=list(item.get("action_steps") or []),
+            )
+            for item in (diag.solutions or [])
+            if isinstance(item, dict)
+        ],
+        selected_option_id=diag.selected_option_id,
+        admin_note=diag.admin_note,
+        model_used=diag.model_used,
+        created_at=diag.created_at,
+        updated_at=diag.updated_at,
+        selected_at=diag.selected_at,
+    )
+
+
+def _load_admin_wrong_attempt(
+    db: Session, owner: str, attempt_id: str
+) -> tuple[m.AnswerAttempt, m.QuestionVersion, m.Question, list[str], list[str]]:
+    att = db.get(m.AnswerAttempt, attempt_id)
+    if att is None or att.learner_id != owner:
+        raise HTTPException(status_code=404, detail="attempt not found")
+    v = db.get(m.QuestionVersion, att.question_version_id)
+    q = db.get(m.Question, v.question_id) if v is not None else None
+    if v is None or q is None:
+        raise HTTPException(status_code=404, detail="question version not found")
+    if att.earned_points is None or att.earned_points >= att.max_points:
+        raise HTTPException(status_code=422, detail="ATTEMPT_NOT_WRONG")
+    nodes, _ = _load_effective_knowledge_nodes(db, q.subject)
+    name_map = {n["code"]: n["name"] for n in nodes}
+    codes, titles = _resolve_question_knowledge(q.subject, v.knowledge_ids, name_map)
+    return att, v, q, codes, titles
+
+
+def _build_admin_wrong_detail(
+    db: Session,
+    att: m.AnswerAttempt,
+    v: m.QuestionVersion,
+    q: m.Question,
+    codes: list[str],
+    titles: list[str],
+) -> AdminWrongDiagnosticDetailOut:
+    tutor_session = db.execute(
+        select(m.AiTutorSession).where(
+            m.AiTutorSession.attempt_id == att.id,
+            m.AiTutorSession.learner_id == att.learner_id,
+        )
+    ).scalar_one_or_none()
+    tutor_turns: list[TutorTurnOut] = []
+    if tutor_session is not None:
+        tutor_turns, _ = _serialize_tutor_turns(db, tutor_session.id)
+    diag = db.execute(
+        select(m.AiErrorDiagnosis).where(m.AiErrorDiagnosis.attempt_id == att.id)
+    ).scalar_one_or_none()
+    return AdminWrongDiagnosticDetailOut(
+        attempt_id=att.id,
+        question_version_id=v.id,
+        subject=q.subject,
+        stem=v.stem,
+        kind=v.kind,
+        options=list(v.options or []),
+        correct_answer=v.correct_answer,
+        student_answer=att.answer,
+        earned_points=att.earned_points,
+        max_points=att.max_points,
+        knowledge_codes=codes,
+        knowledge_titles=titles,
+        tutor_session_id=tutor_session.id if tutor_session is not None else None,
+        tutor_turns=tutor_turns,
+        diagnosis=_serialize_admin_diagnosis(diag),
+        created_at=att.created_at,
+    )
+
+
+def _safe_stem_excerpt(stem: str, max_len: int = 88) -> str:
+    """生成题干摘要时避免从 $...$ / $$...$$ 公式内部截断，防止前端渲染出未闭合 LaTeX。"""
+    clean = re.sub(r"\s+", " ", stem or "").strip()
+    if len(clean) <= max_len:
+        return clean
+
+    in_math = False
+    delim_len = 1
+    i = 0
+    cut_pos = max_len
+    while i < len(clean):
+        if clean[i] == "$":
+            is_double = i + 1 < len(clean) and clean[i + 1] == "$"
+            step = 2 if is_double else 1
+            if not in_math:
+                in_math = True
+                delim_len = step
+                i += step
+                continue
+            if step == delim_len or (delim_len == 1 and not is_double):
+                in_math = False
+                i += step
+                if i >= max_len:
+                    cut_pos = i
+                    break
+                continue
+        i += 1
+        if not in_math and i >= max_len:
+            cut_pos = i
+            break
+    else:
+        cut_pos = len(clean)
+
+    return f"{clean[:cut_pos]}…" if cut_pos < len(clean) else clean
+
+
+@router.get("/api/admin/wrong-diagnostics", response_model=list[AdminWrongDiagnosticListItemOut])
+def list_admin_wrong_diagnostics(
+    subject: Subject,
+    limit: int = Query(default=20, ge=1, le=50),
+    admin: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端：列出指定学科近期错题及关联的 AI 引导对话轮次、AI 错因诊断与采纳状态。"""
+    nodes, _ = _load_effective_knowledge_nodes(db, subject)
+    name_map = {n["code"]: n["name"] for n in nodes}
+
+    rows = db.execute(
+        select(m.AnswerAttempt, m.QuestionVersion)
+        .join(m.QuestionVersion, m.QuestionVersion.id == m.AnswerAttempt.question_version_id)
+        .join(m.Question, m.Question.id == m.QuestionVersion.question_id)
+        .where(
+            m.AnswerAttempt.learner_id == admin,
+            m.Question.subject == subject,
+            m.AnswerAttempt.earned_points.is_not(None),
+            m.AnswerAttempt.earned_points < m.AnswerAttempt.max_points,
+        )
+        .order_by(m.AnswerAttempt.created_at.desc(), m.AnswerAttempt.id.desc())
+        .limit(limit)
+    ).all()
+
+    attempt_ids = [a.id for a, _ in rows]
+    tutor_by_attempt: dict[str, m.AiTutorSession] = {}
+    turn_counts: dict[str, int] = {}
+    diag_by_attempt: dict[str, m.AiErrorDiagnosis] = {}
+
+    if attempt_ids:
+        sessions = db.execute(
+            select(m.AiTutorSession).where(m.AiTutorSession.attempt_id.in_(attempt_ids))
+        ).scalars().all()
+        session_ids = [s.id for s in sessions]
+        for s in sessions:
+            tutor_by_attempt[s.attempt_id] = s
+        if session_ids:
+            for sid, cnt in db.execute(
+                select(m.AiTutorTurn.tutor_session_id, func.count())
+                .where(m.AiTutorTurn.tutor_session_id.in_(session_ids))
+                .group_by(m.AiTutorTurn.tutor_session_id)
+            ).all():
+                turn_counts[sid] = int(cnt)
+        for d in db.execute(
+            select(m.AiErrorDiagnosis).where(m.AiErrorDiagnosis.attempt_id.in_(attempt_ids))
+        ).scalars().all():
+            diag_by_attempt[d.attempt_id] = d
+
+    out: list[AdminWrongDiagnosticListItemOut] = []
+    for att, v in rows:
+        codes, titles = _resolve_question_knowledge(subject, v.knowledge_ids, name_map)
+        ts = tutor_by_attempt.get(att.id)
+        diag = diag_by_attempt.get(att.id)
+        adopted = _extract_adopted_solution(diag) if diag is not None else None
+        excerpt = _safe_stem_excerpt(v.stem or "", max_len=88)
+        out.append(
+            AdminWrongDiagnosticListItemOut(
+                attempt_id=att.id,
+                question_version_id=v.id,
+                subject=subject,
+                stem_excerpt=excerpt,
+                kind=v.kind,
+                options=list(v.options or []),
+                correct_answer=v.correct_answer,
+                student_answer=att.answer,
+                earned_points=att.earned_points,
+                max_points=att.max_points,
+                knowledge_codes=codes,
+                knowledge_titles=titles,
+                tutor_session_id=ts.id if ts is not None else None,
+                tutor_turn_count=turn_counts.get(ts.id, 0) if ts is not None else 0,
+                has_diagnosis=diag is not None,
+                selected_option_id=diag.selected_option_id if diag is not None else None,
+                selected_solution_title=adopted.title if adopted is not None else None,
+                cognitive_gap_type=diag.cognitive_gap_type if diag is not None else None,
+                created_at=att.created_at,
+            )
+        )
+    return out
+
+
+@router.get("/api/admin/wrong-diagnostics/{attempt_id}", response_model=AdminWrongDiagnosticDetailOut)
+def get_admin_wrong_diagnostic_detail(
+    attempt_id: str,
+    admin: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端：读取单道错题的标准答案、完整数据库引导对话回放与 AI 错因诊断结果。"""
+    att, v, q, codes, titles = _load_admin_wrong_attempt(db, admin, attempt_id)
+    return _build_admin_wrong_detail(db, att, v, q, codes, titles)
+
+
+@router.post("/api/admin/wrong-diagnostics/{attempt_id}/analyze", response_model=AdminWrongDiagnosticDetailOut)
+def analyze_admin_wrong_diagnostic(
+    attempt_id: str,
+    admin: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端：手动触发 AI 结合错题与持久化引导对话，剖析真正错因并生成 3 个可选解决方法。"""
+    att, v, q, codes, titles = _load_admin_wrong_attempt(db, admin, attempt_id)
+    tutor_session = db.execute(
+        select(m.AiTutorSession).where(
+            m.AiTutorSession.attempt_id == att.id,
+            m.AiTutorSession.learner_id == admin,
+        )
+    ).scalar_one_or_none()
+
+    dialogue_turns: list[dict[str, str]] = []
+    if tutor_session is not None:
+        turns = db.execute(
+            select(m.AiTutorTurn)
+            .where(m.AiTutorTurn.tutor_session_id == tutor_session.id)
+            .order_by(m.AiTutorTurn.turn_index.asc())
+        ).scalars().all()
+        dialogue_turns = [{"role": t.role, "content": t.content} for t in turns]
+
+    try:
+        parsed, model_used = ai_tutor.request_error_root_cause_analysis(
+            subject=q.subject,
+            stem=v.stem,
+            choices=list(v.options or []),
+            correct_answer=v.correct_answer,
+            student_answer=att.answer,
+            knowledge_titles=titles,
+            dialogue_turns=dialogue_turns,
+        )
+    except (ai_tutor.AiTutorConfigError, ai_tutor.AiTutorUnavailableError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    now_dt = datetime.now(timezone.utc)
+    diag = db.execute(
+        select(m.AiErrorDiagnosis).where(m.AiErrorDiagnosis.attempt_id == att.id)
+    ).scalar_one_or_none()
+    if diag is None:
+        diag = m.AiErrorDiagnosis(
+            learner_id=admin,
+            attempt_id=att.id,
+            tutor_session_id=tutor_session.id if tutor_session is not None else None,
+            question_version_id=v.id,
+            subject=q.subject,
+            root_cause_summary=parsed["root_cause_summary"],
+            cognitive_gap_type=parsed["cognitive_gap_type"],
+            evidence_from_dialogue=parsed["evidence_from_dialogue"],
+            solutions=parsed["solutions"],
+            model_used=model_used,
+            created_at=now_dt,
+            updated_at=now_dt,
+        )
+        db.add(diag)
+    else:
+        diag.tutor_session_id = tutor_session.id if tutor_session is not None else None
+        diag.root_cause_summary = parsed["root_cause_summary"]
+        diag.cognitive_gap_type = parsed["cognitive_gap_type"]
+        diag.evidence_from_dialogue = parsed["evidence_from_dialogue"]
+        diag.solutions = parsed["solutions"]
+        diag.selected_option_id = None
+        diag.selected_at = None
+        diag.model_used = model_used
+        diag.updated_at = now_dt
+
+    db.commit()
+    return _build_admin_wrong_detail(db, att, v, q, codes, titles)
+
+
+@router.post(
+    "/api/admin/wrong-diagnostics/{attempt_id}/select-solution",
+    response_model=AdminWrongDiagnosticDetailOut,
+)
+def select_admin_wrong_diagnostic_solution(
+    attempt_id: str,
+    payload: AdminSelectSolutionIn,
+    admin: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端：从 AI 给出的 3 个解决对策中选定 1 项并保存备注（Level 2 联动学生端展示）。"""
+    att, v, q, codes, titles = _load_admin_wrong_attempt(db, admin, attempt_id)
+    diag = db.execute(
+        select(m.AiErrorDiagnosis).where(m.AiErrorDiagnosis.attempt_id == att.id)
+    ).scalar_one_or_none()
+    if diag is None:
+        raise HTTPException(status_code=404, detail="DIAGNOSIS_NOT_FOUND")
+
+    valid_ids = {
+        str(item.get("option_id"))
+        for item in (diag.solutions or [])
+        if isinstance(item, dict)
+    }
+    if payload.option_id not in valid_ids:
+        raise HTTPException(status_code=422, detail="INVALID_SOLUTION_OPTION")
+
+    now_dt = datetime.now(timezone.utc)
+    diag.selected_option_id = payload.option_id
+    diag.admin_note = payload.admin_note.strip() if payload.admin_note and payload.admin_note.strip() else None
+    diag.selected_at = now_dt
+    diag.updated_at = now_dt
+    db.commit()
+    return _build_admin_wrong_detail(db, att, v, q, codes, titles)

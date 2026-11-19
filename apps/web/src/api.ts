@@ -87,13 +87,96 @@ export interface WrongQuestionSummary {
   kind: Kind
   options: string[]
   student_answer: string
+  correct_answer?: string | null
   earned_points: number | null
   max_points: number
   selection_reason?: string | null
   knowledge_codes: string[]
   knowledge_titles: string[]
   tutor_session_id?: string | null
+  adopted_solution?: AdoptedSolution | null
   created_at?: string | null
+}
+
+export interface AdoptedSolution {
+  option_id: string
+  title: string
+  approach_focus: string
+  action_steps: string[]
+  admin_note?: string | null
+  selected_at?: string | null
+}
+
+export type CognitiveGapType =
+  | 'concept_confusion'
+  | 'condition_omission'
+  | 'method_misuse'
+  | 'reasoning_break'
+  | 'calculation_slip'
+
+export interface DiagnosisSolutionOption {
+  option_id: 'opt_1' | 'opt_2' | 'opt_3'
+  title: string
+  approach_focus: string
+  rationale: string
+  action_steps: string[]
+}
+
+export interface AdminErrorDiagnosis {
+  id: string
+  attempt_id: string
+  tutor_session_id?: string | null
+  root_cause_summary: string
+  cognitive_gap_type: CognitiveGapType
+  evidence_from_dialogue: string
+  solutions: DiagnosisSolutionOption[]
+  selected_option_id?: 'opt_1' | 'opt_2' | 'opt_3' | null
+  admin_note?: string | null
+  model_used?: string | null
+  created_at: string
+  updated_at: string
+  selected_at?: string | null
+}
+
+export interface AdminWrongDiagnosticListItem {
+  attempt_id: string
+  question_version_id: string
+  subject: Subject
+  stem_excerpt: string
+  kind: Kind
+  options?: string[]
+  correct_answer?: string
+  student_answer: string
+  earned_points: number | null
+  max_points: number
+  knowledge_codes: string[]
+  knowledge_titles: string[]
+  tutor_session_id?: string | null
+  tutor_turn_count: number
+  has_diagnosis: boolean
+  selected_option_id?: string | null
+  selected_solution_title?: string | null
+  cognitive_gap_type?: string | null
+  created_at: string
+}
+
+export interface AdminWrongDiagnosticDetail {
+  attempt_id: string
+  question_version_id: string
+  subject: Subject
+  stem: string
+  kind: Kind
+  options: string[]
+  correct_answer: string
+  student_answer: string
+  earned_points: number | null
+  max_points: number
+  knowledge_codes: string[]
+  knowledge_titles: string[]
+  tutor_session_id?: string | null
+  tutor_turns: TutorTurn[]
+  diagnosis?: AdminErrorDiagnosis | null
+  created_at: string
 }
 
 export interface PracticeSessionComplete {
@@ -1274,6 +1357,13 @@ export interface Client {
   sendTutorMessage(tutorSessionId: string, content: string): Promise<TutorSession>
   growthStatus(subject: Subject): Promise<GrowthStatus>
   knowledgeGraph(subject: Subject): Promise<KnowledgeGraph>
+  adminWrongDiagnostics(subject: Subject, limit?: number): Promise<AdminWrongDiagnosticListItem[]>
+  adminWrongDiagnosticDetail(attemptId: string): Promise<AdminWrongDiagnosticDetail>
+  adminAnalyzeWrongDiagnostic(attemptId: string): Promise<AdminWrongDiagnosticDetail>
+  adminSelectWrongDiagnosticSolution(
+    attemptId: string,
+    payload: { optionId: 'opt_1' | 'opt_2' | 'opt_3'; adminNote?: string | null }
+  ): Promise<AdminWrongDiagnosticDetail>
 }
 
 export interface CurriculumClause {
@@ -1728,6 +1818,18 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       call<TutorSession>(`/api/tutor/sessions/${encodeURIComponent(tutorSessionId)}/message`, 'POST', { content }),
     growthStatus: subject => call<GrowthStatus>(`/api/growth/status?subject=${subject}`),
     knowledgeGraph: subject => call<KnowledgeGraph>(`/api/knowledge/graph?subject=${subject}`),
+    adminWrongDiagnostics: (subject, limit = 20) =>
+      call<AdminWrongDiagnosticListItem[]>(`/api/admin/wrong-diagnostics?subject=${subject}&limit=${limit}`),
+    adminWrongDiagnosticDetail: attemptId =>
+      call<AdminWrongDiagnosticDetail>(`/api/admin/wrong-diagnostics/${encodeURIComponent(attemptId)}`),
+    adminAnalyzeWrongDiagnostic: attemptId =>
+      call<AdminWrongDiagnosticDetail>(`/api/admin/wrong-diagnostics/${encodeURIComponent(attemptId)}/analyze`, 'POST'),
+    adminSelectWrongDiagnosticSolution: (attemptId, { optionId, adminNote }) =>
+      call<AdminWrongDiagnosticDetail>(
+        `/api/admin/wrong-diagnostics/${encodeURIComponent(attemptId)}/select-solution`,
+        'POST',
+        { option_id: optionId, admin_note: adminNote ?? null }
+      ),
   }
 }
 
@@ -1758,6 +1860,9 @@ const API_CODE_TEXT: Record<string, string> = {
   SCHOOL_ITEM_LABEL_CONFLICT: '该场考试已存在相同题号，请勿重复录入。',
   SCHOOL_EXAM_ALREADY_CONFIRMED: '该场校考总分已完成人工核对，不能重复确认。',
   SCHOOL_EXAM_IMMUTABLE: '该场校考总分已核对锁定，不可直接修改原总分。',
+  ATTEMPT_NOT_WRONG: '该条作答未失分，无需进入错因诊断。',
+  DIAGNOSIS_NOT_FOUND: '尚未生成 AI 错因分析，请先点击分析按钮。',
+  INVALID_SOLUTION_OPTION: '选定的解决方案编号不在本次诊断方案内。',
   SCHOOL_ITEM_ALREADY_CONFIRMED: '该小题已完成人工确认，不可重复确认。',
   SCHOOL_ITEM_IMMUTABLE: '该小题已人工确认并锁定，不可丢弃或修改已锁得分。',
   SCHOOL_ITEM_DUPLICATE_CONFIRM: '批量确认中包含重复小题编号，请刷新后重试。',

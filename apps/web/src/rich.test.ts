@@ -2,6 +2,7 @@
  * 覆盖：行内 / 独立公式、文本+公式混合、不配对 `$`、空数学段、相邻公式块、换行保留、CJK 原样。 */
 import { describe, expect, it } from 'vitest'
 import { splitMathSegments } from './rich'
+import { resolveAnswerContent } from './copy'
 
 describe('splitMathSegments', () => {
   it('行内 $…$ 拆为 display:false 的数学段', () => {
@@ -60,5 +61,19 @@ describe('splitMathSegments', () => {
 
   it('空字符串返回空数组', () => {
     expect(splitMathSegments('')).toEqual([])
+  })
+})
+
+describe('resolveAnswerContent', () => {
+  it('将选项字母解析为对应选项具体内容（含公式）', () => {
+    const opts = ['A. $360^\\circ$', 'B. $540^\\circ$', 'C. $720^\\circ$']
+    expect(resolveAnswerContent('A', opts)).toBe('$360^\\circ$')
+    expect(resolveAnswerContent('c', opts)).toBe('$720^\\circ$')
+  })
+
+  it('无选项或非选择题原样返回作答文本', () => {
+    expect(resolveAnswerContent('x = 2', [])).toBe('x = 2')
+    expect(resolveAnswerContent('m < 2 且 m ≠ 1', null)).toBe('m < 2 且 m ≠ 1')
+    expect(resolveAnswerContent('', ['A. 1'])).toBe('')
   })
 })
