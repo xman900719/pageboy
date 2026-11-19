@@ -2027,7 +2027,7 @@ async function handleSyncPapersImported(examId: string) {
 
                     <!-- 仅核对分数与考点；失分题确认后推送学生端完成错因分类与防敷衍复盘 -->
                     <p v-if="!isSchoolItemFullScore(it.earned_points, it.max_points)" class="draft-lost-student-hint">
-                      失分题确认入账后，将推送至学生端「错题复盘」由学生本人归因与复盘
+                      失分题确认入账后，将推送至学生端「校考复盘」由学生本人归因与复盘
                     </p>
                     <p v-else class="draft-correct-hint">
                       ✓ 实得分与满分一致（作答正确），无需复盘
@@ -2317,7 +2317,7 @@ async function handleSyncPapersImported(examId: string) {
                 <input type="number" min="0.5" max="100" step="0.5" v-model.number="itemMax" />
               </label>
               <p v-if="isNewItemLost" class="muted tiny" style="grid-column: 1 / -1; margin: 0;">
-                本小题未拿满分，录入后将自动进入学生端「错题复盘」由学生本人归因与填写复盘。
+                本小题未拿满分，录入后将自动进入学生端「校考复盘」由学生本人归因与填写复盘。
               </p>
             </div>
 

@@ -7,6 +7,7 @@ import type {
   SchoolSubject,
   StudentSchoolReflectionItem,
 } from './api'
+import { REFLECTION_STARTER_FRAGMENTS } from './config/reflectionGuide'
 
 export type SyncStep = 1 | 2 | 3 | 4
 
@@ -400,45 +401,53 @@ function extractEffectiveChars(text: string): string {
   return (text.match(/[\u4e00-\u9fffA-Za-z]/g) ?? []).join('')
 }
 
-function stripPerfunctoryCliches(text: string): string {
+function stripStarterFragments(text: string): string {
   let cleaned = text
+  for (const frag of REFLECTION_STARTER_FRAGMENTS) {
+    cleaned = cleaned.split(frag).join('')
+  }
+  return cleaned
+}
+
+function stripPerfunctoryCliches(text: string): string {
+  let cleaned = stripStarterFragments(text)
   for (const phrase of PERFUNCTORY_CLICHES) {
     cleaned = cleaned.split(phrase).join('')
   }
   return extractEffectiveChars(cleaned)
 }
 
-/** 前端本地防敷衍预检（与后端 Stage 1 规则同源），不通过时返回引导提示。 */
+/** 前端本地预检（与后端 Stage 1 规则同源），不通过时返回书童追问提示。 */
 export function validateReflectionDraftLocally(stuckPoint: string, fixStrategy: string): string | null {
   const stuck = stuckPoint.trim()
   const fix = fixStrategy.trim()
-  const stuckEff = extractEffectiveChars(stuck)
-  const fixEff = extractEffectiveChars(fix)
+  const stuckEff = extractEffectiveChars(stripStarterFragments(stuck))
+  const fixEff = extractEffectiveChars(stripStarterFragments(fix))
 
   if (stuckEff.length < 8) {
-    return '「具体失分卡点」有效内容过短（需至少 8 个汉字或字母），请写明具体错在哪一步或漏看了哪个条件。'
+    return '能再具体说说当时卡在哪一步、或者漏掉了哪个条件吗？（还需再补充几句具体细节）'
   }
   if (fixEff.length < 8) {
-    return '「正确思路与改进对策」有效内容过短（需至少 8 个汉字或字母），请写明正确解法或具体的检验动作。'
+    return '给下次的自己留一句具体的提醒吧：遇到这类题先做什么、或者用什么方法检查？'
   }
   if (stuckEff.length + fixEff.length < 20) {
-    return '两栏合计有效分析不足 20 字，请再补充关键条件、公式或具体步骤。'
+    return '还差一点点细节，再多写几句关键条件或检查动作，下次遇到就能稳稳拿分啦。'
   }
   if (stuckEff.toLowerCase() === fixEff.toLowerCase()) {
-    return '「失分卡点」与「改进对策」不能填写完全相同的内容，请分别写清错因和改法。'
+    return '“当时卡在哪”和“下次怎么提醒自己”别写一模一样的哦，分开说说原因和办法。'
   }
 
   for (const [label, raw, eff] of [
-    ['具体失分卡点', stuck, stuckEff],
-    ['正确思路与改进对策', fix, fixEff],
+    ['这一步卡点', stuck, stuckEff],
+    ['给下次的提醒', fix, fixEff],
   ] as const) {
     if (/(.)\1{3,}/.test(raw.replace(/\s+/g, ''))) {
-      return `「${label}」存在连续重复字符，请认真填写复盘内容。`
+      return `「${label}」好像出现了连续重复的字符，用自己的话再写清楚一点吧。`
     }
     const chars = eff.toLowerCase().split('')
     const unique = new Set(chars)
     if (unique.size < 5) {
-      return `「${label}」有效用字过于单一，请用完整句子说明具体情况。`
+      return `「${label}」用字太重复啦，试着写一句完整的话说明白。`
     }
     let maxCount = 0
     for (const ch of unique) {
@@ -446,15 +455,15 @@ export function validateReflectionDraftLocally(stuckPoint: string, fixStrategy: 
       if (cnt > maxCount) maxCount = cnt
     }
     if (maxCount / chars.length > 0.45) {
-      return `「${label}」存在重复灌水字符，请写明真实错因与思路。`
+      return `「${label}」有不少重复字符，再补充一点真实的思考过程吧。`
     }
   }
 
   if (stripPerfunctoryCliches(stuck).length < 5) {
-    return '「具体失分卡点」不能仅写“粗心/不会/看错了”等套话，请补充具体漏掉的条件或出错步骤。'
+    return '先别只怪“粗心/没看清”，试着写明是哪一个条件、符号或步骤出了偏差？'
   }
   if (stripPerfunctoryCliches(fix).length < 5) {
-    return '「正确思路与改进对策」不能仅写“下次注意/多做题”等套话，请写出具体怎么改、怎么验算。'
+    return '“下次注意”容易忘，换成“如果看到…我就先…”的具体动作会更管用哦。'
   }
   return null
 }

@@ -1567,14 +1567,55 @@ def parse_structured_reflection_note(
     }
 
 
+_REFLECTION_STARTER_FRAGMENTS: tuple[str, ...] = (
+    "条件我没用上，当时以为",
+    "辅助线/解题切入点选错了，应该从",
+    "圈出来，确认满足条件再往下算",
+    "说明/单位/验根，导致扣分",
+    "这一步卡住了，没想到要先",
+    "当时心态有点急，跳过",
+    "公式时忘记了前提条件",
+    "做到这题时时间只剩",
+    "答题格式不完整，少了",
+    "移项/去括号时",
+    "写完这一步后，我用",
+    "混了，其实应该是",
+    "条件我没用上",
+    "的方法检查一遍",
+    "这一步，我把",
+    "的符号写反了",
+    "这一步推导",
+    "如果再看到",
+    "来不及检查",
+    "题目里的",
+    "我就先",
+    "直接写了",
+    "这步漏写了",
+    "看成了",
+    "概念和",
+    "算成了",
+    "做到",
+    "入手",
+    "先把",
+)
+
+
+def _strip_starter_fragments(text: str) -> str:
+    """剔除学生端句式起头固定模板外壳，确保仅点击起头不补全时无法过线。"""
+    cleaned = text or ""
+    for frag in sorted(_REFLECTION_STARTER_FRAGMENTS, key=len, reverse=True):
+        cleaned = cleaned.replace(frag, "")
+    return cleaned
+
+
 def _extract_effective_chars(text: str) -> str:
     """仅保留中文字符与英文字母（剥离空白、标点、纯数字），用于真实语义长度统计。"""
     return "".join(re.findall(r"[\u4e00-\u9fffA-Za-z]", text or ""))
 
 
 def _strip_perfunctory_cliches(text: str) -> str:
-    """剔除敷衍套话词库，检验剩余实质内容长度。"""
-    cleaned = text
+    """剔除句式起头外壳与敷衍套话词库，检验剩余实质内容长度。"""
+    cleaned = _strip_starter_fragments(text)
     for phrase in sorted(_PERFUNCTORY_CLICHES, key=len, reverse=True):
         cleaned = cleaned.replace(phrase, "")
     return _extract_effective_chars(cleaned)
@@ -1584,40 +1625,40 @@ def validate_reflection_not_perfunctory(
     stuck_point: str,
     fix_strategy: str,
 ) -> str | None:
-    """第二层本地反敷衍硬规则校验；不通过时返回具体引导提示，通过返回 None。"""
+    """第二层本地反敷衍硬规则校验；不通过时返回书童追问口吻提示，通过返回 None。"""
     stuck = (stuck_point or "").strip()
     fix = (fix_strategy or "").strip()
 
-    stuck_eff = _extract_effective_chars(stuck)
-    fix_eff = _extract_effective_chars(fix)
+    stuck_eff = _extract_effective_chars(_strip_starter_fragments(stuck))
+    fix_eff = _extract_effective_chars(_strip_starter_fragments(fix))
 
     if len(stuck_eff) < 8:
-        return "「具体失分卡点」有效内容过短（需至少 8 个汉字或字母），请写明具体错在哪一步或漏看了哪个条件。"
+        return "能再具体说说当时卡在哪一步、或者漏掉了哪个条件吗？（还需再补充几句具体细节）"
     if len(fix_eff) < 8:
-        return "「正确思路与改进对策」有效内容过短（需至少 8 个汉字或字母），请写明正确解法或具体的检验动作。"
+        return "给下次的自己留一句具体的提醒吧：遇到这类题先做什么、或者用什么方法检查？"
     if len(stuck_eff) + len(fix_eff) < 20:
-        return "两栏合计有效分析不足 20 字，请再补充关键条件、公式或具体步骤。"
+        return "还差一点点细节，再多写几句关键条件或检查动作，下次遇到就能稳稳拿分啦。"
 
     if stuck_eff.lower() == fix_eff.lower():
-        return "「失分卡点」与「改进对策」不能填写完全相同的内容，请分别写清错因和改法。"
+        return "“当时卡在哪”和“下次怎么提醒自己”别写一模一样的哦，分开说说原因和办法。"
 
-    for label, raw, eff in (("具体失分卡点", stuck, stuck_eff), ("正确思路与改进对策", fix, fix_eff)):
+    for label, raw, eff in (("这一步卡点", stuck, stuck_eff), ("给下次的提醒", fix, fix_eff)):
         if re.search(r"(.)\1{3,}", re.sub(r"\s+", "", raw)):
-            return f"「{label}」存在连续重复字符，请认真填写复盘内容。"
+            return f"「{label}」好像出现了连续重复的字符，用自己的话再写清楚一点吧。"
         unique_chars = set(eff.lower())
         if len(unique_chars) < 5:
-            return f"「{label}」有效用字过于单一，请用完整句子说明具体情况。"
+            return f"「{label}」用字太重复啦，试着写一句完整的话说明白。"
         max_freq = max(eff.lower().count(ch) for ch in unique_chars)
         if max_freq / len(eff) > 0.45:
-            return f"「{label}」存在重复灌水字符，请写明真实错因与思路。"
+            return f"「{label}」有不少重复字符，再补充一点真实的思考过程吧。"
 
     # 剥离敷衍套话后剩余实质分析字符校验
     meaningful_stuck = _strip_perfunctory_cliches(stuck)
     meaningful_fix = _strip_perfunctory_cliches(fix)
     if len(meaningful_stuck) < 5:
-        return "「具体失分卡点」不能仅写“粗心/不会/看错了”等套话，请补充具体漏掉的条件或出错步骤。"
+        return "先别只怪“粗心/没看清”，试着写明是哪一个条件、符号或步骤出了偏差？"
     if len(meaningful_fix) < 5:
-        return "「正确思路与改进对策」不能仅写“下次注意/多做题”等套话，请写出具体怎么改、怎么验算。"
+        return "“下次注意”容易忘，换成“如果看到…我就先…”的具体动作会更管用哦。"
     return None
 
 

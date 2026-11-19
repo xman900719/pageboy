@@ -115,6 +115,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 12** | [12-student-wrong-reflection-anti-perfunctory.md](checklists/12-student-wrong-reflection-anti-perfunctory.md) | 学生端「校考错题复盘」台账目录钻取单场、防敷衍质检、管理端只读查看与退回重写 | 依赖【主题 11 通过】 | **[x] 已通过（2026-11-18）** |
 | **主题 13** | [13-school-exam-stage1-stage2-reorg.md](checklists/13-school-exam-stage1-stage2-reorg.md) | 管理端校考第一、二阶段重组（方案一 · 上传原卷归入第一阶段、移除 Step 1 底部入口与报告中心冗余 DeepSeek 按钮） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 14** | [14-practice-scheme-a-and-wrong-diagnostics.md](checklists/14-practice-scheme-a-and-wrong-diagnostics.md) | 学生端练习页方案 A 双工作台、AI 引导对话持久化、管理端「错题诊断」AI 剖析三选一与学生端 Level 2 改进对策闭环 | 依赖【主题 1~7 通过】 | **[x] 已通过（2026-11-19）** |
+| **主题 15** | [15-student-school-exam-reflection-guided.md](checklists/15-student-school-exam-reflection-guided.md) | 学生端「校考复盘」标题统一、复盘首页移除日常练习错题回顾、三步引导 + 句式支架与去惩罚化反馈（ST-021） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
 
 ---
 

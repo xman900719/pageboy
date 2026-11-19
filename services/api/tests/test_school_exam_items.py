@@ -896,6 +896,19 @@ def test_student_reflection_workflow_anti_perfunctory_and_admin_return(client, a
     assert bad_res.status_code == 422
     assert "REFLECTION_TOO_PERFUNCTORY" in bad_res.json()["detail"]
 
+    # 仅点句式起头不补全具体内容，同样被 422 拦截
+    starter_only_res = client.post(
+        f"/api/student/school-exam-reflections/{lost_item['item_id']}",
+        json={
+            "error_category": "reading",
+            "stuck_point": "题目里的「」条件我没用上，当时以为",
+            "fix_strategy": "如果再看到「」，我就先「」。",
+        },
+        headers=student_auth,
+    )
+    assert starter_only_res.status_code == 422
+    assert "REFLECTION_TOO_PERFUNCTORY" in starter_only_res.json()["detail"]
+
     # 具体实质复盘提交成功
     ok_res = client.post(
         f"/api/student/school-exam-reflections/{lost_item['item_id']}",

@@ -9,18 +9,22 @@ import {
   type SchoolSubject,
   type StudentSchoolReflectionItem,
   type Subject,
-  type WrongQuestionSummary,
 } from '../api'
-import { fmtPoints, resolveAnswerContent } from '../copy'
-import { getSchoolErrorCategoryLabel, SCHOOL_ERROR_CATEGORY_OPTIONS } from '../config/knowledge'
+import { fmtPoints } from '../copy'
+import { getSchoolErrorCategoryLabel } from '../config/knowledge'
+import {
+  FIX_STARTERS,
+  getOrderedCategoriesForScene,
+  getStuckStarters,
+  REFLECTION_SCENE_OPTIONS,
+  type ReflectionScene,
+} from '../config/reflectionGuide'
 import {
   formatQuestionLabelHeading,
   groupSchoolReflectionsByExam,
   validateReflectionDraftLocally,
 } from '../examSync'
-import TutorDrawer from '../components/TutorDrawer.vue'
 import type { NoticeTone } from '../components/Notice.vue'
-import { RichText } from '../rich'
 
 const props = defineProps<{
   client: ApiClient
@@ -33,6 +37,18 @@ const emit = defineEmits<{
 }>()
 
 type ReflectionFilter = 'pending' | 'all' | 'completed'
+type GuideStep = 1 | 2 | 3
+
+interface ReflectionDraft {
+  step: GuideStep
+  scene: ReflectionScene | ''
+  errorCategory: SchoolErrorCategory | ''
+  stuckPoint: string
+  fixStrategy: string
+  feedback: string
+  submitting: boolean
+  editingCompleted: boolean
+}
 
 const activeSubject = ref<SchoolSubject>(props.subject)
 const filterMode = ref<ReflectionFilter>('pending')
@@ -41,37 +57,37 @@ const loading = ref(false)
 const items = ref<StudentSchoolReflectionItem[]>([])
 const pendingBySubject = ref<Record<string, number>>({})
 const totalPending = ref(0)
+const drafts = ref<Record<string, ReflectionDraft>>({})
 
-const drafts = ref<
-  Record<
-    string,
-    {
-      errorCategory: SchoolErrorCategory | ''
-      stuckPoint: string
-      fixStrategy: string
-      feedback: string
-      submitting: boolean
-    }
-  >
->({})
-
-const dailyWrongs = ref<WrongQuestionSummary[]>([])
-const activeTutorItem = ref<WrongQuestionSummary | null>(null)
-
-function countEffective(text: string): number {
-  return (text.match(/[\u4e00-\u9fffA-Za-z]/g) ?? []).length
+function createInitialDraft(row: StudentSchoolReflectionItem): ReflectionDraft {
+  const initialStep: GuideStep =
+    row.reflection_status === 'completed'
+      ? 3
+      : row.reflection_status === 'needs_revision'
+        ? 2
+        : 1
+  return {
+    step: initialStep,
+    scene: '',
+    errorCategory: row.error_category ?? '',
+    stuckPoint: row.stuck_point ?? '',
+    fixStrategy: row.fix_strategy ?? '',
+    feedback: '',
+    submitting: false,
+    editingCompleted: false,
+  }
 }
 
 function initDrafts(rows: StudentSchoolReflectionItem[]) {
-  const next: typeof drafts.value = {}
+  const next: Record<string, ReflectionDraft> = {}
   for (const row of rows) {
     const prev = drafts.value[row.item_id]
-    next[row.item_id] = prev ?? {
-      errorCategory: row.error_category ?? '',
-      stuckPoint: row.stuck_point ?? '',
-      fixStrategy: row.fix_strategy ?? '',
-      feedback: '',
-      submitting: false,
+    if (prev && row.reflection_status !== 'completed') {
+      next[row.item_id] = prev
+    } else if (prev && row.reflection_status === 'completed' && prev.editingCompleted) {
+      next[row.item_id] = prev
+    } else {
+      next[row.item_id] = createInitialDraft(row)
     }
   }
   drafts.value = next
@@ -87,19 +103,9 @@ async function loadReflections() {
     emit('pendingCount', res.total_pending)
     initDrafts(res.items)
   } catch (e) {
-    props.notify(`加载校考错题复盘失败：${describeError(e)}`, 'error')
+    props.notify(`加载校考复盘失败：${describeError(e)}`, 'error')
   } finally {
     loading.value = false
-  }
-
-  if (activeSubject.value !== 'ethics') {
-    try {
-      dailyWrongs.value = await props.client.wrongAttempts(activeSubject.value as Subject, 6)
-    } catch {
-      dailyWrongs.value = []
-    }
-  } else {
-    dailyWrongs.value = []
   }
 }
 
@@ -137,11 +143,40 @@ function enterExam(examId: string) {
   filterMode.value = group && group.pendingCount > 0 ? 'pending' : 'all'
 }
 
+function chooseScene(itemId: string, scene: ReflectionScene) {
+  const d = drafts.value[itemId]
+  if (!d) return
+  d.scene = scene
+  d.feedback = ''
+  d.step = 2
+}
+
+function appendStarter(target: 'stuckPoint' | 'fixStrategy', itemId: string, starter: string) {
+  const d = drafts.value[itemId]
+  if (!d) return
+  const current = d[target].trim()
+  d[target] = current ? `${current}\n${starter}` : starter
+  d.feedback = ''
+}
+
+function goStep(itemId: string, nextStep: GuideStep) {
+  const d = drafts.value[itemId]
+  if (!d) return
+  if (nextStep === 3 && !d.errorCategory) {
+    d.feedback = '先选一下这题更像哪一类卡点，再写给下次的提醒。'
+    d.step = 2
+    return
+  }
+  d.feedback = ''
+  d.step = nextStep
+}
+
 async function submitReflection(item: StudentSchoolReflectionItem) {
   const d = drafts.value[item.item_id]
   if (!d || d.submitting) return
   if (!d.errorCategory) {
-    d.feedback = '请先选择本题对应的错因分类。'
+    d.step = 2
+    d.feedback = '先选一下这题更像哪一类卡点吧。'
     return
   }
   const localErr = validateReflectionDraftLocally(d.stuckPoint, d.fixStrategy)
@@ -160,14 +195,15 @@ async function submitReflection(item: StudentSchoolReflectionItem) {
     d.stuckPoint = updated.stuck_point
     d.fixStrategy = updated.fix_strategy
     d.errorCategory = updated.error_category ?? ''
+    d.editingCompleted = false
     d.feedback = ''
-    props.notify(`「${formatQuestionLabelHeading(item.question_label)}」已完成高质量复盘。`, 'success')
+    props.notify(`「${formatQuestionLabelHeading(item.question_label)}」的提醒卡已收好 ✓`, 'success')
     await loadReflections()
   } catch (e) {
     const msg = describeError(e)
     d.feedback = msg
       .replace(/^REFLECTION_TOO_PERFUNCTORY:\s*/i, '')
-      .replace(/^REFLECTION_AI_COACH_REJECTED:\s*/i, 'AI 审阅追问：')
+      .replace(/^REFLECTION_AI_COACH_REJECTED:\s*/i, '书童想再追问一句：')
   } finally {
     d.submitting = false
   }
@@ -183,7 +219,6 @@ watch(
 watch(
   [() => props.client, () => activeSubject.value],
   () => {
-    activeTutorItem.value = null
     activeExamId.value = null
     void loadReflections()
   },
@@ -193,10 +228,10 @@ watch(
 
 <template>
   <div class="view-stack">
-    <section class="card" aria-label="校考错题复盘工作台">
+    <section class="card" aria-label="校考复盘工作台">
       <div class="card-head">
         <div>
-          <h2>校考错题复盘</h2>
+          <h2>校考复盘</h2>
         </div>
         <div class="head-actions">
           <span v-if="totalPending > 0" class="chip wait">全科待复盘 {{ totalPending }} 题</span>
@@ -243,11 +278,11 @@ watch(
                 待复盘 {{ eg.pendingCount }} 题
               </span>
               <span v-else class="chip good">本场已全部复盘 ✓</span>
-              <span v-if="eg.needsRevisionCount > 0" class="chip bad">
-                退回重写 {{ eg.needsRevisionCount }}
+              <span v-if="eg.needsRevisionCount > 0" class="chip wait">
+                待再聊聊 {{ eg.needsRevisionCount }}
               </span>
               <span v-if="eg.completedCount > 0" class="chip subtle">
-                已完成 {{ eg.completedCount }} 题
+                已收好提醒卡 {{ eg.completedCount }} 题
               </span>
             </div>
             <div class="reflection-exam-tile-foot">
@@ -256,14 +291,14 @@ watch(
                 :class="eg.pendingCount > 0 ? 'primary small' : 'ghost small'"
                 @click="enterExam(eg.examId)"
               >
-                {{ eg.pendingCount > 0 ? '进入本场复盘 →' : '查看 / 修改' }}
+                {{ eg.pendingCount > 0 ? '进入本场复盘 →' : '查看提醒卡' }}
               </button>
             </div>
           </article>
         </div>
       </template>
 
-      <!-- 第二屏：单场错题复盘专注页 -->
+      <!-- 第二屏：单场校考复盘专注页 -->
       <template v-else>
         <div class="reflection-breadcrumb">
           <button type="button" class="ghost small" @click="activeExamId = null">
@@ -286,14 +321,14 @@ watch(
               :class="['chip-btn', filterMode === 'pending' ? 'selected' : '']"
               @click="filterMode = 'pending'"
             >
-              待复盘 / 退回 ({{ activeExamCounts.pending }})
+              待复盘 ({{ activeExamCounts.pending }})
             </button>
             <button
               type="button"
               :class="['chip-btn', filterMode === 'completed' ? 'selected' : '']"
               @click="filterMode = 'completed'"
             >
-              已完成 ({{ activeExamCounts.completed }})
+              已收好提醒卡 ({{ activeExamCounts.completed }})
             </button>
             <button
               type="button"
@@ -308,8 +343,8 @@ watch(
         <p v-if="activeExamFilteredItems.length === 0" class="muted" style="margin-top: 12px;">
           {{
             filterMode === 'pending'
-              ? '本场错题已全部完成复盘，可切换「已完成」查看或返回校考台账。'
-              : '当前筛选下暂无错题记录。'
+              ? '本场错题都收好提醒卡了，可以切换「已收好提醒卡」回看或返回校考台账。'
+              : '当前筛选下暂无失分记录。'
           }}
         </p>
 
@@ -330,142 +365,231 @@ watch(
               <span
                 :class="[
                   'chip',
-                  it.reflection_status === 'completed'
-                    ? 'good'
-                    : it.reflection_status === 'needs_revision'
-                      ? 'bad'
-                      : 'wait',
+                  it.reflection_status === 'completed' ? 'good' : 'wait',
                 ]"
               >
                 {{
                   it.reflection_status === 'completed'
-                    ? '已完成复盘 ✓'
+                    ? '提醒卡已收好 ✓'
                     : it.reflection_status === 'needs_revision'
-                      ? '家长退回重写'
+                      ? '家长想和你再聊聊这题'
                       : '待复盘'
                 }}
               </span>
             </div>
 
             <p v-if="it.return_reason" class="reflection-return-banner" role="alert">
-              退回重写原因：{{ it.return_reason }}
+              家长留言：{{ it.return_reason }}
             </p>
 
             <p v-if="it.stem_excerpt" class="reflection-stem-excerpt">
               原卷题干摘要：{{ it.stem_excerpt }}
             </p>
 
-            <div v-if="drafts[it.item_id]" class="reflection-form">
-              <div class="reflection-cat-group">
-                <span class="reflection-label">1. 选择错因分类（必选）</span>
-                <div class="reflection-cat-pills" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 错因分类`">
+            <!-- 已完成且未开启编辑：展示清爽的「给下次的提醒卡」 -->
+            <div
+              v-if="it.reflection_status === 'completed' && drafts[it.item_id] && !drafts[it.item_id].editingCompleted"
+              class="reflection-reminder-card"
+            >
+              <div class="reflection-reminder-head">
+                <span class="chip subtle">{{ getSchoolErrorCategoryLabel(it.error_category) }}</span>
+                <button
+                  type="button"
+                  class="ghost small"
+                  @click="drafts[it.item_id].editingCompleted = true; drafts[it.item_id].step = 2"
+                >
+                  调整一下
+                </button>
+              </div>
+              <p class="reflection-reminder-fix">
+                <b>给下次的提醒：</b>{{ it.fix_strategy }}
+              </p>
+              <p class="reflection-reminder-stuck muted tiny">
+                当时卡点：{{ it.stuck_point }}
+              </p>
+            </div>
+
+            <!-- 三步引导复盘工作区 -->
+            <div v-else-if="drafts[it.item_id]" class="reflection-form">
+              <div class="reflection-step-bar" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 复盘步骤`">
+                <button
+                  type="button"
+                  :class="['reflection-step-pill', drafts[it.item_id].step === 1 ? 'active' : 'done']"
+                  @click="goStep(it.item_id, 1)"
+                >
+                  ① 回到考场
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'reflection-step-pill',
+                    drafts[it.item_id].step === 2 ? 'active' : drafts[it.item_id].step > 2 ? 'done' : '',
+                  ]"
+                  @click="goStep(it.item_id, 2)"
+                >
+                  ② 找到那一步
+                </button>
+                <button
+                  type="button"
+                  :class="['reflection-step-pill', drafts[it.item_id].step === 3 ? 'active' : '']"
+                  @click="goStep(it.item_id, 3)"
+                >
+                  ③ 给下次的提醒
+                </button>
+              </div>
+
+              <!-- 第 1 步：回到考场 -->
+              <div v-if="drafts[it.item_id].step === 1" class="reflection-guide-step">
+                <p class="reflection-label">做这题时，当时更像哪种情况？</p>
+                <div class="reflection-scene-grid">
                   <button
-                    v-for="opt in SCHOOL_ERROR_CATEGORY_OPTIONS"
-                    :key="opt.value"
+                    v-for="sc in REFLECTION_SCENE_OPTIONS"
+                    :key="sc.value"
                     type="button"
-                    :class="['chip-btn', drafts[it.item_id].errorCategory === opt.value ? 'selected' : '']"
-                    @click="drafts[it.item_id].errorCategory = opt.value; drafts[it.item_id].feedback = ''"
+                    :class="['reflection-scene-btn', drafts[it.item_id].scene === sc.value ? 'selected' : '']"
+                    @click="chooseScene(it.item_id, sc.value)"
                   >
-                    {{ opt.label }}
+                    <b>{{ sc.label }}</b>
+                    <span>{{ sc.hint }}</span>
+                  </button>
+                </div>
+                <div class="reflection-actions">
+                  <button type="button" class="ghost small" @click="goStep(it.item_id, 2)">
+                    跳过这一步，直接找卡点 →
                   </button>
                 </div>
               </div>
 
-              <label class="reflection-field">
-                <div class="reflection-field-head">
-                  <span>2. 具体失分卡点（有效字数 {{ countEffective(drafts[it.item_id].stuckPoint) }} / 建议 ≥ 8）</span>
+              <!-- 第 2 步：找到那一步 -->
+              <div v-else-if="drafts[it.item_id].step === 2" class="reflection-guide-step">
+                <div class="reflection-cat-group">
+                  <span class="reflection-label">更像哪一类卡点？（选一项）</span>
+                  <div class="reflection-cat-pills" role="group" :aria-label="`${formatQuestionLabelHeading(it.question_label)} 错因分类`">
+                    <button
+                      v-for="entry in getOrderedCategoriesForScene(drafts[it.item_id].scene)"
+                      :key="entry.category"
+                      type="button"
+                      :class="[
+                        'chip-btn',
+                        drafts[it.item_id].errorCategory === entry.category ? 'selected' : '',
+                        entry.recommended ? 'recommended' : '',
+                      ]"
+                      @click="drafts[it.item_id].errorCategory = entry.category; drafts[it.item_id].feedback = ''"
+                    >
+                      {{ getSchoolErrorCategoryLabel(entry.category) }}
+                      <em v-if="entry.recommended" class="reflection-rec-tag">常见</em>
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  v-model="drafts[it.item_id].stuckPoint"
-                  rows="2"
-                  maxlength="300"
-                  :aria-label="`${formatQuestionLabelHeading(it.question_label)} 具体失分卡点`"
-                  placeholder="写明具体错在第几步、漏掉了哪个题干条件或哪条公式用反了…"
-                  @input="drafts[it.item_id].feedback = ''"
-                />
-              </label>
 
-              <label class="reflection-field">
-                <div class="reflection-field-head">
-                  <span>3. 正确思路与改进对策（有效字数 {{ countEffective(drafts[it.item_id].fixStrategy) }} / 建议 ≥ 8）</span>
+                <div v-if="drafts[it.item_id].errorCategory" class="reflection-starter-box">
+                  <span class="muted tiny">不知道怎么开头？点一句接下去写（可自由修改）：</span>
+                  <div class="reflection-starter-chips">
+                    <button
+                      v-for="st in getStuckStarters(drafts[it.item_id].errorCategory)"
+                      :key="st"
+                      type="button"
+                      class="chip-btn starter"
+                      @click="appendStarter('stuckPoint', it.item_id, st)"
+                    >
+                      + {{ st }}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  v-model="drafts[it.item_id].fixStrategy"
-                  rows="2"
-                  maxlength="300"
-                  :aria-label="`${formatQuestionLabelHeading(it.question_label)} 改进对策`"
-                  placeholder="写明本题正确关键步骤，以及下次遇到同类题的具体检查动作…"
-                  @input="drafts[it.item_id].feedback = ''"
-                />
-              </label>
 
-              <p v-if="drafts[it.item_id].feedback" class="reflection-reject-alert" role="alert">
-                {{ drafts[it.item_id].feedback }}
-              </p>
+                <label class="reflection-field">
+                  <span>说说当时卡在哪一步</span>
+                  <textarea
+                    v-model="drafts[it.item_id].stuckPoint"
+                    rows="2"
+                    maxlength="300"
+                    :aria-label="`${formatQuestionLabelHeading(it.question_label)} 当时卡在哪一步`"
+                    placeholder="用自己的话写下具体漏了哪个条件、或哪一步算岔了…"
+                    @input="drafts[it.item_id].feedback = ''"
+                  />
+                </label>
 
-              <div class="reflection-actions">
-                <span v-if="it.error_category && it.reflection_status === 'completed'" class="muted tiny">
-                  当前归类：{{ getSchoolErrorCategoryLabel(it.error_category) }}
-                </span>
-                <button
-                  type="button"
-                  class="primary small"
-                  :disabled="drafts[it.item_id].submitting"
-                  @click="submitReflection(it)"
-                >
-                  {{
-                    drafts[it.item_id].submitting
-                      ? '提交检查中…'
-                      : it.reflection_status === 'completed'
-                        ? '更新复盘内容'
-                        : '提交复盘'
-                  }}
-                </button>
+                <p v-if="drafts[it.item_id].feedback" class="reflection-reject-alert" role="alert">
+                  {{ drafts[it.item_id].feedback }}
+                </p>
+
+                <div class="reflection-actions space-between">
+                  <button type="button" class="ghost small" @click="goStep(it.item_id, 1)">
+                    ← 回到考场
+                  </button>
+                  <button type="button" class="primary small" @click="goStep(it.item_id, 3)">
+                    下一步：写给下次的自己 →
+                  </button>
+                </div>
+              </div>
+
+              <!-- 第 3 步：给下次的自己一张提醒卡 -->
+              <div v-else class="reflection-guide-step">
+                <div class="reflection-starter-box">
+                  <span class="muted tiny">用「如果…我就先…」定一个下次能直接用上的小动作：</span>
+                  <div class="reflection-starter-chips">
+                    <button
+                      v-for="st in FIX_STARTERS"
+                      :key="st"
+                      type="button"
+                      class="chip-btn starter"
+                      @click="appendStarter('fixStrategy', it.item_id, st)"
+                    >
+                      + {{ st }}
+                    </button>
+                  </div>
+                </div>
+
+                <label class="reflection-field">
+                  <span>给下次遇到同类题的自己留一句提醒</span>
+                  <textarea
+                    v-model="drafts[it.item_id].fixStrategy"
+                    rows="2"
+                    maxlength="300"
+                    :aria-label="`${formatQuestionLabelHeading(it.question_label)} 给下次的提醒`"
+                    placeholder="如果再看到…，我就先…；做完后我用…检查。"
+                    @input="drafts[it.item_id].feedback = ''"
+                  />
+                </label>
+
+                <p v-if="drafts[it.item_id].feedback" class="reflection-reject-alert" role="alert">
+                  {{ drafts[it.item_id].feedback }}
+                </p>
+
+                <div class="reflection-actions space-between">
+                  <button type="button" class="ghost small" @click="goStep(it.item_id, 2)">
+                    ← 上一步
+                  </button>
+                  <div class="reflection-actions">
+                    <button
+                      v-if="it.reflection_status === 'completed'"
+                      type="button"
+                      class="ghost small"
+                      @click="drafts[it.item_id].editingCompleted = false"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      class="primary small"
+                      :disabled="drafts[it.item_id].submitting"
+                      @click="submitReflection(it)"
+                    >
+                      {{
+                        drafts[it.item_id].submitting
+                          ? '正在收好…'
+                          : it.reflection_status === 'completed'
+                            ? '更新提醒卡 ✓'
+                            : '收好提醒卡 ✓'
+                      }}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </li>
         </ul>
       </template>
-    </section>
-
-    <section
-      v-if="activeSubject !== 'ethics' && dailyWrongs.length > 0"
-      class="card"
-      aria-label="近期日常练习错题引导"
-    >
-      <div class="card-head">
-        <div>
-          <h3>{{ SCHOOL_SUBJECT_LABELS[activeSubject] }}日常练习错题回顾</h3>
-          <p class="card-sub">同步回顾日常智能练习中的错题，随时与「我的书童」对话理清思路。</p>
-        </div>
-      </div>
-      <div class="wrong-review-layout">
-        <div class="wrong-list-col">
-          <ul class="wrong-list">
-            <li
-              v-for="w in dailyWrongs"
-              :key="w.attempt_id"
-              :class="['wrong-item-card', activeTutorItem?.attempt_id === w.attempt_id ? 'active' : '']"
-            >
-              <div class="wrong-meta">
-                <span class="chip bad">错答：<RichText :text="resolveAnswerContent(w.student_answer, w.options)" /></span>
-                <span v-if="w.correct_answer" class="chip good">正解：<RichText :text="resolveAnswerContent(w.correct_answer, w.options)" /></span>
-                <span class="muted">{{ fmtPoints(w.earned_points ?? 0) }} / {{ fmtPoints(w.max_points) }}</span>
-              </div>
-              <p class="wrong-stem"><RichText :text="w.stem" /></p>
-              <div class="wrong-foot">
-                <span v-for="t in w.knowledge_titles" :key="t" class="chip">{{ t }}</span>
-                <button type="button" class="ghost small" @click="activeTutorItem = w">
-                  {{ w.tutor_session_id ? '继续对话' : '问我的书童' }}
-                </button>
-              </div>
-            </li>
-          </ul>
-        </div>
-        <div v-if="activeTutorItem" class="tutor-col">
-          <TutorDrawer :client="client" :wrong-item="activeTutorItem" @close="activeTutorItem = null" />
-        </div>
-      </div>
     </section>
   </div>
 </template>

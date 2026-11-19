@@ -764,9 +764,9 @@ button.link-btn:hover:not(:disabled) { background: transparent; border-color: tr
 .reflection-title-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
 .reflection-title-group b { font-size: 0.98rem; color: var(--ink) }
 .reflection-return-banner {
-  margin: 0; padding: 7px 10px; border-radius: 8px;
-  background: var(--red-soft); border: 1px solid var(--red-line);
-  color: var(--red); font-size: 0.8rem; font-weight: 600;
+  margin: 0; padding: 8px 11px; border-radius: 8px;
+  background: var(--amber-soft, #fff8eb); border: 1px solid var(--amber-line, #f1cf9b);
+  color: #7c4d08; font-size: 0.82rem; font-weight: 600;
 }
 .reflection-stem-excerpt {
   margin: 0; padding: 7px 10px; border-radius: 8px;
@@ -774,22 +774,86 @@ button.link-btn:hover:not(:disabled) { background: transparent; border-color: tr
   color: var(--ink-2); font-size: 0.8rem; line-height: 1.5;
 }
 .reflection-form { display: flex; flex-direction: column; gap: 10px }
+.reflection-step-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.reflection-step-pill {
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--line); background: #fff;
+  color: var(--ink-2); font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; min-height: 32px;
+}
+.reflection-step-pill.active {
+  border-color: var(--primary); background: var(--primary-soft); color: var(--primary);
+}
+.reflection-step-pill.done {
+  border-color: var(--green-line, #b7dfc4); background: #f3fbf6; color: #1b6b3a;
+}
+.reflection-guide-step {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.reflection-scene-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+}
+@media (max-width: 600px) {
+  .reflection-scene-grid { grid-template-columns: 1fr }
+}
+.reflection-scene-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  text-align: left; padding: 10px 12px; border-radius: var(--radius-s);
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+  min-width: 0;
+}
+.reflection-scene-btn b { font-size: 0.86rem; color: var(--ink) }
+.reflection-scene-btn span { font-size: 0.76rem; color: var(--ink-2); line-height: 1.4 }
+.reflection-scene-btn.selected {
+  border-color: var(--primary); background: var(--primary-soft);
+}
 .reflection-cat-group { display: flex; flex-direction: column; gap: 5px }
-.reflection-label { font-size: 0.8rem; font-weight: 700; color: var(--ink-2) }
+.reflection-label { font-size: 0.82rem; font-weight: 700; color: var(--ink-2); margin: 0 }
 .reflection-cat-pills { display: flex; gap: 6px; flex-wrap: wrap }
+.reflection-rec-tag {
+  font-style: normal; font-size: 0.68rem; margin-left: 4px;
+  padding: 1px 5px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary);
+}
+.reflection-starter-box {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--card-warm); border: 1px dashed var(--line);
+}
+.reflection-starter-chips { display: flex; gap: 6px; flex-wrap: wrap }
+.chip-btn.starter {
+  font-size: 0.76rem; text-align: left; white-space: normal; line-height: 1.35;
+}
 .reflection-field {
   display: flex; flex-direction: column; gap: 4px; margin: 0;
   font-size: 0.8rem; font-weight: 600; color: var(--ink-2);
 }
 .reflection-field textarea { width: 100%; min-width: 0; margin: 0; font-size: 0.84rem; line-height: 1.5 }
 .reflection-reject-alert {
-  margin: 0; padding: 8px 10px; border-radius: 8px;
-  background: var(--red-soft); border: 1px solid var(--red-line);
-  color: var(--red); font-size: 0.8rem; font-weight: 600;
+  margin: 0; padding: 8px 11px; border-radius: 8px;
+  background: #fff7eb; border: 1px solid #f0c98a;
+  color: #7a4805; font-size: 0.82rem; font-weight: 600;
 }
 .reflection-actions {
   display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap;
 }
+.reflection-actions.space-between {
+  justify-content: space-between;
+}
+.reflection-reminder-card {
+  padding: 10px 12px; border-radius: var(--radius-s);
+  background: #f5fbf7; border: 1px solid #c5e5d0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.reflection-reminder-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.reflection-reminder-fix {
+  margin: 0; font-size: 0.88rem; color: var(--ink); line-height: 1.5;
+}
+.reflection-reminder-stuck { margin: 0; line-height: 1.45 }
 .draft-card-item .attachment-actions {
   margin-top: auto; padding-top: 6px; border-top: 1px dashed var(--line-soft);
   justify-content: space-between;
