@@ -6,7 +6,7 @@
 
 ## 当前接手点
 
-ST-001~ST-018 已全部完成（本地 + 远端五作业 CI 全绿），AC-OPS-01/02（Cloudflare R2 异地加密联合备份、隔离恢复与 healthchecks.io 静默告警）已实测达成；生产栈仍运行 `shutong-api:api-198ad7a`（对应标签 `v1.6.1`）。**当前开发主干 `codex/st-001-ci` 已推进至 2026-11-16 开发基准线**（含四科 135 知识点专家发布、`pageboy-home` 双环境强隔离、校考自动同步 R1/R2 与多学科分析报告导入 6-Tab 管理端、Alembic `0016 (head)` 与测试数据 fail-closed 策略），最新验收与环境现状见 [2026-11-16 开发基准线](docs/quality/dev-baseline-2026-11-16.md) 与 [开发基准总览](PROJECT_STATUS.md)。自规划长任务的阶段汇总见 [阶段日志](docs/handoff/stage-reports.md)，日常操作见 [日常使用指南](docs/product/daily-usage.md)。默认主干为 `codex/st-001-ci`（历史分支 `codex/st-003-private-ingestion` 停留在 `8a82ded` 仅作归档参考）。历史交接背景见 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)。
+ST-001~ST-018、ST-021~ST-023 已全部完成，AC-OPS-01/02（Cloudflare R2 异地加密联合备份、隔离恢复与 healthchecks.io 静默告警）已实测达成；生产栈当前运行 `shutong-api:api-b5bdc98`（2026-11-14，Alembic `0010`；早期标签 `v1.6.1`）。**当前开发主干 `main` 已推进至 2026-11-19 开发基准线**（整合 PR #15–#23：四科 135 知识点专家发布、`pageboy-home` 双环境强隔离、校考自动同步与多学科报告导入、方案 A 错题工作台与 AI 错因诊断、ST-021~023 校考苏格拉底复盘、知识点 Vue Flow 图谱与双游戏、Alembic `0022 (head)` 与测试数据 fail-closed 策略），最新验收与环境现状见 [2026-11-19 开发基准线](docs/quality/dev-baseline-2026-11-19.md) 与 [开发基准总览](PROJECT_STATUS.md)。自规划长任务的阶段汇总见 [阶段日志](docs/handoff/stage-reports.md)，日常操作见 [日常使用指南](docs/product/daily-usage.md)。历史分支 `codex/st-001-ci`（`98d15f4`）与 `codex/st-003-private-ingestion`（`8a82ded`）仅作归档参考。历史交接背景见 [工程 handoff](docs/handoff/st-004-and-remaining.md) 与 [执行 prompt](PROMPT_FOR_CODEX.md)。
 
 ## 启动检查（顺序执行）
 

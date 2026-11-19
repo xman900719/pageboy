@@ -19,6 +19,7 @@
 - [开发/生产分离切换手册](operations/prod-separation-runbook.md)
 - [云迁移准备](operations/cloud-migration.md)
 - [验收索引](quality/acceptance.md)
+- [2026-11-19 开发基准线与验证记录](quality/dev-baseline-2026-11-19.md)
 - [2026-11-16 开发基准线与验证记录](quality/dev-baseline-2026-11-16.md)
 - [前端重构人工验收指南](quality/manual-acceptance.md)
 - [开发环境测试数据政策](quality/test-data-policy.md)
