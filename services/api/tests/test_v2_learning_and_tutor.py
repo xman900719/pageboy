@@ -706,3 +706,66 @@ def test_safe_stem_excerpt_preserves_latex_pairs():
     excerpt = _safe_stem_excerpt(stem, max_len=24)
     assert excerpt.count("$") % 2 == 0
     assert "\\end{cases}$" in excerpt
+
+
+def test_knowledge_game_config_admin_control_and_student_isolation(client, admin_auth, student_auth):
+    """正反例：管理端可配置各科双游戏开关/护盾/闭环与递增 reset_epoch，学生端只读且越权写返回 403。"""
+    # 默认值读取（学生端与管理端隔离凭据各自可访问对应只读接口）
+    s_default = client.get("/api/knowledge/game-config", headers=student_auth)
+    assert s_default.status_code == 200
+    math_cfg = s_default.json()["subjects"]["math"]
+    assert math_cfg["alchemy_enabled"] is True
+    assert math_cfg["expedition_enabled"] is True
+    assert math_cfg["initial_shields"] == 3
+    assert math_cfg["reset_epoch"] == 0
+
+    # 反例：学生令牌越权访问管理端接口或写入接口 -> 403；管理端令牌误用学生接口 -> 403
+    assert client.get("/api/admin/knowledge/game-config", headers=student_auth).status_code == 403
+    assert (
+        client.put(
+            "/api/admin/knowledge/game-config/math",
+            json={"alchemy_enabled": False},
+            headers=student_auth,
+        ).status_code
+        == 403
+    )
+    assert client.get("/api/knowledge/game-config", headers=admin_auth).status_code == 403
+
+    # 正例：管理端更新物理游戏配置并递增 reset_epoch
+    updated = client.put(
+        "/api/admin/knowledge/game-config/physics",
+        json={
+            "alchemy_enabled": True,
+            "expedition_enabled": False,
+            "initial_shields": 2,
+            "prioritize_weak": False,
+            "practice_gate": "required",
+            "increment_reset_epoch": True,
+        },
+        headers=admin_auth,
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["subject"] == "physics"
+    assert body["expedition_enabled"] is False
+    assert body["initial_shields"] == 2
+    assert body["prioritize_weak"] is False
+    assert body["practice_gate"] == "required"
+    assert body["reset_epoch"] == 1
+
+    # 学生端实时可见更新，且其它学科保持隔离默认
+    s_after = client.get("/api/knowledge/game-config", headers=student_auth)
+    assert s_after.status_code == 200
+    assert s_after.json()["subjects"]["physics"]["expedition_enabled"] is False
+    assert s_after.json()["subjects"]["physics"]["reset_epoch"] == 1
+    assert s_after.json()["subjects"]["math"]["expedition_enabled"] is True
+
+    # 反例：非法护盾数（4）或未知学科被 422 拦截
+    assert (
+        client.put(
+            "/api/admin/knowledge/game-config/math",
+            json={"initial_shields": 4},
+            headers=admin_auth,
+        ).status_code
+        == 422
+    )

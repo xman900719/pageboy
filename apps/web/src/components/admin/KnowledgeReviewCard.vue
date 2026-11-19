@@ -23,12 +23,13 @@ import {
 } from '../../config/knowledge'
 import HelpBubble from '../HelpBubble.vue'
 import type { NoticeTone } from '../Notice.vue'
+import KnowledgeGameControlCard from './KnowledgeGameControlCard.vue'
 import StageTabStrip from './StageTabStrip.vue'
 import StepFlowWorkspace from './StepFlowWorkspace.vue'
 import type { StageGroup, StepDefinition, StepFlowContext } from './stepFlow'
 
 type Notify = (text: string, tone?: NoticeTone) => void
-type ReviewTabId = 'review' | 'clauses' | 'mapping' | 'releases'
+type ReviewTabId = 'review' | 'clauses' | 'mapping' | 'releases' | 'games'
 type NodeFilterId = 'all' | 'pending' | 'approved'
 type ReviewStepId = 'pick' | 'trace' | 'audit'
 type ReleaseStepId = 'publish' | 'snapshots'
@@ -245,6 +246,17 @@ const knowledgeStageGroups = computed<StageGroup[]>(() => {
           title: '版本发布与快照',
           badge: `${releases.value.length} 版`,
           done: releases.value.length > 0,
+        },
+      ],
+    },
+    {
+      id: 'kr-stage-4',
+      title: '第四阶段 · 学生端游戏管控',
+      tabs: [
+        {
+          id: 'games',
+          title: '闯关游戏管控',
+          badge: '双游戏',
         },
       ],
     },
@@ -1137,7 +1149,7 @@ watch(activeTab, tab => {
 
     <!-- 第三阶段 · 强门禁发布：版本发布与快照（单卡两步：1. 发布正式版本快照 → 2. 历史发布版本快照） -->
     <div
-      v-else
+      v-else-if="activeTab === 'releases'"
       id="kr-panel-releases"
       role="tabpanel"
       aria-labelledby="kr-tab-releases"
@@ -1241,6 +1253,23 @@ watch(activeTab, tab => {
           </section>
         </template>
       </StepFlowWorkspace>
+    </div>
+
+    <!-- 第四阶段：学生端双游戏基础管控 -->
+    <div
+      v-else-if="activeTab === 'games'"
+      id="kr-panel-games"
+      role="tabpanel"
+      aria-labelledby="kr-tab-games"
+    >
+      <div class="stage-wrap">
+        <KnowledgeGameControlCard
+          :client="props.client"
+          :subject="props.subject"
+          :notify="props.notify"
+          :candidates="candidates"
+        />
+      </div>
     </div>
   </div>
 </template>

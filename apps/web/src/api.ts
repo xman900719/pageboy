@@ -274,6 +274,21 @@ export interface KnowledgeGraph {
   edges: KnowledgeEdge[]
 }
 
+export interface KnowledgeGameSubjectConfig {
+  subject: Subject
+  alchemy_enabled: boolean
+  expedition_enabled: boolean
+  initial_shields: 1 | 2 | 3
+  prioritize_weak: boolean
+  practice_gate: 'recommended' | 'required'
+  reset_epoch: number
+  updated_at?: string | null
+}
+
+export interface KnowledgeGameConfigMap {
+  subjects: Record<Subject, KnowledgeGameSubjectConfig>
+}
+
 export interface AttemptResult {
   id: string
   status: 'recorded' | 'already_recorded'
@@ -1417,6 +1432,19 @@ export interface Client {
   sendTutorMessage(tutorSessionId: string, content: string): Promise<TutorSession>
   growthStatus(subject: Subject): Promise<GrowthStatus>
   knowledgeGraph(subject: Subject): Promise<KnowledgeGraph>
+  knowledgeGameConfig(): Promise<KnowledgeGameConfigMap>
+  adminKnowledgeGameConfig(): Promise<KnowledgeGameConfigMap>
+  adminUpdateKnowledgeGameConfig(
+    subject: Subject,
+    input: {
+      alchemy_enabled: boolean
+      expedition_enabled: boolean
+      initial_shields: 1 | 2 | 3
+      prioritize_weak: boolean
+      practice_gate: 'recommended' | 'required'
+      increment_reset_epoch?: boolean
+    },
+  ): Promise<KnowledgeGameSubjectConfig>
   adminWrongDiagnostics(subject: Subject, limit?: number): Promise<AdminWrongDiagnosticListItem[]>
   adminWrongDiagnosticDetail(attemptId: string): Promise<AdminWrongDiagnosticDetail>
   adminAnalyzeWrongDiagnostic(attemptId: string): Promise<AdminWrongDiagnosticDetail>
@@ -1917,6 +1945,14 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       call<TutorSession>(`/api/tutor/sessions/${encodeURIComponent(tutorSessionId)}/message`, 'POST', { content }),
     growthStatus: subject => call<GrowthStatus>(`/api/growth/status?subject=${subject}`),
     knowledgeGraph: subject => call<KnowledgeGraph>(`/api/knowledge/graph?subject=${subject}`),
+    knowledgeGameConfig: () => call<KnowledgeGameConfigMap>('/api/knowledge/game-config'),
+    adminKnowledgeGameConfig: () => call<KnowledgeGameConfigMap>('/api/admin/knowledge/game-config'),
+    adminUpdateKnowledgeGameConfig: (subject, input) =>
+      call<KnowledgeGameSubjectConfig>(
+        `/api/admin/knowledge/game-config/${encodeURIComponent(subject)}`,
+        'PUT',
+        { increment_reset_epoch: false, ...input },
+      ),
     adminWrongDiagnostics: (subject, limit = 20) =>
       call<AdminWrongDiagnosticListItem[]>(`/api/admin/wrong-diagnostics?subject=${subject}&limit=${limit}`),
     adminWrongDiagnosticDetail: attemptId =>

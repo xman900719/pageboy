@@ -999,3 +999,33 @@ class AdminSelectSolutionIn(BaseModel):
 
     option_id: Literal["opt_1", "opt_2", "opt_3"]
     admin_note: str | None = Field(default=None, max_length=500)
+
+
+class KnowledgeGameSubjectConfigOut(BaseModel):
+    """单学科知识点闯关双游戏（知识合成工坊 & 迷雾科技树探险）基础管控配置。"""
+
+    subject: Subject
+    alchemy_enabled: bool = True
+    expedition_enabled: bool = True
+    initial_shields: Literal[1, 2, 3] = 3
+    prioritize_weak: bool = True
+    practice_gate: Literal["recommended", "required"] = "recommended"
+    reset_epoch: int = Field(default=0, ge=0)
+    updated_at: datetime | None = None
+
+
+class KnowledgeGameSubjectConfigIn(BaseModel):
+    """管理端更新单学科知识游戏管控参数或触发学生游戏进度重置。"""
+
+    alchemy_enabled: bool = True
+    expedition_enabled: bool = True
+    initial_shields: Literal[1, 2, 3] = 3
+    prioritize_weak: bool = True
+    practice_gate: Literal["recommended", "required"] = "recommended"
+    increment_reset_epoch: bool = False
+
+
+class KnowledgeGameConfigMapOut(BaseModel):
+    """四科知识点闯关双游戏配置总表。"""
+
+    subjects: dict[Subject, KnowledgeGameSubjectConfigOut]

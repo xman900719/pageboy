@@ -118,6 +118,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 15** | [15-student-school-exam-reflection-guided.md](checklists/15-student-school-exam-reflection-guided.md) | 学生端「校考复盘」标题统一、复盘首页移除日常练习错题回顾、三步引导 + 句式支架与去惩罚化反馈（ST-021） | 依赖【主题 12 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 16** | [16-school-exam-stem-extraction-and-admin-phase4.md](checklists/16-school-exam-stem-extraction-and-admin-phase4.md) | 校考失分题题干与作答 AI 抽取、逐题防重复解析、家长确认入库与管理端第四阶段集中复盘（ST-022） | 依赖【主题 15 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 17** | [17-school-exam-reflection-coach.md](checklists/17-school-exam-reflection-coach.md) | 校考「书童陪你想」苏格拉底对话复盘、持久化恢复、整理草稿回填三步卡与管理端只读回溯（ST-023） | 依赖【主题 16 通过】 | **[x] 已通过（2026-11-19）** |
+| **主题 18** | [18-knowledge-dual-games-and-admin-control.md](checklists/18-knowledge-dual-games-and-admin-control.md) | 知识点展示双游戏（知识合成工坊 & 迷雾科技树探险）大留白大字号布局与管理端基础管控联动 | 依赖【主题 7 通过】 | **[x] 已通过（2026-11-19）** |
 
 ---
 

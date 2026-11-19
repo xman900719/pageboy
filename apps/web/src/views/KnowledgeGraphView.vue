@@ -5,6 +5,7 @@ import {
   SUBJECT_LABELS,
   type ApiClient,
   type KnowledgeEdge,
+  type KnowledgeGameSubjectConfig,
   type KnowledgeGraph,
   type KnowledgeMasteryItem,
   type MasteryStatus,
@@ -12,6 +13,9 @@ import {
 } from '../api'
 import { MASTERY_LABELS } from '../copy'
 import { formatReleaseChineseName, getDomainLabel, getKnowledgeLabel } from '../config/knowledge'
+import { DEFAULT_GAME_CONFIG } from '../config/knowledgeGames'
+import KnowledgeAlchemyGame from '../components/KnowledgeAlchemyGame.vue'
+import KnowledgeExpeditionGame from '../components/KnowledgeExpeditionGame.vue'
 import type { NoticeTone } from '../components/Notice.vue'
 
 const props = defineProps<{
@@ -25,14 +29,19 @@ const emit = defineEmits<{
 }>()
 
 const graph = ref<KnowledgeGraph | null>(null)
+const gameConfigs = ref<Record<Subject, KnowledgeGameSubjectConfig>>({ ...DEFAULT_GAME_CONFIG })
 const loading = ref(false)
 const error = ref('')
 
 const domainFilter = ref<string>('all')
 const onlyWeakHighlight = ref(false)
 const showLegend = ref(true)
-const viewMode = ref<'graph' | 'list'>('graph')
+const viewMode = ref<'graph' | 'list' | 'alchemy' | 'expedition'>('graph')
 const selectedCode = ref<string | null>(null)
+
+const currentGameConfig = computed<KnowledgeGameSubjectConfig>(
+  () => gameConfigs.value[props.subject] ?? DEFAULT_GAME_CONFIG[props.subject],
+)
 
 interface PrereqLink {
   code: string
@@ -94,8 +103,21 @@ async function loadGraph() {
   loading.value = true
   error.value = ''
   try {
-    const data = await props.client.knowledgeGraph(props.subject)
+    const [data, cfgRes] = await Promise.all([
+      props.client.knowledgeGraph(props.subject),
+      props.client.knowledgeGameConfig().catch(() => null),
+    ])
     graph.value = data
+    if (cfgRes?.subjects) {
+      gameConfigs.value = cfgRes.subjects
+    }
+    const curCfg = gameConfigs.value[props.subject] ?? DEFAULT_GAME_CONFIG[props.subject]
+    if (viewMode.value === 'alchemy' && !curCfg.alchemy_enabled) {
+      viewMode.value = 'graph'
+    }
+    if (viewMode.value === 'expedition' && !curCfg.expedition_enabled) {
+      viewMode.value = 'graph'
+    }
     if (data.nodes.length > 0 && !data.nodes.some(n => n.code === selectedCode.value)) {
       const firstWeak = data.nodes.find(n => n.is_leaf && n.mastery_status === 'weak')
       const firstLeaf = data.nodes.find(n => n.is_leaf)
@@ -444,14 +466,12 @@ watch(
             已发布版本：{{ formatReleaseChineseName(graph.release_version) }}
           </span>
           <button
+            v-if="viewMode === 'graph'"
             type="button"
             class="ghost small"
             @click="showLegend = !showLegend"
           >
             {{ showLegend ? '收起图例' : '展开图例' }}
-          </button>
-          <button type="button" class="ghost small" @click="viewMode = viewMode === 'graph' ? 'list' : 'graph'">
-            {{ viewMode === 'graph' ? '切换清单视图' : '切换图谱视图' }}
           </button>
           <button type="button" class="ghost small" @click="loadGraph" :disabled="loading">
             {{ loading ? '刷新中…' : '刷新图谱' }}
@@ -459,9 +479,69 @@ watch(
         </div>
       </div>
 
+      <!-- 知识点展示子模式与双闯关游戏切换栏 -->
+      <div class="kg-subnav-bar">
+        <div class="kg-subnav-tabs" role="group" aria-label="知识点展示模式与闯关游戏">
+          <button
+            type="button"
+            :class="['kg-subtab', viewMode === 'graph' ? 'active' : '']"
+            :aria-pressed="viewMode === 'graph'"
+            @click="viewMode = 'graph'"
+          >
+            🗺️ 关系图谱
+          </button>
+          <button
+            type="button"
+            :class="['kg-subtab', viewMode === 'list' ? 'active' : '']"
+            :aria-pressed="viewMode === 'list'"
+            @click="viewMode = 'list'"
+          >
+            📋 切换清单视图
+          </button>
+          <button
+            v-if="currentGameConfig.alchemy_enabled"
+            type="button"
+            :class="['kg-subtab', viewMode === 'alchemy' ? 'active' : '']"
+            :aria-pressed="viewMode === 'alchemy'"
+            @click="viewMode = 'alchemy'"
+          >
+            ⚗️ 知识合成工坊
+          </button>
+          <button
+            v-if="currentGameConfig.expedition_enabled"
+            type="button"
+            :class="['kg-subtab', viewMode === 'expedition' ? 'active' : '']"
+            :aria-pressed="viewMode === 'expedition'"
+            @click="viewMode = 'expedition'"
+          >
+            🧭 迷雾科技树探险
+          </button>
+        </div>
+      </div>
+
       <p v-if="error" class="form-error">{{ error }}</p>
 
       <template v-if="graph">
+        <!-- 游戏一：知识合成工坊（大留白金字塔布局） -->
+        <KnowledgeAlchemyGame
+          v-if="viewMode === 'alchemy'"
+          :graph="graph"
+          :subject="subject"
+          :config="currentGameConfig"
+          @go-practice-focus="emit('goPracticeFocus', $event)"
+        />
+
+        <!-- 游戏二：迷雾科技树探险（大留白三岛破甲星盘） -->
+        <KnowledgeExpeditionGame
+          v-else-if="viewMode === 'expedition'"
+          :graph="graph"
+          :subject="subject"
+          :config="currentGameConfig"
+          @go-practice-focus="emit('goPracticeFocus', $event)"
+        />
+
+        <!-- 静态图谱与清单视图 -->
+        <template v-else>
         <!-- 标准图例总览面板 -->
         <section v-if="showLegend" class="legend-board" aria-label="知识点关系与掌握度标准图例">
           <div class="legend-board-head">
@@ -772,6 +852,7 @@ watch(
             </div>
           </aside>
         </div>
+        </template>
       </template>
     </section>
   </div>
