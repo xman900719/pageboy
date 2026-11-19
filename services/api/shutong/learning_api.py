@@ -24,9 +24,7 @@ from .guidance import (
 )
 from .school_paper_parser import (
     audit_reflection_with_deepseek,
-    extract_embedded_text,
     format_structured_reflection_note,
-    parse_paper_skeleton_from_text,
     parse_structured_reflection_note,
     validate_reflection_not_perfunctory,
 )
@@ -1167,36 +1165,6 @@ def _resolve_student_school_topic(subject: str, knowledge_id: str, name_map: dic
     return get_topic_label(kid)
 
 
-def _extract_exam_stem_map(
-    db: Session, exam_id: str, owner: str, subject: str, nodes: list[dict]
-) -> dict[str, str]:
-    """按题号读取已归档原卷的内嵌文字摘要（不触发慢速 OCR）。"""
-    attachments = db.execute(
-        select(m.SchoolPaperAttachment).where(
-            m.SchoolPaperAttachment.school_exam_id == exam_id,
-            m.SchoolPaperAttachment.owner_id == owner,
-        )
-    ).scalars().all()
-    ordered = sorted(attachments, key=lambda a: (1 if "答题卡" in a.filename else 0, a.created_at, a.id))
-    for att in ordered:
-        try:
-            data = files.blob_path(att.storage_key).read_bytes()
-            text = extract_embedded_text(data, att.media_type)
-        except Exception:
-            text = ""
-        if not text:
-            continue
-        by_num: dict[str, str] = {}
-        for parsed in parse_paper_skeleton_from_text(text, subject, nodes, attachment_id=att.id):
-            m_num = re.search(r"(\d+)", str(parsed.get("question_label") or ""))
-            stem = str(parsed.get("stem") or "").strip()
-            if m_num and stem and m_num.group(1) not in by_num:
-                by_num[m_num.group(1)] = stem[:260]
-        if by_num:
-            return by_num
-    return {}
-
-
 @router.get("/api/student/school-exam-reflections", response_model=StudentSchoolReflectionsResponseOut)
 def list_student_school_exam_reflections(
     subject: SchoolExamSubject | None = None,
@@ -1226,7 +1194,6 @@ def list_student_school_exam_reflections(
             filtered_rows.append((item, exam, parsed))
 
     nodes_cache: dict[str, tuple[list[dict], dict[str, str]]] = {}
-    stem_cache: dict[str, dict[str, str]] = {}
     out_items: list[StudentSchoolReflectionItemOut] = []
 
     filtered_rows.sort(
@@ -1241,11 +1208,12 @@ def list_student_school_exam_reflections(
         if exam.subject not in nodes_cache:
             nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
             nodes_cache[exam.subject] = (nodes, {n["code"]: n["name"] for n in nodes})
-        nodes, name_map = nodes_cache[exam.subject]
-        if exam.id not in stem_cache:
-            stem_cache[exam.id] = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
-        m_num = re.search(r"(\d+)", str(item.question_label or ""))
-        stem_excerpt = stem_cache[exam.id].get(m_num.group(1)) if m_num else None
+        _nodes, name_map = nodes_cache[exam.subject]
+        is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+        stem_excerpt = item.stem_text if is_stem_confirmed else None
+        student_answer_excerpt = (
+            item.student_answer_text if is_stem_confirmed and item.student_answer_text else None
+        )
 
         out_items.append(
             StudentSchoolReflectionItemOut(
@@ -1260,6 +1228,7 @@ def list_student_school_exam_reflections(
                 max_points=item.max_points,
                 lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
                 stem_excerpt=stem_excerpt,
+                student_answer_excerpt=student_answer_excerpt,
                 reflection_status=parsed["reflection_status"],
                 error_category=item.error_category,
                 stuck_point=parsed["stuck_point"],
@@ -1302,9 +1271,11 @@ def submit_student_school_exam_reflection(
     nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
     name_map = {n["code"]: n["name"] for n in nodes}
     topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
-    stem_map = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
-    m_num = re.search(r"(\d+)", str(item.question_label or ""))
-    stem_excerpt = stem_map.get(m_num.group(1)) if m_num else None
+    is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+    stem_excerpt = item.stem_text if is_stem_confirmed else None
+    student_answer_excerpt = (
+        item.student_answer_text if is_stem_confirmed and item.student_answer_text else None
+    )
 
     # Stage 2: DeepSeek 语义审阅官把关（未配置或超时时平滑降级为本地严规放行）
     passed, coach_feedback, audit_mode = audit_reflection_with_deepseek(
@@ -1340,6 +1311,7 @@ def submit_student_school_exam_reflection(
         max_points=item.max_points,
         lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
         stem_excerpt=stem_excerpt,
+        student_answer_excerpt=student_answer_excerpt,
         reflection_status=parsed["reflection_status"],
         error_category=item.error_category,
         stuck_point=parsed["stuck_point"],

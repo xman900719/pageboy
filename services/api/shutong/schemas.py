@@ -306,6 +306,43 @@ class AdminReturnReflectionIn(BaseModel):
         return self
 
 
+class SchoolItemStemExtractIn(BaseModel):
+    """管理端按需抽取校考失分题题干与学生作答请求。"""
+    mask_student_header: bool = True
+    batch_size: int = Field(default=3, ge=1, le=10)
+
+
+class SchoolItemStemExtractOut(BaseModel):
+    """失分题题干与学生作答抽取结果（同一题永不重复 AI 解析）。"""
+    requested: int
+    embedded: int
+    vision: int
+    not_found: int
+    remaining_unextracted: int = 0
+    ai_called: bool
+    ai_unavailable_reason: str | None = None
+
+
+class SchoolItemStemPatchIn(BaseModel):
+    """管理端编辑或确认单道失分题题干与学生作答。"""
+    stem_text: str | None = Field(default=None, max_length=800)
+    student_answer_text: str | None = Field(default=None, max_length=400)
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def normalize_texts(self):
+        if self.stem_text is not None:
+            self.stem_text = self.stem_text.strip() or None
+        if self.student_answer_text is not None:
+            self.student_answer_text = self.student_answer_text.strip() or None
+        return self
+
+
+class SchoolExamStemsConfirmOut(BaseModel):
+    """批量确认待核对题干草稿结果。"""
+    confirmed_count: int
+
+
 class StudentSchoolReflectionItemOut(BaseModel):
     """面向学生端的校考失分复盘条目（严禁泄露内部 knowledge_id）。"""
     item_id: str
@@ -319,6 +356,7 @@ class StudentSchoolReflectionItemOut(BaseModel):
     max_points: float
     lost_points: float
     stem_excerpt: str | None = None
+    student_answer_excerpt: str | None = None
     reflection_status: ReflectionStatus
     error_category: SchoolErrorCategory | None = None
     stuck_point: str = ""

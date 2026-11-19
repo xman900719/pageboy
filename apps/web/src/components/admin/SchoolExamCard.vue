@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import {
+  ApiError,
   describeError,
   SCHOOL_SUBJECT_LABELS,
   type ApiClient,
@@ -28,6 +29,7 @@ import {
   summarizeSchoolExamItemScores,
 } from '../../examSync'
 import HelpBubble from '../HelpBubble.vue'
+import { RichText } from '../../rich'
 import SchoolExamReportCenter from './SchoolExamReportCenter.vue'
 import SchoolExamSyncCenter from './SchoolExamSyncCenter.vue'
 import StageTabStrip from './StageTabStrip.vue'
@@ -40,7 +42,7 @@ export type ExamTabId = 'scores' | 'papers' | 'items' | 'analysis' | 'sync' | 'r
 type ScoreStepId = 'pick' | 'detail' | 'upload'
 type PaperStepId = 'parse' | 'drafts'
 type ItemStepId = 'list' | 'add'
-type AnalysisStepId = 'overview' | 'knowledge' | 'history'
+type AnalysisStepId = 'overview' | 'knowledge' | 'history' | 'reflection'
 type DraftFilterId = 'all' | 'unmapped' | 'lost' | 'correct' | 'ready'
 
 const DIAGNOSIS_TAG_META: Record<string, { label: string; tone: string }> = {
@@ -218,6 +220,52 @@ const confirmedItems = computed(() =>
     compareQuestionLabel(x.question_label, y.question_label),
   ),
 )
+const lostConfirmedItems = computed(() =>
+  confirmedItems.value.filter(it => it.earned_points < it.max_points),
+)
+const extractingStems = ref(false)
+const extractStemProgress = ref('')
+const stemExtractStatus = ref<{
+  active: boolean
+  total: number
+  done: number
+  embedded: number
+  vision: number
+  notFound: number
+  note: string
+  errorReason: string | null
+} | null>(null)
+const confirmingAllStems = ref(false)
+const stemEdits = ref<
+  Record<
+    string,
+    {
+      stemText: string
+      studentAnswerText: string
+      expanded: boolean
+      saving: boolean
+    }
+  >
+>({})
+
+const stemStats = computed(() => {
+  const lost = lostConfirmedItems.value
+  let confirmed = 0
+  let draft = 0
+  let unextracted = 0
+  for (const it of lost) {
+    if (it.stem_state === 'confirmed') confirmed += 1
+    else if (it.stem_state === 'embedded_draft' || it.stem_state === 'vision_draft') draft += 1
+    else if (!it.stem_state) unextracted += 1
+  }
+  return {
+    totalLost: lost.length,
+    confirmed,
+    draft,
+    unextracted,
+    allRecognized: lost.length > 0 && unextracted === 0,
+  }
+})
 const scoreSummary = computed(() => summarizeSchoolExamItemScores(selectedDetail.value))
 const verifiedExamsCount = computed(
   () => (exams.value ?? []).filter(e => e.confirmed_by_user).length,
@@ -438,6 +486,17 @@ const analysisSteps = computed<StepDefinition[]>(() => {
       prereqMet: analyzed,
       lockReason: '请先补充并确认失分小题明细。',
     },
+    {
+      id: 'reflection',
+      title: '4. 失分题干与学生复盘',
+      subtitle:
+        lostConfirmedItems.value.length > 0
+          ? `题干已确认 ${stemStats.value.confirmed}/${stemStats.value.totalLost}`
+          : '查看学生复盘与留言',
+      done: analyzed && stemStats.value.totalLost > 0 && stemStats.value.confirmed === stemStats.value.totalLost,
+      prereqMet: analyzed,
+      lockReason: '请先补充并确认失分小题明细。',
+    },
   ]
 })
 
@@ -456,6 +515,7 @@ async function loadDetail(examId: string) {
     selectedRanks.value = ranks
     confirmEarned.value = detail.earned_points
     syncDraftStateFromDetail(detail)
+    syncStemEditsFromDetail(detail)
   } catch (e) {
     selectedDetail.value = null
     errorAnalysis.value = null
@@ -609,6 +669,7 @@ watch(
     uploadError.value = ''
     returningItemId.value = null
     returnReasonInput.value = ''
+    stemExtractStatus.value = null
     lastParseInitExamId.value = null
     selectedParseAttachmentIds.value = []
     parseDraftError.value = ''
@@ -628,6 +689,7 @@ async function selectExam(examId: string) {
   uploadError.value = ''
   returningItemId.value = null
   returnReasonInput.value = ''
+  stemExtractStatus.value = null
   confirmDeleteExamId.value = null
   await loadDetail(examId)
 }
@@ -1127,8 +1189,187 @@ async function submitReturnReflection(it: SchoolExamItem) {
 }
 
 function jumpToEditItem(_itemId: string) {
-  activeTab.value = 'items'
-  itemStep.value = 'list'
+  activeTab.value = 'analysis'
+  analysisStep.value = 'reflection'
+}
+
+function syncStemEditsFromDetail(detail: SchoolExamDetail) {
+  const next: typeof stemEdits.value = {}
+  for (const it of detail.items) {
+    if (!it.confirmed_by_user || it.earned_points >= it.max_points) continue
+    const prev = stemEdits.value[it.id]
+    next[it.id] = {
+      stemText: it.stem_text ?? '',
+      studentAnswerText: it.student_answer_text ?? '',
+      expanded: prev?.expanded ?? Boolean(it.stem_state === 'vision_draft' || it.stem_state === 'embedded_draft'),
+      saving: false,
+    }
+  }
+  stemEdits.value = next
+}
+
+function stemStateLabel(state: SchoolExamItem['stem_state']): { text: string; tone: string } {
+  if (state === 'confirmed') return { text: '题干已确认', tone: 'good' }
+  if (state === 'vision_draft') return { text: 'AI 草稿待确认', tone: 'wait' }
+  if (state === 'embedded_draft') return { text: '文字层草稿待确认', tone: 'wait' }
+  if (state === 'not_found') return { text: '未识别到·请手动填写', tone: 'bad' }
+  if (state === 'extracting') return { text: '识别中…', tone: 'mid' }
+  return { text: '待识别', tone: 'subtle' }
+}
+
+async function extractStems() {
+  if (!selectedDetail.value || extractingStems.value) return
+  extractingStems.value = true
+  const examId = selectedDetail.value.id
+  const pendingLabels = lostConfirmedItems.value
+    .filter(it => !it.stem_state)
+    .map(it => formatQuestionLabelHeading(it.question_label))
+  const totalTarget = pendingLabels.length || stemStats.value.unextracted
+  let doneCount = 0
+  let totalEmbedded = 0
+  let totalVision = 0
+  let totalNotFound = 0
+  let unavailableReason: string | null = null
+
+  stemExtractStatus.value = {
+    active: true,
+    total: totalTarget,
+    done: 0,
+    embedded: 0,
+    vision: 0,
+    notFound: 0,
+    note: totalTarget > 0 ? `准备识别 ${totalTarget} 道失分题…` : '检查待识别题目…',
+    errorReason: null,
+  }
+
+  try {
+    while (true) {
+      const nextLabels = pendingLabels.slice(doneCount, doneCount + 2)
+      const batchHint = nextLabels.length > 0 ? `（正在识别：${nextLabels.join('、')}）` : ''
+      extractStemProgress.value =
+        totalTarget > 0 ? `正在识别 (${doneCount}/${totalTarget})…` : '正在识别…'
+      if (stemExtractStatus.value) {
+        stemExtractStatus.value.note =
+          totalTarget > 0
+            ? `已处理 ${doneCount} / ${totalTarget} 题${batchHint}`
+            : '正在识别中…'
+      }
+
+      const res = await props.client.extractSchoolExamStems(examId, {
+        maskStudentHeader: true,
+        batchSize: 2,
+      })
+      if (res.requested === 0) {
+        break
+      }
+      doneCount += res.requested
+      totalEmbedded += res.embedded
+      totalVision += res.vision
+      totalNotFound += res.not_found
+      if (res.ai_unavailable_reason) {
+        unavailableReason = res.ai_unavailable_reason
+      }
+      const nextTotal = Math.max(totalTarget, doneCount + res.remaining_unextracted)
+      if (stemExtractStatus.value) {
+        stemExtractStatus.value.total = nextTotal
+        stemExtractStatus.value.done = doneCount
+        stemExtractStatus.value.embedded = totalEmbedded
+        stemExtractStatus.value.vision = totalVision
+        stemExtractStatus.value.notFound = totalNotFound
+      }
+      await loadDetail(examId)
+      if (res.remaining_unextracted <= 0 || res.ai_unavailable_reason) {
+        break
+      }
+    }
+
+    if (doneCount === 0) {
+      stemExtractStatus.value = null
+      props.notify('本场失分题均已完成题干识别，无需重复解析。', 'info')
+    } else if (unavailableReason) {
+      const reasonText = describeError(new ApiError(503, unavailableReason))
+      if (stemExtractStatus.value) {
+        stemExtractStatus.value.active = false
+        stemExtractStatus.value.note = `已从 PDF 文字层提取 ${totalEmbedded} 题，其余待识别题目已保留为待识别。`
+        stemExtractStatus.value.errorReason = reasonText
+      }
+      props.notify(`已从 PDF 文字层提取 ${totalEmbedded} 题；视觉 AI 不可用：${reasonText}`, 'info')
+    } else {
+      if (stemExtractStatus.value) {
+        stemExtractStatus.value.active = false
+        stemExtractStatus.value.done = stemExtractStatus.value.total
+        stemExtractStatus.value.note = `全部 ${doneCount} 题处理完成：文字层 ${totalEmbedded} 题、AI 识别 ${totalVision} 题、未识别到 ${totalNotFound} 题（可手动补录）。`
+        stemExtractStatus.value.errorReason = null
+      }
+      props.notify(
+        `已识别 ${totalEmbedded + totalVision} 题（文字层 ${totalEmbedded}、AI ${totalVision}，未识别到 ${totalNotFound}），请核对后确认。`,
+        'success',
+      )
+    }
+  } catch (e) {
+    const reasonText = describeError(e)
+    if (doneCount > 0) {
+      await loadDetail(examId)
+    }
+    if (stemExtractStatus.value) {
+      stemExtractStatus.value.active = false
+      stemExtractStatus.value.note =
+        doneCount > 0
+          ? `前 ${doneCount} 题结果已保存，剩余题目未锁定，可点击「提取失分题题干与作答」继续。`
+          : '本次未能完成识别，待识别题目已恢复，可重试或手动填写。'
+      stemExtractStatus.value.errorReason = reasonText
+    }
+    props.notify(
+      doneCount > 0
+        ? `前 ${doneCount} 题已保存；后续批次中断：${reasonText}`
+        : `识别失败：${reasonText}`,
+      'error',
+    )
+  } finally {
+    extractingStems.value = false
+    extractStemProgress.value = ''
+  }
+}
+
+async function saveItemStem(it: SchoolExamItem, confirm: boolean) {
+  if (!selectedDetail.value) return
+  const edit = stemEdits.value[it.id]
+  if (!edit || edit.saving) return
+  if (confirm && !edit.stemText.trim()) {
+    props.notify(`请先填写「${it.question_label}」的题干内容后再确认。`, 'error')
+    return
+  }
+  edit.saving = true
+  try {
+    await props.client.patchSchoolExamItemStem(selectedDetail.value.id, it.id, {
+      stem_text: edit.stemText.trim() || null,
+      student_answer_text: edit.studentAnswerText.trim() || null,
+      confirm,
+    })
+    props.notify(
+      confirm ? `「${it.question_label}」题干已确认并同步至学生端。` : `已保存「${it.question_label}」题干草稿。`,
+      'success',
+    )
+    await loadDetail(selectedDetail.value.id)
+  } catch (e) {
+    props.notify(describeError(e), 'error')
+  } finally {
+    edit.saving = false
+  }
+}
+
+async function confirmAllStems() {
+  if (!selectedDetail.value || confirmingAllStems.value) return
+  confirmingAllStems.value = true
+  try {
+    const res = await props.client.confirmSchoolExamStems(selectedDetail.value.id)
+    props.notify(`已批量确认 ${res.confirmed_count} 道失分题题干。`, 'success')
+    await loadDetail(selectedDetail.value.id)
+  } catch (e) {
+    props.notify(describeError(e), 'error')
+  } finally {
+    confirmingAllStems.value = false
+  }
 }
 
 async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'items' | 'analysis') {
@@ -2215,56 +2456,6 @@ async function handleSyncPapersImported(examId: string) {
                   </span>
                   <span class="chip good">已确认</span>
                 </div>
-                <div v-if="it.earned_points < it.max_points && (it.stuck_point || it.fix_strategy || it.error_note || it.return_reason)" class="admin-reflection-readonly">
-                  <p v-if="it.return_reason" class="item-error-note" style="color: var(--red);">
-                    退回重写要求：{{ it.return_reason }}
-                  </p>
-                  <p v-if="it.stuck_point" class="item-error-note">
-                    失分卡点：{{ it.stuck_point }}
-                  </p>
-                  <p v-if="it.fix_strategy" class="item-error-note">
-                    改进对策：{{ it.fix_strategy }}
-                  </p>
-                  <p v-else-if="it.error_note && !it.stuck_point" class="item-error-note">
-                    复盘备注：{{ it.error_note }}
-                  </p>
-                </div>
-                <div class="attachment-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                  <button
-                    v-if="it.earned_points < it.max_points && (it.reflection_status === 'completed' || it.error_note)"
-                    type="button"
-                    class="ghost small"
-                    @click="returningItemId === it.id ? cancelReturnReflection() : startReturnReflection(it)"
-                  >
-                    {{ returningItemId === it.id ? '收起退回框' : '退回重写' }}
-                  </button>
-                </div>
-                <div v-if="returningItemId === it.id" class="inline-analysis-editor">
-                  <div class="admin-grid">
-                    <label style="grid-column: 1 / -1;">
-                      退回学生重写原因
-                      <input
-                        v-model="returnReasonInput"
-                        :aria-label="`${it.question_label} 退回重写原因`"
-                        maxlength="200"
-                        placeholder="说明学生复盘哪里过于笼统、需要补充什么细节"
-                      />
-                    </label>
-                  </div>
-                  <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <button
-                      type="button"
-                      class="primary small"
-                      :disabled="returningSaving"
-                      @click="submitReturnReflection(it)"
-                    >
-                      {{ returningSaving ? '退回中…' : '确认退回重写' }}
-                    </button>
-                    <button type="button" class="ghost small" @click="cancelReturnReflection">
-                      取消
-                    </button>
-                  </div>
-                </div>
               </li>
             </ul>
 
@@ -2602,7 +2793,7 @@ async function handleSyncPapersImported(examId: string) {
                     style="margin-left: auto;"
                     @click="jumpToEditItem(li.id)"
                   >
-                    补充/修改错因
+                    查看复盘与题干
                   </button>
                 </div>
                 <p v-if="li.error_note" class="item-error-note">
@@ -2670,8 +2861,260 @@ async function handleSyncPapersImported(examId: string) {
               <button type="button" class="ghost small" @click="analysisStep = 'knowledge'">
                 ← 上一步：失分考点排行诊断
               </button>
-              <button type="button" class="ghost small" @click="activeTab = 'items'; itemStep = 'list'">
-                前往第三阶段补充/修改错因
+              <button type="button" class="primary small" @click="analysisStep = 'reflection'">
+                下一步：失分题干与学生复盘 →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-reflection>
+          <section v-if="errorAnalysis && selectedDetail" class="card" aria-label="失分题干与学生复盘">
+            <div class="card-head">
+              <div>
+                <h3>失分题干与学生复盘</h3>
+                <p class="card-sub">
+                  集中抽取并确认失分题原题与学生作答（逐题仅 AI 识别一次），并查看学生复盘或留言退回。
+                </p>
+              </div>
+              <div class="card-head-tools">
+                <span class="chip">
+                  题干已确认 {{ stemStats.confirmed }} / {{ stemStats.totalLost }}
+                </span>
+                <button
+                  type="button"
+                  class="primary small"
+                  :disabled="extractingStems || stemStats.allRecognized || lostConfirmedItems.length === 0"
+                  @click="extractStems"
+                >
+                  {{
+                    extractingStems
+                      ? extractStemProgress || '正在识别…'
+                      : stemStats.allRecognized
+                        ? '已全部识别'
+                        : '提取失分题题干与作答（AI 识别）'
+                  }}
+                </button>
+                <button
+                  v-if="stemStats.draft > 0"
+                  type="button"
+                  class="ghost small"
+                  :disabled="confirmingAllStems"
+                  @click="confirmAllStems"
+                >
+                  {{ confirmingAllStems ? '确认中…' : `全部确认题干 (${stemStats.draft})` }}
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="stemExtractStatus"
+              :class="[
+                'stem-progress-panel',
+                stemExtractStatus.errorReason ? 'has-error' : stemExtractStatus.active ? 'is-running' : 'is-done',
+              ]"
+              aria-live="polite"
+            >
+              <div class="stem-progress-head">
+                <b>
+                  {{
+                    stemExtractStatus.errorReason
+                      ? 'AI 识别中断'
+                      : stemExtractStatus.active
+                        ? '正在逐批识别失分题题干与作答'
+                        : '本轮识别已完成'
+                  }}
+                </b>
+                <span class="muted tiny">
+                  {{ stemExtractStatus.done }} / {{ Math.max(stemExtractStatus.total, 1) }} 题
+                  ({{ Math.min(100, Math.round((stemExtractStatus.done / Math.max(stemExtractStatus.total, 1)) * 100)) }}%)
+                </span>
+              </div>
+              <div
+                class="stem-progress-track"
+                role="progressbar"
+                :aria-valuenow="stemExtractStatus.done"
+                :aria-valuemin="0"
+                :aria-valuemax="Math.max(stemExtractStatus.total, 1)"
+              >
+                <div
+                  class="stem-progress-fill"
+                  :style="{
+                    width: `${Math.min(100, Math.round((stemExtractStatus.done / Math.max(stemExtractStatus.total, 1)) * 100))}%`,
+                  }"
+                />
+              </div>
+              <p class="stem-progress-note">{{ stemExtractStatus.note }}</p>
+              <p v-if="stemExtractStatus.errorReason" class="stem-progress-error" role="alert">
+                失败原因：{{ stemExtractStatus.errorReason }}
+              </p>
+            </div>
+
+            <p v-if="lostConfirmedItems.length === 0" class="muted">
+              当前场次暂无已确认的失分题。
+            </p>
+            <ul v-else class="attachment-list" tabindex="0" aria-label="失分题干与学生复盘列表">
+              <li v-for="it in lostConfirmedItems" :key="it.id" class="attachment-row admin-reflection-item-card">
+                <div class="admin-reflection-block-row">
+                  <b>{{ formatQuestionLabelHeading(it.question_label) }}</b>
+                  <span class="chip bad">失 -{{ fmtPoints(it.max_points - it.earned_points) }} 分</span>
+                </div>
+                <div class="admin-reflection-block-row">
+                  <span class="muted tiny">考点：</span>
+                  <span>{{ displayKnowledgeName(it) }}</span>
+                </div>
+                <div class="admin-reflection-block-row">
+                  <span :class="['chip', it.error_category ? 'mid' : 'wait']">
+                    {{ getSchoolErrorCategoryLabel(it.error_category) }}
+                  </span>
+                  <span
+                    :class="[
+                      'chip',
+                      it.reflection_status === 'completed'
+                        ? 'good'
+                        : it.reflection_status === 'needs_revision'
+                          ? 'bad'
+                          : 'wait',
+                    ]"
+                  >
+                    {{
+                      it.reflection_status === 'completed'
+                        ? '学生已复盘'
+                        : it.reflection_status === 'needs_revision'
+                          ? '已退回重写'
+                          : '待学生复盘'
+                    }}
+                  </span>
+                  <span :class="['chip', stemStateLabel(it.stem_state).tone]">
+                    {{ stemStateLabel(it.stem_state).text }}
+                  </span>
+                </div>
+
+                <!-- 学生复盘内容只读区（每类内容独立新行显示） -->
+                <div
+                  v-if="it.stuck_point || it.fix_strategy || it.error_note || it.return_reason"
+                  class="admin-reflection-readonly"
+                >
+                  <div v-if="it.return_reason" class="admin-reflection-field">
+                    <span class="admin-reflection-field-label" style="color: var(--red);">退回重写要求</span>
+                    <p class="item-error-note" style="color: var(--red);">{{ it.return_reason }}</p>
+                  </div>
+                  <div v-if="it.stuck_point" class="admin-reflection-field">
+                    <span class="admin-reflection-field-label">失分卡点</span>
+                    <p class="item-error-note">{{ it.stuck_point }}</p>
+                  </div>
+                  <div v-if="it.fix_strategy" class="admin-reflection-field">
+                    <span class="admin-reflection-field-label">改进对策</span>
+                    <p class="item-error-note">{{ it.fix_strategy }}</p>
+                  </div>
+                  <div v-else-if="it.error_note && !it.stuck_point" class="admin-reflection-field">
+                    <span class="admin-reflection-field-label">复盘备注</span>
+                    <p class="item-error-note">{{ it.error_note }}</p>
+                  </div>
+                </div>
+
+                <!-- 题干与学生作答折叠编辑/确认区 -->
+                <div v-if="stemEdits[it.id]" class="stem-editor-box">
+                  <div class="attachment-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <button
+                      type="button"
+                      class="ghost small"
+                      @click="stemEdits[it.id].expanded = !stemEdits[it.id].expanded"
+                    >
+                      {{ stemEdits[it.id].expanded ? '收起原题与作答' : '编辑 / 确认原题与作答' }}
+                    </button>
+                    <button
+                      v-if="it.reflection_status === 'completed' || it.error_note"
+                      type="button"
+                      class="ghost small"
+                      @click="returningItemId === it.id ? cancelReturnReflection() : startReturnReflection(it)"
+                    >
+                      {{ returningItemId === it.id ? '收起退回框' : '退回重写' }}
+                    </button>
+                  </div>
+
+                  <div v-if="stemEdits[it.id].expanded" class="inline-analysis-editor" style="margin-top: 8px;">
+                    <div class="admin-grid">
+                      <label style="grid-column: 1 / -1;">
+                        {{ it.question_label }} 原题题干（支持 $...$ 公式）
+                        <textarea
+                          v-model="stemEdits[it.id].stemText"
+                          rows="3"
+                          maxlength="800"
+                          :aria-label="`${it.question_label} 原题题干`"
+                          placeholder="可人工补录或修正原题题干（仅确认后对学生可见）"
+                        />
+                      </label>
+                      <div v-if="stemEdits[it.id].stemText.trim()" class="stem-preview-box" style="grid-column: 1 / -1;">
+                        <span class="muted tiny">公式预览：</span>
+                        <RichText :text="stemEdits[it.id].stemText" />
+                      </div>
+                      <label style="grid-column: 1 / -1;">
+                        {{ it.question_label }} 学生当时作答（可选）
+                        <textarea
+                          v-model="stemEdits[it.id].studentAnswerText"
+                          rows="2"
+                          maxlength="400"
+                          :aria-label="`${it.question_label} 学生当时作答`"
+                          placeholder="选填：学生在答题卡上的作答过程或答案"
+                        />
+                      </label>
+                    </div>
+                    <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                      <button
+                        type="button"
+                        class="primary small"
+                        :disabled="stemEdits[it.id].saving"
+                        @click="saveItemStem(it, true)"
+                      >
+                        {{ stemEdits[it.id].saving ? '保存中…' : it.stem_state === 'confirmed' ? '保存修改' : '确认题干' }}
+                      </button>
+                      <button
+                        v-if="it.stem_state !== 'confirmed'"
+                        type="button"
+                        class="ghost small"
+                        :disabled="stemEdits[it.id].saving"
+                        @click="saveItemStem(it, false)"
+                      >
+                        暂存草稿
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 退回重写（家长留言）编辑框 -->
+                <div v-if="returningItemId === it.id" class="inline-analysis-editor" style="margin-top: 8px;">
+                  <div class="admin-grid">
+                    <label style="grid-column: 1 / -1;">
+                      退回学生重写原因
+                      <input
+                        v-model="returnReasonInput"
+                        :aria-label="`${it.question_label} 退回重写原因`"
+                        maxlength="200"
+                        placeholder="说明学生复盘哪里过于笼统、需要补充什么细节"
+                      />
+                    </label>
+                  </div>
+                  <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <button
+                      type="button"
+                      class="primary small"
+                      :disabled="returningSaving"
+                      @click="submitReturnReflection(it)"
+                    >
+                      {{ returningSaving ? '退回中…' : '确认退回重写' }}
+                    </button>
+                    <button type="button" class="ghost small" @click="cancelReturnReflection">
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </li>
+            </ul>
+
+            <div class="card-footer-flow">
+              <button type="button" class="ghost small" @click="analysisStep = 'history'">
+                ← 上一步：历次顽固失分点
               </button>
             </div>
           </section>

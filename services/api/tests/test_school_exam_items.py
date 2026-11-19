@@ -1060,4 +1060,367 @@ def test_auto_associate_upgrades_type_inferred_when_paper_attached(client, auth,
     assert by_label["第2题"]["knowledge_id"] == "math.number_sense"
 
 
+def _upload_dummy_png_attachment(client, auth, exam_id: str, filename: str = "虚构测试数据-原卷.png") -> None:
+    from PIL import Image
+    from io import BytesIO
+
+    buf = BytesIO()
+    Image.new("RGB", (120, 120), color=(255, 255, 255)).save(buf, format="PNG")
+    res = client.post(
+        f"/api/school-exams/{exam_id}/paper",
+        params={"filename": filename},
+        content=buf.getvalue(),
+        headers={**auth, "Content-Type": "image/png"},
+    )
+    assert res.status_code == 201, res.text
+
+
+def test_extract_stems_never_repeats_and_isolates_unconfirmed(client, auth, student_auth, monkeypatch):
+    """ST-022：逐题仅 AI 解析一次、未确认不进学生端、失败释放认领、确认后永不覆盖。"""
+    from datetime import timedelta
+    from shutong import database, models as m, school_paper_parser as parser
+
+    exam_id = make_exam(client, auth, subject="math", title="虚构测试数据：题干防重复解析", earned_points=90, max_points=100)
+    post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            item("第1题", knowledge_id="math_cand.num.rational", earned_points=2.0, max_points=2.0),
+            item("第8题", knowledge_id="math_cand.eq.fractional", earned_points=1.0, max_points=4.0),
+            item("第9题", knowledge_id="math_cand.eq.fractional", earned_points=0.0, max_points=4.0),
+        ],
+    )
+    _upload_dummy_png_attachment(client, auth, exam_id)
+
+    # 无 Key 时纯图片返回 503 且不锁定题目状态
+    monkeypatch.delenv("SHUTONG_VISION_API_KEY", raising=False)
+    monkeypatch.delenv("SHUTONG_AI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    no_key_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert no_key_res.status_code == 503
+
+    # 学生无权调用管理端抽取/确认接口
+    assert client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=student_auth).status_code == 403
+
+    # 配置测试 Key 并模拟上游先失败一次（应释放认领以便重试）
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-dummy")
+    calls: list[list[str]] = []
+
+    def fail_then_ok(*, subject, attachments, lost_labels, cfg):
+        calls.append(list(lost_labels))
+        if len(calls) == 1:
+            raise parser.VisionParserUnavailableError("VISION_PARSER_TIMEOUT")
+        return {
+            "第8题": {"stem_text": "解方程 $\\frac{1}{x-2}=1$", "student_answer_text": "x=3"},
+            # 第9题故意未返回，验证标为 not_found 后不再重复请求
+        }
+
+    monkeypatch.setattr(parser, "extract_lost_item_stems_with_deepseek", fail_then_ok)
+
+    fail_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert fail_res.status_code == 503
+    assert len(calls) == 1
+
+    # 重试成功：仅第8题与第9题进入提示词，满分第1题绝不参与
+    ok_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert ok_res.status_code == 200, ok_res.text
+    body = ok_res.json()
+    assert body == {
+        "requested": 2,
+        "embedded": 0,
+        "vision": 1,
+        "not_found": 1,
+        "remaining_unextracted": 0,
+        "ai_called": True,
+        "ai_unavailable_reason": None,
+    }
+    assert sorted(calls[1]) == ["第8题", "第9题"]
+
+    # 第二次调用抽取：所有失分题已有状态（vision_draft / not_found），绝不重复调用 AI
+    second_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert second_res.status_code == 200
+    assert second_res.json()["requested"] == 0
+    assert second_res.json()["ai_called"] is False
+    assert len(calls) == 2
+
+    # 未确认前，学生端看不到任何题干与作答
+    stu_before = client.get("/api/student/school-exam-reflections?subject=math", headers=student_auth).json()
+    q8_stu_before = next(x for x in stu_before["items"] if x["question_label"] == "第8题")
+    assert q8_stu_before["stem_excerpt"] is None
+    assert q8_stu_before["student_answer_excerpt"] is None
+
+    # 满分题不可手工设置题干
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_lbl = {it["question_label"]: it for it in detail["items"]}
+    assert by_lbl["第1题"]["stem_state"] is None
+    assert by_lbl["第8题"]["stem_state"] == "vision_draft"
+    assert by_lbl["第9题"]["stem_state"] == "not_found"
+    full_patch = client.patch(
+        f"/api/school-exams/{exam_id}/items/{by_lbl['第1题']['id']}/stem",
+        json={"stem_text": "不应允许", "confirm": True},
+        headers=auth,
+    )
+    assert full_patch.status_code == 422
+
+    # 家长批量确认第8题草稿，并检查分数与知识点未被修改
+    confirm_res = client.post(f"/api/school-exams/{exam_id}/confirm-stems", headers=auth)
+    assert confirm_res.status_code == 200
+    assert confirm_res.json()["confirmed_count"] == 1
+
+    detail_after = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    q8_after = next(it for it in detail_after["items"] if it["question_label"] == "第8题")
+    assert q8_after["stem_state"] == "confirmed"
+    assert q8_after["earned_points"] == 1.0
+    assert q8_after["max_points"] == 4.0
+    assert q8_after["knowledge_id"] == "math_cand.eq.fractional"
+
+    # 确认后学生端可见已确认题干与作答
+    stu_after = client.get("/api/student/school-exam-reflections?subject=math", headers=student_auth).json()
+    q8_stu_after = next(x for x in stu_after["items"] if x["question_label"] == "第8题")
+    assert q8_stu_after["stem_excerpt"] == "解方程 $\\frac{1}{x-2}=1$"
+    assert q8_stu_after["student_answer_excerpt"] == "x=3"
+
+    # 再次调用抽取仍不重复解析且不覆盖已确认内容
+    third_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert third_res.json()["ai_called"] is False
+    assert len(calls) == 2
+
+    # 模拟第9题处于未超时的 extracting 认领中时不会并发重入；超过 10 分钟 TTL 才允许认领
+    from shutong.database import get_db
+    from shutong.main import app
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        row9 = db.get(m.SchoolExamItem, by_lbl["第9题"]["id"])
+        row9.stem_state = "extracting"
+        row9.stem_state_at = m.now()
+        db.commit()
+    finally:
+        db.close()
+
+    concurrent_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert concurrent_res.json()["ai_called"] is False
+
+    db_gen2 = app.dependency_overrides[get_db]()
+    db2 = next(db_gen2)
+    try:
+        row9 = db2.get(m.SchoolExamItem, by_lbl["第9题"]["id"])
+        row9.stem_state_at = m.now() - timedelta(minutes=11)
+        db2.commit()
+    finally:
+        db2.close()
+
+    stale_res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={}, headers=auth)
+    assert stale_res.status_code == 200
+    assert stale_res.json()["ai_called"] is True
+    assert calls[-1] == ["第9题"]
+
+
+def test_extract_lost_item_stems_filters_whitelist_and_answer_leaks(monkeypatch):
+    """ST-022：白名单之外的题号与含参考答案字样的条目必须被丢弃。"""
+    from PIL import Image
+    from io import BytesIO
+    from shutong import school_paper_parser as parser
+
+    buf = BytesIO()
+    Image.new("RGB", (80, 80), color=(255, 255, 255)).save(buf, format="PNG")
+    monkeypatch.setattr(
+        parser,
+        "_post_deepseek_json",
+        lambda cfg, *, model, messages, max_tokens=8192, timeout_override=None: {
+            "stems": [
+                {"question_label": "第1题", "stem": "不在失分白名单里", "student_answer": "A"},
+                {"question_label": "第8题", "stem": "求 x 的值。参考答案：x=2", "student_answer": "x=1"},
+                {"question_label": "9", "stem": "已知三角形面积为 6，求高。", "student_answer": ""},
+            ]
+        },
+    )
+    cfg = parser.VisionParserConfig(
+        base_url="https://api.deepseek.com",
+        api_key="sk-test",
+        vision_model="deepseek-flash",
+        text_model="deepseek-chat",
+        timeout_seconds=30.0,
+    )
+    out = parser.extract_lost_item_stems_with_deepseek(
+        subject="math",
+        attachments=[{"id": "a1", "filename": "p.png", "media_type": "image/png", "data": buf.getvalue()}],
+        lost_labels=["第8题", "第9题"],
+        cfg=cfg,
+    )
+    assert list(out.keys()) == ["第9题"]
+    assert out["第9题"]["stem_text"] == "已知三角形面积为 6，求高。"
+    assert out["第9题"]["student_answer_text"] is None
+
+
+def test_extract_stems_batched_persists_partial_and_compresses_jpeg(client, auth, monkeypatch):
+    """分批抽取每批立即落库；后批失败绝不丢失前批结果，且视觉帧启用 JPEG 压缩。"""
+    from PIL import Image
+    from io import BytesIO
+    import base64
+    from shutong import school_paper_parser as parser
+
+    buf = BytesIO()
+    Image.new("RGB", (2400, 1200), color=(255, 255, 255)).save(buf, format="PNG")
+    frames = parser.render_masked_pages_for_vision(
+        [{"id": "a1", "filename": "卷.png", "media_type": "image/png", "data": buf.getvalue()}],
+        compress_jpeg=True,
+        max_edge=1600,
+    )
+    assert len(frames) == 1
+    assert frames[0]["data_url"].startswith("data:image/jpeg;base64,")
+    raw_jpg = base64.b64decode(frames[0]["data_url"].split(",", 1)[1])
+    with Image.open(BytesIO(raw_jpg)) as resized:
+        assert max(resized.size) <= 1600
+
+    exam_id = make_exam(client, auth, subject="math", title="虚构测试数据：分批抽取测试", earned_points=90, max_points=100)
+    post_items(
+        client,
+        auth,
+        exam_id,
+        [
+            item("8", knowledge_id="math_cand.eq.fractional", earned_points=0.0, max_points=3.0),
+            item("15", knowledge_id="math_cand.eq.fractional", earned_points=0.0, max_points=3.0),
+        ],
+    )
+    _upload_dummy_png_attachment(client, auth, exam_id)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-dummy")
+
+    batch_calls: list[list[str]] = []
+
+    def batch_fake(*, subject, attachments, lost_labels, cfg):
+        batch_calls.append(list(lost_labels))
+        if len(batch_calls) == 2:
+            raise parser.VisionParserUnavailableError("VISION_PARSER_TIMEOUT")
+        return {
+            "8": {"stem_text": "求二次函数最小值", "student_answer_text": "y=1"},
+        }
+
+    monkeypatch.setattr(parser, "extract_lost_item_stems_with_deepseek", batch_fake)
+
+    r1 = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={"batch_size": 1}, headers=auth)
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["requested"] == 1
+    assert r1.json()["vision"] == 1
+    assert r1.json()["remaining_unextracted"] == 1
+
+    # 第 2 批超时失败（503），但第 1 批结果必须已经持久化
+    r2 = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={"batch_size": 1}, headers=auth)
+    assert r2.status_code == 503
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth).json()
+    by_lbl = {it["question_label"]: it for it in detail["items"]}
+    assert by_lbl["8"]["stem_state"] == "vision_draft"
+    assert by_lbl["15"]["stem_state"] is None
+
+    # 重试仅认领第 15 题，绝不重复解析第 8 题
+    r3 = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={"batch_size": 1}, headers=auth)
+    assert r3.status_code == 200
+    assert r3.json()["remaining_unextracted"] == 0
+    assert batch_calls == [["8"], ["15"], ["15"]]
+
+
+def test_parse_model_json_content_handles_fences_and_latex_escapes():
+    """JSON 容错解析：剥离代码块围栏并修复未双写的 LaTeX 反斜杠，非法文本仍拒绝。"""
+    import pytest
+    from shutong import school_paper_parser as parser
+
+    fenced = '好的，以下是结果：\n```json\n{"stems": [{"question_label": "8", "stem": "$\\sqrt{x} + \\angle A = 0$"}]}\n```'
+    parsed = parser.parse_model_json_content(fenced)
+    assert parsed["stems"][0]["question_label"] == "8"
+    assert "\\sqrt{x}" in parsed["stems"][0]["stem"]
+
+    # 单反斜杠未转义（模型直接输出 \sqrt / \angle）
+    single_slash = '{"stems": [{"question_label": "8", "stem": "$\\sqrt{x} + ' + r'\angle A + \cdot' + '$"}]}'
+    parsed2 = parser.parse_model_json_content(single_slash)
+    assert "\\angle A" in parsed2["stems"][0]["stem"]
+
+    with pytest.raises(ValueError):
+        parser.parse_model_json_content("抱歉，无法识别")
+
+
+def test_post_deepseek_json_reports_truncated_when_finish_reason_length(monkeypatch):
+    """finish_reason=length 且输出为空时，必须明确抛出 VISION_PARSER_TRUNCATED。"""
+    import pytest
+    from shutong import school_paper_parser as parser
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {"content": "", "reasoning_content": "..."},
+                    }
+                ]
+            }
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, *args, **kwargs):
+            return FakeResp()
+
+    monkeypatch.setattr(parser, "_open_httpx_client", lambda *a, **kw: FakeClient())
+    cfg = parser.VisionParserConfig("https://api.deepseek.com", "sk-t", "deepseek-flash", "deepseek-chat", 30.0)
+    with pytest.raises(parser.VisionParserUnavailableError, match="VISION_PARSER_TRUNCATED"):
+        parser._post_deepseek_json(cfg, model=cfg.vision_model, messages=[{"role": "user", "content": "hi"}])
+
+
+def test_extract_stems_releases_claim_even_with_expire_on_commit_false(client, auth, monkeypatch):
+    """即使 Session 使用 expire_on_commit=False，503 释放认领也必须真正把数据库恢复为 None，绝不卡死在 extracting。"""
+    from sqlalchemy.orm import sessionmaker
+    from shutong import database, models as m, school_paper_parser as parser
+    from shutong.main import app
+
+    exam_id = make_exam(client, auth, subject="math", title="虚构测试数据：expire_on_commit释放", earned_points=90, max_points=100)
+    post_items(
+        client,
+        auth,
+        exam_id,
+        [item("8", knowledge_id="math_cand.eq.fractional", earned_points=0.0, max_points=3.0)],
+    )
+    _upload_dummy_png_attachment(client, auth, exam_id)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-dummy")
+    monkeypatch.setattr(
+        parser,
+        "extract_lost_item_stems_with_deepseek",
+        lambda **kwargs: (_ for _ in ()).throw(parser.VisionParserUnavailableError("VISION_PARSER_TRUNCATED")),
+    )
+
+    # 验证与生产 SessionLocal 一致的 expire_on_commit=False 行为
+    db_gen = app.dependency_overrides[database.get_db]()
+    test_db = next(db_gen)
+    bind = test_db.get_bind()
+    test_db.close()
+    NoExpireSession = sessionmaker(bind=bind, expire_on_commit=False)
+
+    def override_no_expire():
+        with NoExpireSession() as s:
+            yield s
+
+    prev = app.dependency_overrides[database.get_db]
+    app.dependency_overrides[database.get_db] = override_no_expire
+    try:
+        res = client.post(f"/api/school-exams/{exam_id}/extract-stems", json={"batch_size": 2}, headers=auth)
+        assert res.status_code == 503
+        assert res.json()["detail"] == "VISION_PARSER_TRUNCATED"
+
+        with NoExpireSession() as s:
+            row = s.query(m.SchoolExamItem).filter_by(school_exam_id=exam_id).one()
+            assert row.stem_state is None
+            assert row.stem_source is None
+    finally:
+        app.dependency_overrides[database.get_db] = prev
+
+
 

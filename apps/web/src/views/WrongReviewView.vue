@@ -11,6 +11,7 @@ import {
   type Subject,
 } from '../api'
 import { fmtPoints } from '../copy'
+import { RichText } from '../rich'
 import { getSchoolErrorCategoryLabel } from '../config/knowledge'
 import {
   FIX_STARTERS,
@@ -53,6 +54,7 @@ interface ReflectionDraft {
 const activeSubject = ref<SchoolSubject>(props.subject)
 const filterMode = ref<ReflectionFilter>('pending')
 const activeExamId = ref<string | null>(null)
+const activeItemId = ref<string | null>(null)
 const loading = ref(false)
 const items = ref<StudentSchoolReflectionItem[]>([])
 const pendingBySubject = ref<Record<string, number>>({})
@@ -137,10 +139,29 @@ const activeExamFilteredItems = computed(() => {
   return list
 })
 
+const activeReflectionItem = computed(() => {
+  const list = activeExamFilteredItems.value
+  if (list.length === 0) return null
+  return list.find(it => it.item_id === activeItemId.value) ?? list[0]
+})
+
+watch(
+  activeExamFilteredItems,
+  list => {
+    if (list.length === 0) {
+      activeItemId.value = null
+    } else if (!list.some(it => it.item_id === activeItemId.value)) {
+      activeItemId.value = list[0].item_id
+    }
+  },
+  { immediate: true },
+)
+
 function enterExam(examId: string) {
   activeExamId.value = examId
   const group = examGroups.value.find(g => g.examId === examId)
   filterMode.value = group && group.pendingCount > 0 ? 'pending' : 'all'
+  activeItemId.value = null
 }
 
 function chooseScene(itemId: string, scene: ReflectionScene) {
@@ -348,12 +369,38 @@ watch(
           }}
         </p>
 
-        <ul v-else class="reflection-card-list" aria-label="校考待复盘错题列表">
-          <li
-            v-for="it in activeExamFilteredItems"
-            :key="it.item_id"
-            :class="['reflection-card', `status-${it.reflection_status}`]"
-          >
+        <template v-else-if="activeReflectionItem">
+          <div class="reflection-item-tabs" role="tablist" aria-label="错题切换">
+            <button
+              v-for="tabItem in activeExamFilteredItems"
+              :key="tabItem.item_id"
+              type="button"
+              role="tab"
+              :aria-selected="activeReflectionItem.item_id === tabItem.item_id"
+              :class="['reflection-item-tab', activeReflectionItem.item_id === tabItem.item_id ? 'active' : '']"
+              @click="activeItemId = tabItem.item_id"
+            >
+              <span>{{ formatQuestionLabelHeading(tabItem.question_label) }}</span>
+              <span
+                :class="[
+                  'reflection-tab-dot',
+                  tabItem.reflection_status === 'completed'
+                    ? 'is-done'
+                    : tabItem.reflection_status === 'needs_revision'
+                      ? 'is-chat'
+                      : 'is-wait',
+                ]"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+
+          <ul class="reflection-card-list" aria-label="校考待复盘错题列表">
+            <li
+              v-for="it in [activeReflectionItem]"
+              :key="it.item_id"
+              :class="['reflection-card', `status-${it.reflection_status}`]"
+            >
             <div class="reflection-card-head">
               <div class="reflection-title-group">
                 <b>{{ formatQuestionLabelHeading(it.question_label) }}</b>
@@ -382,8 +429,18 @@ watch(
               家长留言：{{ it.return_reason }}
             </p>
 
-            <p v-if="it.stem_excerpt" class="reflection-stem-excerpt">
-              原卷题干摘要：{{ it.stem_excerpt }}
+            <div v-if="it.stem_excerpt" class="reflection-stem-box">
+              <div class="reflection-stem-row">
+                <span class="reflection-stem-tag">原题</span>
+                <div class="reflection-stem-body"><RichText :text="it.stem_excerpt" /></div>
+              </div>
+              <div v-if="it.student_answer_excerpt" class="reflection-stem-row reflection-answer-row">
+                <span class="reflection-stem-tag answer">我当时的作答</span>
+                <div class="reflection-stem-body"><RichText :text="it.student_answer_excerpt" /></div>
+              </div>
+            </div>
+            <p v-else class="reflection-stem-placeholder muted tiny">
+              对照纸质原卷 {{ formatQuestionLabelHeading(it.question_label) }}
             </p>
 
             <!-- 已完成且未开启编辑：展示清爽的「给下次的提醒卡」 -->
@@ -401,12 +458,14 @@ watch(
                   调整一下
                 </button>
               </div>
-              <p class="reflection-reminder-fix">
-                <b>给下次的提醒：</b>{{ it.fix_strategy }}
-              </p>
-              <p class="reflection-reminder-stuck muted tiny">
-                当时卡点：{{ it.stuck_point }}
-              </p>
+              <div class="reflection-reminder-block">
+                <span class="reflection-label">给下次的提醒</span>
+                <p class="reflection-reminder-fix">{{ it.fix_strategy }}</p>
+              </div>
+              <div class="reflection-reminder-block">
+                <span class="muted tiny">当时卡点</span>
+                <p class="reflection-reminder-stuck muted tiny">{{ it.stuck_point }}</p>
+              </div>
             </div>
 
             <!-- 三步引导复盘工作区 -->
@@ -587,8 +646,9 @@ watch(
                 </div>
               </div>
             </div>
-          </li>
-        </ul>
+            </li>
+          </ul>
+        </template>
       </template>
     </section>
   </div>

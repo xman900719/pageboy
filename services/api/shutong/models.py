@@ -196,6 +196,12 @@ class SchoolExamItem(Base):
     draft_confidence: Mapped[str | None] = mapped_column(String(24), nullable=True)
     draft_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     draft_knowledge_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # 0021：失分题题干与学生作答（逐题仅 AI 解析一次，家长确认后才对学生与书童可见）
+    stem_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    student_answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stem_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stem_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stem_state_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class SchoolPaperAttachment(Base):

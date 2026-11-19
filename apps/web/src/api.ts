@@ -407,6 +407,7 @@ export interface SchoolPaperAttachment {
 }
 
 export type ReflectionStatus = 'not_required' | 'pending' | 'completed' | 'needs_revision'
+export type StemState = 'extracting' | 'embedded_draft' | 'vision_draft' | 'not_found' | 'confirmed'
 
 export interface SchoolExamItem {
   id: string
@@ -428,6 +429,10 @@ export interface SchoolExamItem {
   draft_confidence?: SchoolDraftConfidence | null
   draft_reason?: string | null
   draft_knowledge_candidates?: DraftKnowledgeCandidate[] | null
+  stem_text?: string | null
+  student_answer_text?: string | null
+  stem_state?: StemState | null
+  stem_source?: string | null
 }
 
 export interface StudentSchoolReflectionItem {
@@ -442,6 +447,7 @@ export interface StudentSchoolReflectionItem {
   max_points: number
   lost_points: number
   stem_excerpt?: string | null
+  student_answer_excerpt?: string | null
   reflection_status: ReflectionStatus
   error_category?: SchoolErrorCategory | null
   stuck_point: string
@@ -1265,6 +1271,24 @@ export interface Client {
     itemId: string,
     reason: string,
   ): Promise<SchoolExamItem>
+  extractSchoolExamStems(
+    examId: string,
+    options?: { maskStudentHeader?: boolean; batchSize?: number },
+  ): Promise<{
+    requested: number
+    embedded: number
+    vision: number
+    not_found: number
+    remaining_unextracted: number
+    ai_called: boolean
+    ai_unavailable_reason?: string | null
+  }>
+  patchSchoolExamItemStem(
+    examId: string,
+    itemId: string,
+    input: { stem_text?: string | null; student_answer_text?: string | null; confirm?: boolean },
+  ): Promise<SchoolExamItem>
+  confirmSchoolExamStems(examId: string): Promise<{ confirmed_count: number }>
   schoolExamReflections(subject?: SchoolSubject): Promise<StudentSchoolReflectionsPayload>
   submitSchoolExamReflection(
     itemId: string,
@@ -1599,6 +1623,22 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         'POST',
         { reason },
       ),
+    extractSchoolExamStems: (examId, options) =>
+      call(`/api/school-exams/${encodeURIComponent(examId)}/extract-stems`, 'POST', {
+        mask_student_header: options?.maskStudentHeader ?? true,
+        batch_size: options?.batchSize ?? 3,
+      }),
+    patchSchoolExamItemStem: (examId, itemId, input) =>
+      call<SchoolExamItem>(
+        `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/stem`,
+        'PATCH',
+        input,
+      ),
+    confirmSchoolExamStems: examId =>
+      call<{ confirmed_count: number }>(
+        `/api/school-exams/${encodeURIComponent(examId)}/confirm-stems`,
+        'POST',
+      ),
     schoolExamReflections: subject =>
       call<StudentSchoolReflectionsPayload>(
         subject
@@ -1866,10 +1906,11 @@ const API_CODE_TEXT: Record<string, string> = {
   SCHOOL_ITEM_ALREADY_CONFIRMED: '该小题已完成人工确认，不可重复确认。',
   SCHOOL_ITEM_IMMUTABLE: '该小题已人工确认并锁定，不可丢弃或修改已锁得分。',
   SCHOOL_ITEM_DUPLICATE_CONFIRM: '批量确认中包含重复小题编号，请刷新后重试。',
-  VISION_PARSER_NOT_CONFIGURED: '服务端未配置智能识图服务密钥，请改用「仅本地提取题号与分值骨架」或联系管理员检查环境变量配置。',
-  VISION_PARSER_TIMEOUT: '智能多模态解析超时，建议缩短页数或先改用本地骨架抽取。',
-  VISION_PARSER_UNAVAILABLE: '暂时无法连接智能多模态服务，请稍后重试。',
-  VISION_PARSER_INVALID_JSON: '智能解析返回的数据格式异常，无法转为草稿结构，请重试或改用本地骨架模式。',
+  VISION_PARSER_NOT_CONFIGURED: '服务端未配置智能识图服务密钥，请检查环境配置后重试。',
+  VISION_PARSER_TIMEOUT: '智能多模态解析超时（已识别部分已保存，可再次点击继续识别剩余题目）。',
+  VISION_PARSER_UNAVAILABLE: '暂时无法连接智能多模态服务（网络中断或服务不可达），请稍后重试。',
+  VISION_PARSER_TRUNCATED: 'AI 模型思考/输出长度达到上限被提前截断，未能返回完整 JSON（已自动保留已完成题目，可再次点击继续）。',
+  VISION_PARSER_INVALID_JSON: 'AI 模型返回的内容不是有效 JSON 结构（可能返回了纯文本说明或格式异常），无法自动转入草稿。',
   NO_EMBEDDED_TEXT_FOR_SKELETON: '所选附件不含可机读文字层（属纯扫描件），无法本地提取骨架；请改用智能多模态模式。',
   UNSUPPORTED_ATTACHMENT_FOR_PARSING: '所选附件格式不支持自动提取（支持文档或图片格式）。',
   ATTACHMENT_NOT_FOUND: '未找到选中的附件，请刷新列表后重试。',
@@ -1905,6 +1946,10 @@ export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return '访问令牌无效或已过期，请重新输入。'
     if (error.status === 403) return '凭据权限不足或使用了错误的角色凭据（如学生凭据访问管理端）。'
+    const httpMatch = /^VISION_PARSER_HTTP_(\d+)$/.exec(error.code)
+    if (httpMatch) {
+      return `上游 AI 视觉接口返回 HTTP ${httpMatch[1]} 错误（请检查模型名称、API Key 额度或服务状态）。`
+    }
     return API_CODE_TEXT[error.code] ?? error.code
   }
   if (error instanceof TypeError) return '无法连接服务器，请检查网络连接后重试。'

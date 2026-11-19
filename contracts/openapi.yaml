@@ -2444,6 +2444,16 @@ components:
       - max_score
       title: SchoolExamReportSubjectIn
       type: object
+    SchoolExamStemsConfirmOut:
+      description: 批量确认待核对题干草稿结果。
+      properties:
+        confirmed_count:
+          title: Confirmed Count
+          type: integer
+      required:
+      - confirmed_count
+      title: SchoolExamStemsConfirmOut
+      type: object
     SchoolExamSyncDraftsIn:
       description: 从校考平台同步待核对逐题草稿的请求载荷。
       properties:
@@ -2587,6 +2597,77 @@ components:
       - confirmed_by_human
       - earned_points
       title: SchoolItemConfirmIn
+      type: object
+    SchoolItemStemExtractIn:
+      description: 管理端按需抽取校考失分题题干与学生作答请求。
+      properties:
+        batch_size:
+          default: 3
+          maximum: 10.0
+          minimum: 1.0
+          title: Batch Size
+          type: integer
+        mask_student_header:
+          default: true
+          title: Mask Student Header
+          type: boolean
+      title: SchoolItemStemExtractIn
+      type: object
+    SchoolItemStemExtractOut:
+      description: 失分题题干与学生作答抽取结果（同一题永不重复 AI 解析）。
+      properties:
+        ai_called:
+          title: Ai Called
+          type: boolean
+        ai_unavailable_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Unavailable Reason
+        embedded:
+          title: Embedded
+          type: integer
+        not_found:
+          title: Not Found
+          type: integer
+        remaining_unextracted:
+          default: 0
+          title: Remaining Unextracted
+          type: integer
+        requested:
+          title: Requested
+          type: integer
+        vision:
+          title: Vision
+          type: integer
+      required:
+      - requested
+      - embedded
+      - vision
+      - not_found
+      - ai_called
+      title: SchoolItemStemExtractOut
+      type: object
+    SchoolItemStemPatchIn:
+      description: 管理端编辑或确认单道失分题题干与学生作答。
+      properties:
+        confirm:
+          default: false
+          title: Confirm
+          type: boolean
+        stem_text:
+          anyOf:
+          - maxLength: 800
+            type: string
+          - type: 'null'
+          title: Stem Text
+        student_answer_text:
+          anyOf:
+          - maxLength: 400
+            type: string
+          - type: 'null'
+          title: Student Answer Text
+      title: SchoolItemStemPatchIn
       type: object
     SchoolPaperCollectIn:
       description: 从已匹配试卷启动单场 k12100 采集；总分始终待人工核对。
@@ -2946,6 +3027,11 @@ components:
           default: ''
           title: Stuck Point
           type: string
+        student_answer_excerpt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Student Answer Excerpt
         subject:
           enum:
           - math
@@ -6444,6 +6530,39 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Confirm School Exam
+  /api/school-exams/{exam_id}/confirm-stems:
+    post:
+      description: 管理端批量确认本场所有待核对题干草稿。
+      operationId: confirm_school_exam_item_stems_api_school_exams__exam_id__confirm_stems_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolExamStemsConfirmOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Confirm School Exam Item Stems
   /api/school-exams/{exam_id}/error-analysis:
     get:
       description: 获取单场校考的失分归因、与日常练习掌握度交叉诊断及同科历次顽固失分点对比。
@@ -6477,6 +6596,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get School Exam Error Analysis
+  /api/school-exams/{exam_id}/extract-stems:
+    post:
+      description: 按需分批抽取校考失分题题干与学生作答（原子认领，逐题仅 AI 解析一次，绝不覆盖已确认）。
+      operationId: extract_school_exam_item_stems_api_school_exams__exam_id__extract_stems_post
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SchoolItemStemExtractIn'
+              - type: 'null'
+              title: Payload
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolItemStemExtractOut'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Extract School Exam Item Stems
   /api/school-exams/{exam_id}/items:
     post:
       description: 逐题得分录入：manual_entry 即人工确认；ocr_draft 须再走人工确认（AC-EVI-02）。
@@ -6764,6 +6924,50 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Return School Exam Item Reflection
+  /api/school-exams/{exam_id}/items/{item_id}/stem:
+    patch:
+      description: 管理端手工编辑或确认失分题题干与学生作答（不触碰分数与知识点）。
+      operationId: patch_school_exam_item_stem_api_school_exams__exam_id__items__item_id__stem_patch
+      parameters:
+      - in: path
+        name: exam_id
+        required: true
+        schema:
+          title: Exam Id
+          type: string
+      - in: path
+        name: item_id
+        required: true
+        schema:
+          title: Item Id
+          type: string
+      - in: header
+        name: authorization
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchoolItemStemPatchIn'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Patch School Exam Item Stem
   /api/school-exams/{exam_id}/paper:
     post:
       description: 原始二进制请求体；上限 10 MiB，落私有目录；不存在任何读取附件字节的端点（AC-SEC-01）。
