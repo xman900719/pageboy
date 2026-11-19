@@ -960,34 +960,52 @@ test('J6b 凭据门禁安全整改：废弃旧键清理、未主动勾选不持�
 
 /* ---------- J7 知识图谱交互展示与选学过滤 ---------- */
 
-test('J7 知识图谱交互展示：SVG 关系图谱、领域筛选、选学排除与未掌握高亮', async ({ page }) => {
+test('J7 知识图谱交互展示：Vue Flow 关系图谱、脉络聚焦、领域筛选、选学排除与未掌握高亮', async ({ page }) => {
   await enterSpace(page)
   await navTab(page, /知识点展示/).click()
 
   const section = page.getByRole('region', { name: '知识点关系图谱展示' })
   await expect(section).toBeVisible()
-  const svg = page.getByRole('group', { name: '知识点层级与前置关联图谱' })
-  await expect(svg).toBeVisible()
+  const graphGroup = page.getByRole('group', { name: '知识点层级与前置关联图谱' })
+  await expect(graphGroup).toBeVisible()
+  await expect(graphGroup.locator('.vue-flow')).toBeVisible()
+  await expect(graphGroup.locator('.vue-flow__node-knowledgeLeaf').first()).toBeVisible()
+  const fullLeafCount = await graphGroup.locator('.vue-flow__node-knowledgeLeaf').count()
+  expect(fullLeafCount).toBeGreaterThan(10)
 
   // 不含选学（*）节点（三元一次方程组解法、切线长定理均标记 is_elective=true）
   const allText = await section.innerText()
   expect(allText).toContain('已自动排除选学*内容')
   expect(allText).not.toContain('三元一次方程组')
-  // 方案三跨章桥梁矩阵与图谱展示全面中文化：不得泄露内部领域英文编码
+  // 图谱展示全面中文化：不得泄露内部领域英文编码
   for (const rawDomain of ['num_alg', 'geom', 'stat_prob', 'comp_prac']) {
     expect(allText).not.toContain(rawDomain)
   }
 
   // 领域过滤、仅高亮未掌握切换及图谱节点点选
   await section.locator('.domain-filter-strip').getByRole('button', { name: '数与代数', exact: true }).click()
+  const filteredLeafCount = await graphGroup.locator('.vue-flow__node-knowledgeLeaf').count()
+  expect(filteredLeafCount).toBeLessThan(fullLeafCount)
   await section.getByRole('button', { name: '仅高亮未掌握' }).click()
   await section.getByRole('button', { name: '仅高亮未掌握' }).click()
   await section.getByRole('button', { name: /全部领域/ }).click()
 
-  await svg.getByRole('button', { name: /有理数及其运算/ }).click()
+  await graphGroup.getByRole('button', { name: /有理数及其运算/ }).click()
   const detail = page.getByRole('complementary', { name: '选中知识点详情' })
   await expect(detail).toContainText('有理数及其运算')
   await expect(detail).toContainText('有效独立样本')
+
+  // 「仅看选中脉络」子图过滤与恢复、缩放与全览控制
+  await graphGroup.getByRole('button', { name: '🕸️ 仅看选中脉络' }).click()
+  const lineageLeafCount = await graphGroup.locator('.vue-flow__node-knowledgeLeaf').count()
+  expect(lineageLeafCount).toBeGreaterThan(1)
+  expect(lineageLeafCount).toBeLessThan(fullLeafCount)
+  await graphGroup.getByRole('button', { name: /退出脉络子图/ }).click()
+  expect(await graphGroup.locator('.vue-flow__node-knowledgeLeaf').count()).toBe(fullLeafCount)
+
+  await graphGroup.getByRole('button', { name: '放大图谱' }).click()
+  await graphGroup.getByRole('button', { name: '缩小图谱' }).click()
+  await graphGroup.getByRole('button', { name: '⛶ 自适应全览' }).click()
 
   await expectHonestLanguage(page)
 })

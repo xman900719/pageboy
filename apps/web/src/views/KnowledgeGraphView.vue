@@ -4,7 +4,6 @@ import {
   describeError,
   SUBJECT_LABELS,
   type ApiClient,
-  type KnowledgeEdge,
   type KnowledgeGameSubjectConfig,
   type KnowledgeGraph,
   type KnowledgeMasteryItem,
@@ -16,6 +15,7 @@ import { formatReleaseChineseName, getDomainLabel, getKnowledgeLabel } from '../
 import { DEFAULT_GAME_CONFIG } from '../config/knowledgeGames'
 import KnowledgeAlchemyGame from '../components/KnowledgeAlchemyGame.vue'
 import KnowledgeExpeditionGame from '../components/KnowledgeExpeditionGame.vue'
+import KnowledgeFlowCanvas from '../components/KnowledgeFlowCanvas.vue'
 import type { NoticeTone } from '../components/Notice.vue'
 
 const props = defineProps<{
@@ -35,7 +35,7 @@ const error = ref('')
 
 const domainFilter = ref<string>('all')
 const onlyWeakHighlight = ref(false)
-const showLegend = ref(true)
+const showLegend = ref(false)
 const viewMode = ref<'graph' | 'list' | 'alchemy' | 'expedition'>('graph')
 const selectedCode = ref<string | null>(null)
 
@@ -48,37 +48,6 @@ interface PrereqLink {
   name: string
   relation: string
   status: MasteryStatus
-}
-
-interface ModuleGroup {
-  code: string
-  name: string
-  node: KnowledgeMasteryItem
-  leaves: KnowledgeMasteryItem[]
-}
-
-interface DomainGroup {
-  root: KnowledgeMasteryItem
-  modules: ModuleGroup[]
-  totalLeaves: number
-  masteredCount: number
-  weakCount: number
-}
-
-interface BridgeGroupRow {
-  key: string
-  sourceDomainName: string
-  targetDomainName: string
-  bridges: {
-    key: string
-    source: string
-    sourceName: string
-    target: string
-    targetName: string
-    relation: string
-    weakWarning: boolean
-    active: boolean
-  }[]
 }
 
 function nodeDisplayName(node: KnowledgeMasteryItem): string {
@@ -212,164 +181,6 @@ function hasWeakUpstream(code: string): boolean {
   return getUpstream(code).some(item => item.status === 'weak')
 }
 
-// 方案三核心数据结构：一级领域容器 -> 二级模块子盒 -> 三级/叶子知识点卡片
-const nestedDomains = computed<DomainGroup[]>(() => {
-  const nodes = filteredNodes.value
-  if (nodes.length === 0) return []
-
-  const byCode = new Map(nodes.map(n => [n.code, n]))
-  const childrenMap = new Map<string, KnowledgeMasteryItem[]>()
-  const roots: KnowledgeMasteryItem[] = []
-
-  for (const n of nodes) {
-    if (!n.parent_code || !byCode.has(n.parent_code)) {
-      roots.push(n)
-    } else {
-      const list = childrenMap.get(n.parent_code) ?? []
-      list.push(n)
-      childrenMap.set(n.parent_code, list)
-    }
-  }
-
-  const collectLeaves = (startCode: string): KnowledgeMasteryItem[] => {
-    const out: KnowledgeMasteryItem[] = []
-    const visited = new Set<string>()
-    const stack = [...(childrenMap.get(startCode) ?? [])].reverse()
-    while (stack.length > 0) {
-      const cur = stack.pop()!
-      if (visited.has(cur.code)) continue
-      visited.add(cur.code)
-      const kids = childrenMap.get(cur.code) ?? []
-      if (cur.is_leaf || kids.length === 0) {
-        out.push(cur)
-      } else {
-        for (let i = kids.length - 1; i >= 0; i--) {
-          stack.push(kids[i])
-        }
-      }
-    }
-    return out
-  }
-
-  return roots.map(root => {
-    const directChildren = childrenMap.get(root.code) ?? []
-    const modules: ModuleGroup[] = []
-    const directLeaves: KnowledgeMasteryItem[] = []
-
-    for (const child of directChildren) {
-      const grandKids = childrenMap.get(child.code) ?? []
-      if (!child.is_leaf || grandKids.length > 0) {
-        const leaves = collectLeaves(child.code)
-        modules.push({
-          code: child.code,
-          name: nodeDisplayName(child),
-          node: child,
-          leaves: leaves.length > 0 ? leaves : [child],
-        })
-      } else {
-        directLeaves.push(child)
-      }
-    }
-
-    if (directLeaves.length > 0) {
-      modules.push({
-        code: `${root.code}::direct`,
-        name: modules.length > 0 ? '综合核心考点' : `${nodeDisplayName(root)}核心考点`,
-        node: root,
-        leaves: directLeaves,
-      })
-    }
-
-    if (modules.length === 0) {
-      modules.push({
-        code: `${root.code}::self`,
-        name: nodeDisplayName(root),
-        node: root,
-        leaves: [root],
-      })
-    }
-
-    const allLeaves = modules.flatMap(m => m.leaves)
-    return {
-      root,
-      modules,
-      totalLeaves: allLeaves.length,
-      masteredCount: allLeaves.filter(l => l.mastery_status === 'mastered').length,
-      weakCount: allLeaves.filter(l => l.mastery_status === 'weak').length,
-    }
-  })
-})
-
-// 跨章 / 跨模块前置关联桥梁矩阵
-const bridgeMatrixRows = computed<BridgeGroupRow[]>(() => {
-  if (!graph.value) return []
-  const map = nodeByCode.value
-  const visibleSet = new Set(filteredNodes.value.map(n => n.code))
-
-  const domainNameOf = (node: KnowledgeMasteryItem): string => {
-    // 1. 优先从本地化配置解析标准领域英文编码（如 num_alg -> 数与代数）
-    if (node.domain) {
-      const mapped = getDomainLabel(node.domain)
-      if (mapped && mapped !== node.domain) return mapped
-    }
-    // 2. 沿 parent_code 向上溯源至所属一级领域节点名称
-    let cur: KnowledgeMasteryItem | undefined = node
-    const seen = new Set<string>()
-    while (cur?.parent_code && !seen.has(cur.code)) {
-      seen.add(cur.code)
-      const parent = map.get(cur.parent_code)
-      if (!parent) break
-      cur = parent
-    }
-    if (cur && cur.code !== node.code) {
-      return nodeDisplayName(cur)
-    }
-    const domCode = node.domain || node.parent_code || node.code
-    const domNode = map.get(domCode)
-    return domNode ? nodeDisplayName(domNode) : getDomainLabel(domCode)
-  }
-
-  const grouped = new Map<string, BridgeGroupRow>()
-
-  for (let i = 0; i < graph.value.edges.length; i++) {
-    const e: KnowledgeEdge = graph.value.edges[i]
-    if (e.edge_type !== 'prerequisite') continue
-    if (domainFilter.value !== 'all' && !visibleSet.has(e.source) && !visibleSet.has(e.target)) {
-      continue
-    }
-    const src = map.get(e.source)
-    const tgt = map.get(e.target)
-    if (!src || !tgt) continue
-
-    const sDom = domainNameOf(src)
-    const tDom = domainNameOf(tgt)
-    const rowKey = `${sDom}=>${tDom}`
-    let row = grouped.get(rowKey)
-    if (!row) {
-      row = {
-        key: rowKey,
-        sourceDomainName: sDom,
-        targetDomainName: tDom,
-        bridges: [],
-      }
-      grouped.set(rowKey, row)
-    }
-
-    row.bridges.push({
-      key: `${e.source}-${e.target}-${i}`,
-      source: src.code,
-      sourceName: nodeDisplayName(src),
-      target: tgt.code,
-      targetName: nodeDisplayName(tgt),
-      relation: e.relation || '前置支撑',
-      weakWarning: src.mastery_status === 'weak',
-      active: selectedCode.value === src.code || selectedCode.value === tgt.code,
-    })
-  }
-
-  return Array.from(grouped.values())
-})
-
 const selectedNode = computed(() => {
   if (!graph.value || !selectedCode.value) return null
   return graph.value.nodes.find(n => n.code === selectedCode.value) ?? null
@@ -394,17 +205,6 @@ function fmtPct(rate: number | null | undefined): string {
   if (rate === null || rate === undefined) return '样本不足'
   const val = Math.round(rate * 1000) / 10
   return `${Number.isInteger(val) ? val : val.toFixed(1)}%`
-}
-
-function nodeSubText(node: KnowledgeMasteryItem): string {
-  if (node.observed_rate !== null && node.observed_rate !== undefined) {
-    return fmtPct(node.observed_rate)
-  }
-  return MASTERY_LABELS[node.mastery_status] ?? '待测'
-}
-
-function nodeAriaLabel(node: KnowledgeMasteryItem): string {
-  return `${nodeDisplayName(node)} ${nodeSubText(node)}`
 }
 
 function startFocusedPractice() {
@@ -454,7 +254,7 @@ watch(
         <div>
           <h2>{{ SUBJECT_LABELS[subject] }}知识点关系图谱</h2>
           <p class="card-sub">
-            依据教育部 2022 版课标构建的正式知识体系（已自动排除选学*内容），采用「嵌套模块卡片 + 跨章关联矩阵」清晰呈现从属结构、先修桥梁与掌握状态。
+            依据教育部 2022 版课标构建的正式知识体系（已自动排除选学*内容），按领域分组展示先修拓扑流向、跨章桥梁与实时掌握状态。
           </p>
         </div>
         <div class="head-actions">
@@ -540,28 +340,28 @@ watch(
           @go-practice-focus="emit('goPracticeFocus', $event)"
         />
 
-        <!-- 静态图谱与清单视图 -->
+        <!-- 交互式图谱与清单视图 -->
         <template v-else>
         <!-- 标准图例总览面板 -->
         <section v-if="showLegend" class="legend-board" aria-label="知识点关系与掌握度标准图例">
           <div class="legend-board-head">
             <strong>标准图例说明</strong>
-            <span class="muted tiny">图谱同时以色彩与符号双编码区分掌握度，并用容器嵌套与跨章桥梁明确展示三种知识关系</span>
+            <span class="muted tiny">图谱以色彩与符号双编码区分掌握度；点击任意知识节点即可高亮完整上下游先修脉络</span>
           </div>
           <div class="legend-grid">
             <div class="legend-section">
-              <div class="legend-section-title">1. 层级与包含关系</div>
+              <div class="legend-section-title">1. 领域分组与连线流向</div>
               <div class="legend-items">
                 <span class="legend-chip container-box">虚线大框：一级知识领域</span>
-                <span class="legend-chip module-box">浅色子盒：二级模块主题</span>
-                <span class="legend-chip leaf-box">圆角卡片：三级/叶子核心考点</span>
+                <span class="legend-chip leaf-box">实线箭头：同领域先修推导</span>
+                <span class="legend-chip down-tag">虚线弧箭：跨领域桥梁</span>
               </div>
             </div>
             <div class="legend-section">
-              <div class="legend-section-title">2. 先修依赖与阻断提醒</div>
+              <div class="legend-section-title">2. 脉络高亮与阻断提醒</div>
               <div class="legend-items">
-                <span class="legend-chip prereq-tag">⬅️ 先修：依赖上游基础</span>
-                <span class="legend-chip down-tag">➡️ 支撑：开启后续专题</span>
+                <span class="legend-chip prereq-tag">橙框：前置基础链</span>
+                <span class="legend-chip down-tag">青框：后续进阶链</span>
                 <span class="legend-chip warn-tag">🔒 先补前置：上游基础未掌握</span>
               </div>
             </div>
@@ -609,156 +409,16 @@ watch(
           </div>
         </div>
 
-        <!-- 主体：方案三（跨章关联矩阵 + 嵌套模块卡片） / 清单视图 + 右侧详情栏 -->
-        <div class="graph-workspace">
-          <div v-if="viewMode === 'graph'" class="choice3-board">
-            <!-- 跨章 / 跨模块前置关联桥梁矩阵 -->
-            <div class="cross-matrix-card" aria-label="跨章前置关联桥梁矩阵">
-              <div class="cross-matrix-head">
-                <div>
-                  <h3>跨章与先修关联桥梁</h3>
-                  <p class="muted tiny">
-                    彻底告别斜线交叉遮挡；点击下方任意关系桥梁，即可在右侧定位详情并跳转先修或进阶知识点。
-                  </p>
-                </div>
-                <span class="chip subtle">{{ bridgeMatrixRows.reduce((acc, r) => acc + r.bridges.length, 0) }} 条前置关系</span>
-              </div>
-
-              <div v-if="bridgeMatrixRows.length > 0" class="matrix-table-scroll">
-                <table class="rel-matrix-table">
-                  <thead>
-                    <tr>
-                      <th>前置支撑领域</th>
-                      <th>前置因果关联链（点击定位）</th>
-                      <th>后继应用领域</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in bridgeMatrixRows" :key="row.key">
-                      <td><span class="matrix-domain-tag">{{ row.sourceDomainName }}</span></td>
-                      <td>
-                        <div class="matrix-bridge-list">
-                          <button
-                            v-for="b in row.bridges"
-                            :key="b.key"
-                            type="button"
-                            :class="[
-                              'matrix-bridge-pill',
-                              b.weakWarning ? 'has-warn' : '',
-                              b.active ? 'active' : '',
-                            ]"
-                            @click="selectedCode = b.target"
-                          >
-                            <span class="bridge-src">{{ b.sourceName }}</span>
-                            <span class="bridge-rel">──[{{ b.relation }}]──▶</span>
-                            <span class="bridge-tgt">{{ b.targetName }}</span>
-                            <span v-if="b.weakWarning" class="bridge-warn-dot" title="前置基础待突破">🔒</span>
-                          </button>
-                        </div>
-                      </td>
-                      <td><span class="matrix-domain-tag target">{{ row.targetDomainName }}</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p v-else class="muted tiny">当前筛选范围内暂无跨节点先修依赖边，可在下方嵌套模块中浏览全部考点。</p>
-            </div>
-
-            <!-- 嵌套模块卡片主看板 -->
-            <div
-              class="nested-domains-grid"
-              role="group"
-              aria-label="知识点层级与前置关联图谱"
-            >
-              <section
-                v-for="dom in nestedDomains"
-                :key="dom.root.code"
-                class="domain-container-card"
-              >
-                <header class="domain-container-head">
-                  <div class="domain-head-title">
-                    <h3>{{ nodeDisplayName(dom.root) }}</h3>
-                    <span class="muted tiny">一级领域 · {{ dom.modules.length }} 个模块 · {{ dom.totalLeaves }} 项考点</span>
-                  </div>
-                  <div class="domain-head-stats">
-                    <span class="mini-stat good">已掌握 {{ dom.masteredCount }}</span>
-                    <span v-if="dom.weakCount > 0" class="mini-stat bad">待突破 {{ dom.weakCount }}</span>
-                  </div>
-                </header>
-
-                <div class="module-grid">
-                  <div
-                    v-for="mod in dom.modules"
-                    :key="mod.code"
-                    class="module-subbox"
-                  >
-                    <div class="module-subbox-head">
-                      <span class="module-subbox-title">{{ mod.name }}</span>
-                      <span class="muted tiny">{{ mod.leaves.length }} 项</span>
-                    </div>
-
-                    <div class="leaf-rel-list">
-                      <div
-                        v-for="leaf in mod.leaves"
-                        :key="leaf.code"
-                        :class="[
-                          'leaf-rel-item',
-                          leaf.mastery_status,
-                          selectedCode === leaf.code ? 'selected' : '',
-                          isDimmed(leaf) ? 'dimmed' : '',
-                        ]"
-                      >
-                        <button
-                          type="button"
-                          class="leaf-rel-btn"
-                          :aria-label="nodeAriaLabel(leaf)"
-                          @click="selectedCode = leaf.code"
-                        >
-                          <div class="leaf-rel-top">
-                            <span class="leaf-rel-title">{{ nodeDisplayName(leaf) }}</span>
-                            <span :class="['leaf-status-badge', leaf.mastery_status]">
-                              {{ masteryIcon(leaf.mastery_status) }} {{ nodeSubText(leaf) }}
-                            </span>
-                          </div>
-                        </button>
-
-                        <div
-                          v-if="hasWeakUpstream(leaf.code) || getUpstream(leaf.code).length > 0 || getDownstream(leaf.code).length > 0"
-                          class="leaf-rel-badges"
-                        >
-                          <span v-if="hasWeakUpstream(leaf.code)" class="mini-rel-chip alert">
-                            🔒 先补前置
-                          </span>
-                          <span
-                            v-for="up in getUpstream(leaf.code).slice(0, 2)"
-                            :key="`up-${leaf.code}-${up.code}`"
-                            class="mini-rel-chip prereq"
-                            :title="`前置基础：${up.name}（${up.relation}）`"
-                          >
-                            ⬅️ 先修：{{ up.name }}
-                          </span>
-                          <span
-                            v-for="down in getDownstream(leaf.code).slice(0, 2)"
-                            :key="`down-${leaf.code}-${down.code}`"
-                            class="mini-rel-chip down"
-                            :title="`支撑后续：${down.name}（${down.relation}）`"
-                          >
-                            ➡️ 支撑：{{ down.name }}
-                          </span>
-                          <span
-                            v-if="getUpstream(leaf.code).length + getDownstream(leaf.code).length > 4"
-                            class="mini-rel-chip more"
-                          >
-                            +{{ getUpstream(leaf.code).length + getDownstream(leaf.code).length - 4 }} 关联
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
+        <!-- 主体：Vue Flow 交互式拓扑画布（全宽大视窗） / 清单视图 + 详情栏 -->
+        <div :class="['graph-workspace', viewMode === 'graph' ? 'graph-wide' : '']">
+          <KnowledgeFlowCanvas
+            v-if="viewMode === 'graph'"
+            :graph="graph"
+            :domain-filter="domainFilter"
+            :only-weak-highlight="onlyWeakHighlight"
+            :selected-code="selectedCode"
+            @select="selectedCode = $event"
+          />
 
           <!-- 清单模式保留作为极简辅助视图 -->
           <div v-else class="graph-list-fallback" aria-label="知识点清单视图">

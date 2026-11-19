@@ -119,6 +119,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 16** | [16-school-exam-stem-extraction-and-admin-phase4.md](checklists/16-school-exam-stem-extraction-and-admin-phase4.md) | 校考失分题题干与作答 AI 抽取、逐题防重复解析、家长确认入库与管理端第四阶段集中复盘（ST-022） | 依赖【主题 15 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 17** | [17-school-exam-reflection-coach.md](checklists/17-school-exam-reflection-coach.md) | 校考「书童陪你想」苏格拉底对话复盘、持久化恢复、整理草稿回填三步卡与管理端只读回溯（ST-023） | 依赖【主题 16 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 18** | [18-knowledge-dual-games-and-admin-control.md](checklists/18-knowledge-dual-games-and-admin-control.md) | 知识点展示双游戏（知识合成工坊 & 迷雾科技树探险）大留白大字号布局与管理端基础管控联动 | 依赖【主题 7 通过】 | **[x] 已通过（2026-11-19）** |
+| **主题 19** | [19-knowledge-graph-flow-ui.md](checklists/19-knowledge-graph-flow-ui.md) | 学生端知识点关系图谱重构（Vue Flow + Dagre 自上而下领域分组有向图、脉络聚焦、跨领域桥梁与 iPad 触控适配） | 依赖【主题 7、18 通过】 | **[x] 已通过（2026-11-19）** |
 
 ---
 
