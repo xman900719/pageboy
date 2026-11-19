@@ -116,7 +116,7 @@ test('A2 成长状态：优势不足与阶段验证面板 WCAG A/AA 扫描', asy
   await scanAndReport(page, 'growth')
 })
 
-test('A3 知识点展示：图谱画布与节点详情 WCAG A/AA 扫描', async ({ page }) => {
+test('A3 知识点展示：图谱画布、知识合成工坊与迷雾科技树探险 WCAG A/AA 扫描', async ({ page }) => {
   await enterSpace(page)
   await navTab(page, /知识点展示/).click()
 
@@ -124,6 +124,14 @@ test('A3 知识点展示：图谱画布与节点详情 WCAG A/AA 扫描', async 
   await expect(page.getByRole('complementary', { name: '选中知识点详情' })).toBeVisible()
 
   await scanAndReport(page, 'knowledge')
+
+  await page.getByRole('button', { name: /知识合成工坊/ }).click()
+  await expect(page.getByRole('region', { name: '知识合成工坊操作舞台' })).toBeVisible()
+  await scanAndReport(page, 'knowledge-alchemy')
+
+  await page.getByRole('button', { name: /迷雾科技树探险/ }).click()
+  await expect(page.getByRole('region', { name: '迷雾科技树探险棋盘' })).toBeVisible()
+  await scanAndReport(page, 'knowledge-expedition')
 })
 
 test('A4 审核台：题源台账与人工审核工作流的 WCAG A/AA 扫描', async ({ page }) => {

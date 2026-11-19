@@ -75,9 +75,17 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expect(page.getByRole('region', { name: '成长状态总览' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  // 知识点展示视图：交互图谱画布内部滚动，页面整体无横向溢出。
+  // 知识点展示视图：交互图谱画布内部滚动，双游戏无横向溢出。
   await navTab(page, /知识点展示/).click()
   await expect(page.getByRole('region', { name: '知识点关系图谱展示' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: /知识合成工坊/ }).click()
+  await expect(page.getByRole('region', { name: '知识合成工坊操作舞台' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: /迷雾科技树探险/ }).click()
+  await expect(page.getByRole('region', { name: '迷雾科技树探险棋盘' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   // 校考复盘视图：三步引导与防敷衍底线校验，无横向溢出。
@@ -123,6 +131,10 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
 
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '知识点库' }).click()
   await expect(page.getByRole('region', { name: '知识点工作台总览' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('tab', { name: /闯关游戏管控/ }).click()
+  await expect(page.getByRole('region', { name: '闯关游戏基础管控' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '错题诊断' }).click()

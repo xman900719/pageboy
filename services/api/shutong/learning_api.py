@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
 import re
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +41,9 @@ from .schemas import (
     DiagnosisSolutionOptionOut,
     GrowthStatusOut,
     HistoricalWrongQuestionSummaryOut,
+    KnowledgeGameConfigMapOut,
+    KnowledgeGameSubjectConfigIn,
+    KnowledgeGameSubjectConfigOut,
     KnowledgeGraphOut,
     PracticeQuestionPayloadOut,
     PracticeSessionCompleteOut,
@@ -1144,6 +1151,98 @@ def knowledge_graph(
         nodes=mastery_items,
         edges=edges,
     )
+
+
+_GAME_SUBJECTS: tuple[Subject, ...] = ("math", "chinese", "english", "physics")
+
+
+def _knowledge_game_config_path() -> Path:
+    """解析当前隔离环境下知识游戏管控配置文件路径（与真实答题证据及跨环境路径物理隔离）。"""
+    root = files.private_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "_knowledge_game_config.json"
+
+
+def _default_subject_game_config(subject: Subject) -> dict[str, Any]:
+    return {
+        "subject": subject,
+        "alchemy_enabled": True,
+        "expedition_enabled": True,
+        "initial_shields": 3,
+        "prioritize_weak": True,
+        "practice_gate": "recommended",
+        "reset_epoch": 0,
+        "updated_at": None,
+    }
+
+
+def _load_knowledge_game_configs() -> dict[Subject, KnowledgeGameSubjectConfigOut]:
+    path = _knowledge_game_config_path()
+    raw: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                raw = loaded
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+    out: dict[Subject, KnowledgeGameSubjectConfigOut] = {}
+    for subj in _GAME_SUBJECTS:
+        base = _default_subject_game_config(subj)
+        entry = raw.get(subj)
+        if isinstance(entry, dict):
+            base.update({k: v for k, v in entry.items() if k in base})
+        base["subject"] = subj
+        try:
+            out[subj] = KnowledgeGameSubjectConfigOut(**base)
+        except Exception:
+            out[subj] = KnowledgeGameSubjectConfigOut(**_default_subject_game_config(subj))
+    return out
+
+
+def _save_knowledge_game_configs(configs: dict[Subject, KnowledgeGameSubjectConfigOut]) -> None:
+    path = _knowledge_game_config_path()
+    payload = {subj: cfg.model_dump(mode="json") for subj, cfg in configs.items()}
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+@router.get("/api/knowledge/game-config", response_model=KnowledgeGameConfigMapOut)
+def get_student_knowledge_game_config(_student: str = Depends(require_student)):
+    """学生端只读获取四科知识游戏基础管控开关与难度参数。"""
+    return KnowledgeGameConfigMapOut(subjects=_load_knowledge_game_configs())
+
+
+@router.get("/api/admin/knowledge/game-config", response_model=KnowledgeGameConfigMapOut)
+def get_admin_knowledge_game_config(_admin: str = Depends(require_admin)):
+    """管理端读取四科知识游戏基础管控开关与难度参数。"""
+    return KnowledgeGameConfigMapOut(subjects=_load_knowledge_game_configs())
+
+
+@router.put("/api/admin/knowledge/game-config/{subject}", response_model=KnowledgeGameSubjectConfigOut)
+def update_admin_knowledge_game_config(
+    subject: Subject,
+    payload: KnowledgeGameSubjectConfigIn,
+    _admin: str = Depends(require_admin),
+):
+    """管理端更新单学科知识游戏启停开关、护盾数、靶向策略或重置学生本学科游戏进度。"""
+    configs = _load_knowledge_game_configs()
+    prev = configs[subject]
+    next_epoch = prev.reset_epoch + (1 if payload.increment_reset_epoch else 0)
+    updated = KnowledgeGameSubjectConfigOut(
+        subject=subject,
+        alchemy_enabled=payload.alchemy_enabled,
+        expedition_enabled=payload.expedition_enabled,
+        initial_shields=payload.initial_shields,
+        prioritize_weak=payload.prioritize_weak,
+        practice_gate=payload.practice_gate,
+        reset_epoch=next_epoch,
+        updated_at=datetime.now(timezone.utc),
+    )
+    configs[subject] = updated
+    _save_knowledge_game_configs(configs)
+    return updated
 
 
 _ETHICS_STUDENT_TOPICS = {

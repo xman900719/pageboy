@@ -330,6 +330,7 @@ test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明�
   await examRegion.getByLabel('获得分数').fill('86')
   await examRegion.getByLabel('考试满分').fill('100')
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
+  await expect(examRegion.locator('.exam-detail')).toContainText('虚构测试数据：九月诊断月考')
   await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：九月诊断月考')
 
@@ -2488,4 +2489,97 @@ test('J10 学生端方案 A 错题工作台与管理端 AI 错因诊断三选一
   await adoptedBox.getByRole('button', { name: /练一轮/ }).click()
   await expect(page.getByRole('region', { name: '智能综合练习编排' })).toBeVisible()
   await expect(page.getByRole('region', { name: '智能综合练习编排' })).toContainText('已锁定知识点定向突破')
+})
+
+/* ---------- J11 知识点双游戏（知识合成工坊 & 迷雾科技树探险）与管理端基础管控联动 ---------- */
+
+test('J11 知识点双游戏闯关体验与管理端启停/护盾/进度重置联动', async ({ page }) => {
+  await enterSpace(page)
+  await navTab(page, /知识点展示/).click()
+
+  const section = page.getByRole('region', { name: '知识点关系图谱展示' })
+  await expect(section).toBeVisible()
+
+  // 1. 游戏一：知识合成工坊（点击干扰卡扣护盾，点击 3 张合法卡牌完成合成爆卡）
+  await section.getByRole('button', { name: /知识合成工坊/ }).click()
+  const alchemyStage = page.getByRole('region', { name: '知识合成工坊操作舞台' })
+  await expect(alchemyStage).toBeVisible()
+  expect(await alchemyStage.innerText()).not.toContain('math_cand.')
+
+  await alchemyStage.locator('button.clean-card.trap-card').click()
+  await expect(section.locator('.game-inline-feedback.warn')).toContainText('误触干扰陷阱')
+
+  const validCards = alchemyStage.locator('button.clean-card:not(.trap-card)')
+  const cardCount = await validCards.count()
+  for (let i = 0; i < cardCount; i += 1) {
+    const btn = validCards.nth(i)
+    if (await btn.isEnabled()) {
+      await btn.click()
+    }
+  }
+  await expect(alchemyStage.locator('.ssr-reveal-stage')).toContainText('完美合成')
+  await expect(alchemyStage.getByRole('button', { name: /趁热做专项练习巩固/ })).toBeVisible()
+
+  // 2. 游戏二：迷雾科技树探险（三连斩破甲清零 BOSS 1000 HP 护甲并掉落避坑秘籍宝箱）
+  await section.getByRole('button', { name: /迷雾科技树探险/ }).click()
+  const expStage = page.getByRole('region', { name: '迷雾科技树探险棋盘' })
+  await expect(expStage).toBeVisible()
+  await expect(expStage).toContainText('1000 / 1000')
+
+  for (let slash = 1; slash <= 3; slash += 1) {
+    const prevProgress = await expStage.locator('.slash-progress-tag').innerText()
+    const opts = expStage.locator('button.airy-opt-btn')
+    const optCount = await opts.count()
+    for (let j = 0; j < optCount; j += 1) {
+      await opts.nth(j).click()
+      if ((await expStage.locator('.ssr-reveal-stage').count()) > 0) break
+      const curProgress = await expStage.locator('.slash-progress-tag').innerText()
+      if (curProgress !== prevProgress) break
+    }
+  }
+  await expect(expStage.locator('.ssr-reveal-stage')).toContainText('护甲已清零')
+  await expect(expStage).toContainText('0 / 1000')
+
+  // 3. 管理端：进入「知识点库 -> 闯关游戏管控」，停用合成工坊并将护盾改为 2 颗
+  await enterAdminSpace(page)
+  await adminNavTab(page, /^知识点库/).click()
+  await page.getByRole('tab', { name: /闯关游戏管控/ }).click()
+  const ctrl = page.getByRole('region', { name: '闯关游戏基础管控' })
+  await expect(ctrl).toBeVisible()
+
+  const toggleAlchemyBtn = ctrl.locator('.control-row', { hasText: '知识合成工坊' }).locator('button.toggle-pill')
+  await expect(toggleAlchemyBtn).toContainText('已开启')
+  const putPromise1 = page.waitForResponse(
+    res => res.url().includes('/api/admin/knowledge/game-config/math') && res.request().method() === 'PUT',
+  )
+  await toggleAlchemyBtn.click()
+  expect((await putPromise1).status()).toBe(200)
+  await expect(toggleAlchemyBtn).toContainText('已停用')
+
+  const putPromise2 = page.waitForResponse(
+    res => res.url().includes('/api/admin/knowledge/game-config/math') && res.request().method() === 'PUT',
+  )
+  await ctrl.getByLabel(/每局初始护盾生命数/).selectOption('2')
+  expect((await putPromise2).status()).toBe(200)
+
+  // 4. 切回学生端验证：知识合成工坊已隐藏，迷雾探险显示 2 颗护盾
+  await enterSpace(page)
+  await navTab(page, /知识点展示/).click()
+  await expect(page.getByRole('button', { name: /知识合成工坊/ })).toHaveCount(0)
+  await page.getByRole('button', { name: /迷雾科技树探险/ }).click()
+  await expect(page.getByLabel('当前剩余护盾 2 颗')).toBeVisible()
+
+  // 5. 管理端恢复默认设置并测试重置游戏进度
+  await enterAdminSpace(page)
+  await adminNavTab(page, /^知识点库/).click()
+  await page.getByRole('tab', { name: /闯关游戏管控/ }).click()
+  const ctrlRestore = page.getByRole('region', { name: '闯关游戏基础管控' })
+  await ctrlRestore.locator('.control-row', { hasText: '知识合成工坊' }).locator('button.toggle-pill').click()
+  await ctrlRestore.getByLabel(/每局初始护盾生命数/).selectOption('3')
+  const resetPromise = page.waitForResponse(
+    res => res.url().includes('/api/admin/knowledge/game-config/math') && res.request().method() === 'PUT',
+  )
+  await ctrlRestore.getByRole('button', { name: /重置本学科游戏进度/ }).click()
+  expect((await resetPromise).status()).toBe(200)
+  await expect(ctrlRestore).toContainText('第 1 版')
 })
