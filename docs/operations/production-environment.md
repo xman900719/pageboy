@@ -178,6 +178,15 @@ sequenceDiagram
 </details>
 
 ### 完整部署执行命令
+
+**方式一（推荐 · 一键自动化发布与终验脚本）**：在开发仓库以 `xc` 执行（自动依次完成分支/隔离预检、单向推送 `release.git`、单次 `sudo -iu shutong-prod` 提权内执行升级前 R2 联合冷备 + `git pull` + `infra/deploy.sh --web` + `alembic current` + `taxonomy_audit`，并退回 `xc` 核验线上 `app_revision`、`CF-Ray` 403 阻断与静态产物）：
+```bash
+cd /media/xc/backup_ext4/code/pageboy
+bash scripts/release_prod.sh --dry-run   # 先做只读预检
+bash scripts/release_prod.sh             # 正式发布（仅提示一次 sudo 口令）
+```
+
+**方式二（手动分步执行）**：
 ```bash
 # 步骤 1：开发机提交并通过本地门禁后，推送到生产发布裸仓库
 cd /media/xc/backup_ext4/code/pageboy
@@ -186,13 +195,17 @@ git push /media/xc/backup_ext4/pageboy-home/production/release.git HEAD:refs/hea
 # 步骤 2：切换至生产专用用户
 sudo -iu shutong-prod
 
-# 步骤 3：在生产检出代码库拉取并执行部署
+# 步骤 3：升级前先执行 R2 联合冷备（跨迁移前必做）
 cd /media/xc/backup_ext4/pageboy-home/production/repo
-git pull
-infra/deploy.sh --web
+ENV_FILE=/media/xc/backup_ext4/pageboy-home/production/env/prod.env bash infra/backup.sh
 
-# 步骤 4（首次 V2 上线或新增课标体系后）：在容器内幂等审核并发布四科 v2022.1.0 知识体系
-docker compose --env-file ../env/prod.env -f infra/compose.yaml -f infra/compose.local.yaml exec -T api \
+# 步骤 4：在生产检出代码库拉取并执行部署
+git pull --ff-only
+ENV_FILE=/media/xc/backup_ext4/pageboy-home/production/env/prod.env infra/deploy.sh --web
+
+# 步骤 5（首次 V2 上线或新增课标体系后）：在容器内幂等审核并发布四科 v2022.1.0 知识体系
+docker compose --env-file /media/xc/backup_ext4/pageboy-home/production/env/prod.env \
+  -f infra/compose.yaml -f infra/compose.local.yaml exec -T api \
   python -m shutong.taxonomy_audit
 ```
 
