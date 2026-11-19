@@ -660,51 +660,125 @@ test('J4c 校考待核对明细：纯文字卷提取、题号自然排序、分�
   await expect(confirmedList).toContainText('已确认')
   await expect(confirmedList).toContainText('待学生复盘')
 
-  // 切换至学生端「校考错题复盘」：先看台账目录，再钻取进入单场复盘，且绝不展示“防敷衍”说教文字
+  // 切换至学生端「校考复盘」：先看台账目录，确认不展示「日常练习错题回顾」，再钻取进入单场三步引导复盘
   await enterSpace(page)
-  await navTab(page, /错题复盘/).click()
-  const reflectionRegion = page.getByRole('region', { name: '校考错题复盘工作台' })
+  await navTab(page, /校考复盘/).click()
+  const reflectionRegion = page.getByRole('region', { name: '校考复盘工作台' })
   await expect(reflectionRegion).toBeVisible()
-  await expect(reflectionRegion.locator('h2')).toHaveText('校考错题复盘')
+  await expect(reflectionRegion.locator('h2')).toHaveText('校考复盘')
   await expect(reflectionRegion).not.toContainText('防敷衍')
   await expect(reflectionRegion).not.toContainText('系统会拦截敷衍套话')
+  await expect(page.locator('main')).not.toContainText('日常练习错题回顾')
   const examTile = reflectionRegion.locator('article.reflection-exam-tile', { hasText: '十月数学待核明细演示' })
   await expect(examTile).toBeVisible()
   await examTile.getByRole('button', { name: /进入本场复盘/ }).click()
   await expect(reflectionRegion.getByRole('button', { name: /返回校考台账/ })).toBeVisible()
+  await expect(reflectionRegion.getByRole('tablist', { name: '错题切换' })).toBeVisible()
+  await expect(reflectionRegion.locator('li.reflection-card')).toHaveCount(1)
   const q1ReflectionCard = reflectionRegion.locator('li.reflection-card', { hasText: '第1题' }).first()
   await expect(q1ReflectionCard).toBeVisible()
-  await q1ReflectionCard.getByRole('button', { name: '运算/粗心失误' }).click()
-  await q1ReflectionCard.getByLabel('第1题 具体失分卡点').fill('太粗心了没看清看错了')
-  await q1ReflectionCard.getByLabel('第1题 改进对策').fill('下次一定注意认真审题')
-  await q1ReflectionCard.getByRole('button', { name: '提交复盘' }).click()
-  await expect(q1ReflectionCard.locator('.reflection-reject-alert')).toContainText('不能仅写')
+  // 第 1 步：回到考场
+  await q1ReflectionCard.getByRole('button', { name: /一看就有思路/ }).click()
+  // 第 2 步：找到那一步（先测套话与仅点句式起头不补全被追问）
+  await q1ReflectionCard.getByRole('button', { name: /运算\/粗心失误/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 当时卡在哪一步').fill('太粗心了没看清看错了')
+  await q1ReflectionCard.getByRole('button', { name: /下一步：写给下次的自己/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 给下次的提醒').fill('下次一定注意认真审题')
+  await q1ReflectionCard.getByRole('button', { name: '收好提醒卡 ✓' }).click()
+  await expect(q1ReflectionCard.locator('.reflection-reject-alert')).toContainText('粗心')
 
-  await q1ReflectionCard.getByLabel('第1题 具体失分卡点').fill('去分母移项时常数项正负号抄反导致判别式计算错误')
-  await q1ReflectionCard.getByLabel('第1题 改进对策').fill('每次移项后立刻代回原等式核对正负号再继续求解')
-  await q1ReflectionCard.getByRole('button', { name: '提交复盘' }).click()
-  await expect(page.getByRole('status')).toContainText('已完成高质量复盘')
+  // 仅点句式起头不补全也会被追问
+  await q1ReflectionCard.getByRole('button', { name: /② 找到那一步/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 当时卡在哪一步').fill('')
+  await q1ReflectionCard.getByRole('button', { name: /在「」这一步/ }).click()
+  await q1ReflectionCard.getByRole('button', { name: /下一步：写给下次的自己/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 给下次的提醒').fill('')
+  await q1ReflectionCard.getByRole('button', { name: /如果再看到「」/ }).click()
+  await q1ReflectionCard.getByRole('button', { name: '收好提醒卡 ✓' }).click()
+  await expect(q1ReflectionCard.locator('.reflection-reject-alert')).toContainText('具体')
+
+  // 填写具体复盘后成功收好提醒卡
+  await q1ReflectionCard.getByRole('button', { name: /② 找到那一步/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 当时卡在哪一步').fill('去分母移项时常数项正负号抄反导致判别式计算错误')
+  await q1ReflectionCard.getByRole('button', { name: /下一步：写给下次的自己/ }).click()
+  await q1ReflectionCard.getByLabel('第1题 给下次的提醒').fill('每次移项后立刻代回原等式核对正负号再继续求解')
+  await q1ReflectionCard.getByRole('button', { name: '收好提醒卡 ✓' }).click()
+  await expect(page.getByRole('status')).toContainText('提醒卡已收好')
   await reflectionRegion.getByRole('button', { name: /返回校考台账/ }).click()
   await expect(reflectionRegion.locator('article.reflection-exam-tile', { hasText: '十月数学待核明细演示' })).toBeVisible()
 
-  // 回到管理端：只读查看学生复盘并校验「错误分析与复盘」联动更新，同时验证「退回重写」闭环
+  // 回到管理端：第四阶段「错误分析与复盘」集中查看学生复盘、确认失分题干与退回重写闭环
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
   const adminExamRegion = page.getByRole('region', { name: '学校考试总分' })
   await adminExamRegion.locator('button.exam-pick', { hasText: '十月数学待核明细演示' }).click()
   await adminExamRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
-  await expect(adminExamRegion.locator('#exam-panel-analysis')).toContainText('本场失分概览与错因分布')
-  await expect(adminExamRegion.locator('#exam-panel-analysis')).toContainText('运算/粗心失误')
+  const adminAnalysisPanel = adminExamRegion.locator('#exam-panel-analysis')
+  await expect(adminAnalysisPanel).toContainText('本场失分概览与错因分布')
+  await expect(adminAnalysisPanel).toContainText('运算/粗心失误')
 
-  await adminExamRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
-  const q1AdminRow = adminExamRegion.locator('#exam-panel-items li.attachment-row', { hasText: '第1题' }).first()
+  // 进入第 4 步「失分题干与学生复盘」：编辑并确认第 1 题题干（含公式）与作答，并验证退回重写
+  await adminAnalysisPanel.getByRole('button', { name: /4\. 失分题干与学生复盘/ }).click()
+  const q1AdminRow = adminAnalysisPanel.locator('li.attachment-row', { hasText: '第1题' }).first()
   await expect(q1AdminRow).toContainText('学生已复盘')
   await expect(q1AdminRow).toContainText('去分母移项时常数项正负号抄反')
+  await q1AdminRow.getByRole('button', { name: /编辑 \/ 确认原题与作答/ }).click()
+  await q1AdminRow.getByLabel('第1题 原题题干').fill('解方程 $x^2 - 4 = 0$')
+  await q1AdminRow.getByLabel('第1题 学生当时作答').fill('x = 2')
+  await q1AdminRow.getByRole('button', { name: '确认题干' }).click()
+  await expect(q1AdminRow).toContainText('题干已确认')
+
   await q1AdminRow.getByRole('button', { name: '退回重写' }).click()
   await q1AdminRow.getByLabel('第1题 退回重写原因').fill('请补充说明判别式具体算成了多少')
   await q1AdminRow.getByRole('button', { name: '确认退回重写' }).click()
   await expect(q1AdminRow).toContainText('已退回重写')
   await expectHonestLanguage(page)
+
+  // 切回学生端确认：已确认题干显示 KaTeX 公式与「我当时的作答」，家长留言可见
+  await enterSpace(page)
+  await navTab(page, /校考复盘/).click()
+  const stuExamTile = page.getByRole('region', { name: '校考复盘工作台' }).locator('article.reflection-exam-tile', {
+    hasText: '十月数学待核明细演示',
+  })
+  await stuExamTile.getByRole('button', { name: /进入本场复盘/ }).click()
+  const q1StuCard = page.locator('li.reflection-card', { hasText: '第1题' }).first()
+  await expect(q1StuCard).toContainText('家长想和你再聊聊这题')
+  await expect(q1StuCard).toContainText('家长留言：请补充说明判别式具体算成了多少')
+  await expect(q1StuCard.locator('.reflection-stem-box .katex')).toBeVisible()
+  await expect(q1StuCard.locator('.reflection-stem-box')).toContainText('x = 2')
+
+  // ST-023：校考复盘「书童陪你想」对话 → 2轮后整理草稿回填三步卡 → 收好提醒卡 → 管理端只读回溯
+  await q1StuCard.getByRole('button', { name: /书童陪你想/ }).click()
+  const coachPanel = q1StuCard.getByRole('region', { name: '第1题 书童陪你想' })
+  await expect(coachPanel).toBeVisible()
+  await expect(coachPanel.locator('.msg-row.ai')).toHaveCount(1)
+
+  await coachPanel.getByLabel('第1题 给书童发消息').fill('我去分母移项的时候把负号弄反了')
+  await coachPanel.getByRole('button', { name: '发送' }).click()
+  await expect(coachPanel.locator('.msg-row.stu')).toHaveCount(1)
+  await expect(coachPanel).toContainText('1/2')
+
+  await coachPanel.getByLabel('第1题 给书童发消息').fill('下次移项我先圈出负号再代回原式验算')
+  await coachPanel.getByRole('button', { name: '发送' }).click()
+  await expect(coachPanel.locator('.msg-row.stu')).toHaveCount(2)
+
+  await coachPanel.getByRole('button', { name: /把刚才聊明白的整理成提醒卡草稿/ }).click()
+  await expect(q1StuCard.locator('.reflection-coach-hint')).toContainText('书童按你刚才聊的内容起草了草稿')
+  await expect(q1StuCard.getByLabel('第1题 给下次的提醒')).toHaveValue(/代回原式验算/)
+  await q1StuCard.getByRole('button', { name: '收好提醒卡 ✓' }).click()
+  await expect(page.getByRole('status')).toContainText('提醒卡已收好')
+
+  // 切回管理端第四阶段第 4 步：折叠展开只读查看学生与书童对话过程
+  await enterAdminSpace(page)
+  await adminNavTab(page, /学校考试/).click()
+  const adminExamRegion2 = page.getByRole('region', { name: '学校考试总分' })
+  await adminExamRegion2.locator('button.exam-pick', { hasText: '十月数学待核明细演示' }).click()
+  await adminExamRegion2.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  const adminAnalysisPanel2 = adminExamRegion2.locator('#exam-panel-analysis')
+  await adminAnalysisPanel2.getByRole('button', { name: /4\. 失分题干与学生复盘/ }).click()
+  const q1AdminRow2 = adminAnalysisPanel2.locator('li.attachment-row', { hasText: '第1题' }).first()
+  await q1AdminRow2.getByRole('button', { name: /查看书童对话过程/ }).click()
+  await expect(q1AdminRow2.locator('.admin-coach-readonly')).toContainText('把负号弄反了')
 })
 
 /* ---------- J5 审核台：录入真题全闭环 ---------- */

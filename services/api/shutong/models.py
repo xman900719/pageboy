@@ -196,6 +196,12 @@ class SchoolExamItem(Base):
     draft_confidence: Mapped[str | None] = mapped_column(String(24), nullable=True)
     draft_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     draft_knowledge_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # 0021：失分题题干与学生作答（逐题仅 AI 解析一次，家长确认后才对学生与书童可见）
+    stem_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    student_answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stem_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stem_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stem_state_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class SchoolPaperAttachment(Base):
@@ -457,6 +463,32 @@ class AiErrorDiagnosis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SchoolReflectionCoachSession(Base):
+    """校考失分题「书童陪你想」苏格拉底对话会话（按单道失分小题唯一绑定）。"""
+    __tablename__ = "school_reflection_coach_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    learner_id: Mapped[str] = mapped_column(String(40), index=True, default="owner")
+    school_exam_item_id: Mapped[str] = mapped_column(ForeignKey("school_exam_items.id"), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | summarized
+    draft_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class SchoolReflectionCoachTurn(Base):
+    """校考失分题书童引导多轮对话记录。"""
+    __tablename__ = "school_reflection_coach_turns"
+    __table_args__ = (UniqueConstraint("session_id", "turn_index", name="uq_school_coach_session_turn"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    session_id: Mapped[str] = mapped_column(ForeignKey("school_reflection_coach_sessions.id"), index=True)
+    turn_index: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(20))  # user | assistant
+    content: Mapped[str] = mapped_column(Text)
+    model_used: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    sanitized_guard_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class SchoolExamReport(Base):

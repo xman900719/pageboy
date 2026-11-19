@@ -306,6 +306,43 @@ class AdminReturnReflectionIn(BaseModel):
         return self
 
 
+class SchoolItemStemExtractIn(BaseModel):
+    """管理端按需抽取校考失分题题干与学生作答请求。"""
+    mask_student_header: bool = True
+    batch_size: int = Field(default=3, ge=1, le=10)
+
+
+class SchoolItemStemExtractOut(BaseModel):
+    """失分题题干与学生作答抽取结果（同一题永不重复 AI 解析）。"""
+    requested: int
+    embedded: int
+    vision: int
+    not_found: int
+    remaining_unextracted: int = 0
+    ai_called: bool
+    ai_unavailable_reason: str | None = None
+
+
+class SchoolItemStemPatchIn(BaseModel):
+    """管理端编辑或确认单道失分题题干与学生作答。"""
+    stem_text: str | None = Field(default=None, max_length=800)
+    student_answer_text: str | None = Field(default=None, max_length=400)
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def normalize_texts(self):
+        if self.stem_text is not None:
+            self.stem_text = self.stem_text.strip() or None
+        if self.student_answer_text is not None:
+            self.student_answer_text = self.student_answer_text.strip() or None
+        return self
+
+
+class SchoolExamStemsConfirmOut(BaseModel):
+    """批量确认待核对题干草稿结果。"""
+    confirmed_count: int
+
+
 class StudentSchoolReflectionItemOut(BaseModel):
     """面向学生端的校考失分复盘条目（严禁泄露内部 knowledge_id）。"""
     item_id: str
@@ -319,12 +356,63 @@ class StudentSchoolReflectionItemOut(BaseModel):
     max_points: float
     lost_points: float
     stem_excerpt: str | None = None
+    student_answer_excerpt: str | None = None
     reflection_status: ReflectionStatus
     error_category: SchoolErrorCategory | None = None
     stuck_point: str = ""
     fix_strategy: str = ""
     return_reason: str | None = None
     ai_audit_mode: str | None = None
+    coach_turn_count: int = 0
+
+
+class SchoolCoachStartIn(BaseModel):
+    """开启校考「书童陪你想」对话可选考场情境提示。"""
+    scene_hint: str | None = Field(default=None, max_length=32)
+
+
+class SchoolCoachMessageIn(BaseModel):
+    """学生端在「书童陪你想」中发送一条复盘思考消息。"""
+    content: str = Field(min_length=1, max_length=400)
+
+    @model_validator(mode="after")
+    def strip_content(self):
+        self.content = self.content.strip()
+        if not self.content:
+            raise ValueError("消息内容不能为空")
+        return self
+
+
+class SchoolCoachTurnOut(BaseModel):
+    """校考书童单轮对话条目。"""
+    id: str
+    turn_index: int
+    role: Literal["user", "assistant"]
+    content: str
+    model_used: str | None = None
+    sanitized_guard_triggered: bool = False
+    created_at: str
+
+
+class SchoolCoachDraftOut(BaseModel):
+    """书童基于学生对话忠实归纳的提醒卡草稿（绝不自动提交）。"""
+    error_category: SchoolErrorCategory | None = None
+    stuck_point: str = ""
+    fix_strategy: str = ""
+    ready: bool = False
+
+
+class SchoolCoachSessionOut(BaseModel):
+    """校考失分题「书童陪你想」对话会话状态。"""
+    id: str | None = None
+    item_id: str
+    started: bool = False
+    status: str = "inactive"
+    user_turn_count: int = 0
+    max_user_turns: int = 12
+    can_summarize: bool = False
+    draft_summary: SchoolCoachDraftOut | None = None
+    turns: list[SchoolCoachTurnOut] = Field(default_factory=list)
 
 
 class StudentSchoolReflectionsResponseOut(BaseModel):

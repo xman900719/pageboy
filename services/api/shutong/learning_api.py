@@ -24,9 +24,7 @@ from .guidance import (
 )
 from .school_paper_parser import (
     audit_reflection_with_deepseek,
-    extract_embedded_text,
     format_structured_reflection_note,
-    parse_paper_skeleton_from_text,
     parse_structured_reflection_note,
     validate_reflection_not_perfunctory,
 )
@@ -45,6 +43,11 @@ from .schemas import (
     PracticeSessionCreateIn,
     PracticeSessionItemPlanOut,
     PracticeSessionOut,
+    SchoolCoachDraftOut,
+    SchoolCoachMessageIn,
+    SchoolCoachSessionOut,
+    SchoolCoachStartIn,
+    SchoolCoachTurnOut,
     SchoolExamSubject,
     StudentSchoolReflectionItemOut,
     StudentSchoolReflectionsResponseOut,
@@ -1167,36 +1170,6 @@ def _resolve_student_school_topic(subject: str, knowledge_id: str, name_map: dic
     return get_topic_label(kid)
 
 
-def _extract_exam_stem_map(
-    db: Session, exam_id: str, owner: str, subject: str, nodes: list[dict]
-) -> dict[str, str]:
-    """按题号读取已归档原卷的内嵌文字摘要（不触发慢速 OCR）。"""
-    attachments = db.execute(
-        select(m.SchoolPaperAttachment).where(
-            m.SchoolPaperAttachment.school_exam_id == exam_id,
-            m.SchoolPaperAttachment.owner_id == owner,
-        )
-    ).scalars().all()
-    ordered = sorted(attachments, key=lambda a: (1 if "答题卡" in a.filename else 0, a.created_at, a.id))
-    for att in ordered:
-        try:
-            data = files.blob_path(att.storage_key).read_bytes()
-            text = extract_embedded_text(data, att.media_type)
-        except Exception:
-            text = ""
-        if not text:
-            continue
-        by_num: dict[str, str] = {}
-        for parsed in parse_paper_skeleton_from_text(text, subject, nodes, attachment_id=att.id):
-            m_num = re.search(r"(\d+)", str(parsed.get("question_label") or ""))
-            stem = str(parsed.get("stem") or "").strip()
-            if m_num and stem and m_num.group(1) not in by_num:
-                by_num[m_num.group(1)] = stem[:260]
-        if by_num:
-            return by_num
-    return {}
-
-
 @router.get("/api/student/school-exam-reflections", response_model=StudentSchoolReflectionsResponseOut)
 def list_student_school_exam_reflections(
     subject: SchoolExamSubject | None = None,
@@ -1226,8 +1199,24 @@ def list_student_school_exam_reflections(
             filtered_rows.append((item, exam, parsed))
 
     nodes_cache: dict[str, tuple[list[dict], dict[str, str]]] = {}
-    stem_cache: dict[str, dict[str, str]] = {}
     out_items: list[StudentSchoolReflectionItemOut] = []
+
+    item_ids = [pair[0].id for pair in filtered_rows]
+    coach_turn_counts: dict[str, int] = {}
+    if item_ids:
+        cnt_rows = db.execute(
+            select(
+                m.SchoolReflectionCoachSession.school_exam_item_id,
+                func.count(m.SchoolReflectionCoachTurn.id),
+            )
+            .join(
+                m.SchoolReflectionCoachTurn,
+                m.SchoolReflectionCoachTurn.session_id == m.SchoolReflectionCoachSession.id,
+            )
+            .where(m.SchoolReflectionCoachSession.school_exam_item_id.in_(item_ids))
+            .group_by(m.SchoolReflectionCoachSession.school_exam_item_id)
+        ).all()
+        coach_turn_counts = {str(r[0]): int(r[1]) for r in cnt_rows}
 
     filtered_rows.sort(
         key=lambda pair: (
@@ -1241,11 +1230,12 @@ def list_student_school_exam_reflections(
         if exam.subject not in nodes_cache:
             nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
             nodes_cache[exam.subject] = (nodes, {n["code"]: n["name"] for n in nodes})
-        nodes, name_map = nodes_cache[exam.subject]
-        if exam.id not in stem_cache:
-            stem_cache[exam.id] = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
-        m_num = re.search(r"(\d+)", str(item.question_label or ""))
-        stem_excerpt = stem_cache[exam.id].get(m_num.group(1)) if m_num else None
+        _nodes, name_map = nodes_cache[exam.subject]
+        is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+        stem_excerpt = item.stem_text if is_stem_confirmed else None
+        student_answer_excerpt = (
+            item.student_answer_text if is_stem_confirmed and item.student_answer_text else None
+        )
 
         out_items.append(
             StudentSchoolReflectionItemOut(
@@ -1260,11 +1250,13 @@ def list_student_school_exam_reflections(
                 max_points=item.max_points,
                 lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
                 stem_excerpt=stem_excerpt,
+                student_answer_excerpt=student_answer_excerpt,
                 reflection_status=parsed["reflection_status"],
                 error_category=item.error_category,
                 stuck_point=parsed["stuck_point"],
                 fix_strategy=parsed["fix_strategy"],
                 return_reason=parsed["return_reason"],
+                coach_turn_count=coach_turn_counts.get(item.id, 0),
             )
         )
 
@@ -1302,9 +1294,11 @@ def submit_student_school_exam_reflection(
     nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
     name_map = {n["code"]: n["name"] for n in nodes}
     topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
-    stem_map = _extract_exam_stem_map(db, exam.id, student, exam.subject, nodes)
-    m_num = re.search(r"(\d+)", str(item.question_label or ""))
-    stem_excerpt = stem_map.get(m_num.group(1)) if m_num else None
+    is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+    stem_excerpt = item.stem_text if is_stem_confirmed else None
+    student_answer_excerpt = (
+        item.student_answer_text if is_stem_confirmed and item.student_answer_text else None
+    )
 
     # Stage 2: DeepSeek 语义审阅官把关（未配置或超时时平滑降级为本地严规放行）
     passed, coach_feedback, audit_mode = audit_reflection_with_deepseek(
@@ -1340,6 +1334,7 @@ def submit_student_school_exam_reflection(
         max_points=item.max_points,
         lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
         stem_excerpt=stem_excerpt,
+        student_answer_excerpt=student_answer_excerpt,
         reflection_status=parsed["reflection_status"],
         error_category=item.error_category,
         stuck_point=parsed["stuck_point"],
@@ -1347,6 +1342,322 @@ def submit_student_school_exam_reflection(
         return_reason=parsed["return_reason"],
         ai_audit_mode=audit_mode,
     )
+
+
+_SCHOOL_COACH_MAX_USER_TURNS = 12
+
+
+def _load_owned_lost_school_item(
+    db: Session, item_id: str, learner_id: str
+) -> tuple[m.SchoolExamItem, m.SchoolExam, str]:
+    """校验归属且必须为已确认失分小题，同时安全映射自然语言考点（绝不泄露内部编码）。"""
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    exam = db.get(m.SchoolExam, item.school_exam_id)
+    if exam is None or exam.learner_id != learner_id:
+        raise HTTPException(status_code=404, detail="item not found")
+    if not item.confirmed_by_user:
+        raise HTTPException(status_code=409, detail="SCHOOL_ITEM_NOT_CONFIRMED")
+    if item.earned_points >= item.max_points:
+        raise HTTPException(status_code=422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
+    nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
+    name_map = {n["code"]: n["name"] for n in nodes}
+    topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
+    return item, exam, topic
+
+
+def serialize_school_coach_session(
+    db: Session,
+    item_id: str,
+    session_obj: m.SchoolReflectionCoachSession | None,
+) -> SchoolCoachSessionOut:
+    """序列化校考「书童陪你想」会话状态与历史轮次。"""
+    if session_obj is None:
+        return SchoolCoachSessionOut(
+            id=None,
+            item_id=item_id,
+            started=False,
+            status="inactive",
+            user_turn_count=0,
+            max_user_turns=_SCHOOL_COACH_MAX_USER_TURNS,
+            can_summarize=False,
+            draft_summary=None,
+            turns=[],
+        )
+    turns = db.execute(
+        select(m.SchoolReflectionCoachTurn)
+        .where(m.SchoolReflectionCoachTurn.session_id == session_obj.id)
+        .order_by(m.SchoolReflectionCoachTurn.turn_index.asc())
+    ).scalars().all()
+    user_turns = [t for t in turns if t.role == "user"]
+    effective_user_chars = sum(len(re.findall(r"[\u4e00-\u9fffA-Za-z]", t.content or "")) for t in user_turns)
+    draft_obj: SchoolCoachDraftOut | None = None
+    if isinstance(session_obj.draft_summary, dict):
+        raw_cat = session_obj.draft_summary.get("error_category")
+        draft_obj = SchoolCoachDraftOut(
+            error_category=raw_cat if raw_cat in {"concept", "calculation", "reading", "method", "norm", "other"} else None,
+            stuck_point=str(session_obj.draft_summary.get("stuck_point") or ""),
+            fix_strategy=str(session_obj.draft_summary.get("fix_strategy") or ""),
+            ready=bool(session_obj.draft_summary.get("ready")),
+        )
+    return SchoolCoachSessionOut(
+        id=session_obj.id,
+        item_id=item_id,
+        started=len(turns) > 0,
+        status=session_obj.status,
+        user_turn_count=len(user_turns),
+        max_user_turns=_SCHOOL_COACH_MAX_USER_TURNS,
+        can_summarize=len(user_turns) >= 2 and effective_user_chars >= 10,
+        draft_summary=draft_obj,
+        turns=[
+            SchoolCoachTurnOut(
+                id=t.id,
+                turn_index=t.turn_index,
+                role="assistant" if t.role == "assistant" else "user",
+                content=t.content,
+                model_used=t.model_used,
+                sanitized_guard_triggered=bool(t.sanitized_guard_triggered),
+                created_at=t.created_at.isoformat() if t.created_at else "",
+            )
+            for t in turns
+        ],
+    )
+
+
+@router.get("/api/student/school-exam-reflections/{item_id}/coach", response_model=SchoolCoachSessionOut)
+def get_student_school_reflection_coach(
+    item_id: str,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """只读读取校考失分题的「书童陪你想」历史对话（零 AI 调用）。"""
+    _load_owned_lost_school_item(db, item_id, student)
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == student,
+        )
+    ).scalar_one_or_none()
+    return serialize_school_coach_session(db, item_id, session_obj)
+
+
+@router.post("/api/student/school-exam-reflections/{item_id}/coach/start", response_model=SchoolCoachSessionOut)
+def start_student_school_reflection_coach(
+    item_id: str,
+    payload: SchoolCoachStartIn | None = None,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """幂等开启「书童陪你想」对话；若已有轮次则直接恢复，绝不重复调用 AI。"""
+    item, exam, topic = _load_owned_lost_school_item(db, item_id, student)
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == student,
+        )
+    ).scalar_one_or_none()
+
+    if session_obj is not None:
+        existing_out = serialize_school_coach_session(db, item_id, session_obj)
+        if existing_out.started:
+            return existing_out
+
+    is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+    confirmed_stem = item.stem_text if is_stem_confirmed else None
+    confirmed_ans = item.student_answer_text if (is_stem_confirmed and item.student_answer_text) else None
+    scene_hint = payload.scene_hint if payload else None
+
+    system_prompt = ai_tutor.build_school_reflection_coach_prompt(
+        subject=exam.subject,
+        topic=topic,
+        question_label=item.question_label,
+        earned_points=item.earned_points,
+        max_points=item.max_points,
+        stem_text=confirmed_stem,
+        student_answer_text=confirmed_ans,
+        scene_hint=scene_hint,
+    )
+    opener_trigger = (
+        "请用温和自然的口吻向学生打个招呼，结合题目与考点提出第 1 个容易回答的小问题，陪他开始复盘这道题。"
+        if confirmed_stem
+        else "当前系统尚未录入原卷题干，请温和向学生打招呼并说明你暂时看不到原题，请他先用一句话说说这题考什么、当时第一步是怎么想的。"
+    )
+    try:
+        reply_text, guard_triggered, model_used = ai_tutor.request_school_reflection_coach_reply(
+            system_prompt=system_prompt,
+            history_turns=[{"role": "user", "content": opener_trigger}],
+            topic=topic,
+            has_stem=bool(confirmed_stem),
+        )
+    except ai_tutor.AiTutorConfigError as exc:
+        raise HTTPException(status_code=503, detail="COACH_NOT_CONFIGURED") from exc
+    except ai_tutor.AiTutorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=f"COACH_UNAVAILABLE: {exc}") from exc
+
+    if session_obj is None:
+        session_obj = m.SchoolReflectionCoachSession(
+            learner_id=student,
+            school_exam_item_id=item_id,
+            status="active",
+        )
+        db.add(session_obj)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            existing = db.execute(
+                select(m.SchoolReflectionCoachSession).where(
+                    m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+                    m.SchoolReflectionCoachSession.learner_id == student,
+                )
+            ).scalar_one_or_none()
+            return serialize_school_coach_session(db, item_id, existing)
+
+    db.add(
+        m.SchoolReflectionCoachTurn(
+            session_id=session_obj.id,
+            turn_index=0,
+            role="assistant",
+            content=reply_text,
+            model_used=model_used,
+            sanitized_guard_triggered=guard_triggered,
+        )
+    )
+    session_obj.updated_at = m.now()
+    db.commit()
+    return serialize_school_coach_session(db, item_id, session_obj)
+
+
+@router.post("/api/student/school-exam-reflections/{item_id}/coach/message", response_model=SchoolCoachSessionOut)
+def send_student_school_reflection_coach_message(
+    item_id: str,
+    payload: SchoolCoachMessageIn,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """学生在「书童陪你想」中追加一条发言，返回书童最新引导追问（单题上限 12 轮用户发言）。"""
+    item, exam, topic = _load_owned_lost_school_item(db, item_id, student)
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == student,
+        )
+    ).scalar_one_or_none()
+    if session_obj is None:
+        session_obj = m.SchoolReflectionCoachSession(
+            learner_id=student,
+            school_exam_item_id=item_id,
+            status="active",
+        )
+        db.add(session_obj)
+        db.flush()
+
+    existing_turns = db.execute(
+        select(m.SchoolReflectionCoachTurn)
+        .where(m.SchoolReflectionCoachTurn.session_id == session_obj.id)
+        .order_by(m.SchoolReflectionCoachTurn.turn_index.asc())
+    ).scalars().all()
+    user_turn_count = sum(1 for t in existing_turns if t.role == "user")
+    if user_turn_count >= _SCHOOL_COACH_MAX_USER_TURNS:
+        raise HTTPException(status_code=409, detail="COACH_TURN_LIMIT_REACHED")
+
+    is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
+    confirmed_stem = item.stem_text if is_stem_confirmed else None
+    confirmed_ans = item.student_answer_text if (is_stem_confirmed and item.student_answer_text) else None
+
+    system_prompt = ai_tutor.build_school_reflection_coach_prompt(
+        subject=exam.subject,
+        topic=topic,
+        question_label=item.question_label,
+        earned_points=item.earned_points,
+        max_points=item.max_points,
+        stem_text=confirmed_stem,
+        student_answer_text=confirmed_ans,
+    )
+    history = [{"role": t.role, "content": t.content} for t in existing_turns]
+    history.append({"role": "user", "content": payload.content})
+
+    try:
+        reply_text, guard_triggered, model_used = ai_tutor.request_school_reflection_coach_reply(
+            system_prompt=system_prompt,
+            history_turns=history,
+            topic=topic,
+            has_stem=bool(confirmed_stem),
+        )
+    except ai_tutor.AiTutorConfigError as exc:
+        raise HTTPException(status_code=503, detail="COACH_NOT_CONFIGURED") from exc
+    except ai_tutor.AiTutorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=f"COACH_UNAVAILABLE: {exc}") from exc
+
+    next_index = (existing_turns[-1].turn_index + 1) if existing_turns else 0
+    db.add(
+        m.SchoolReflectionCoachTurn(
+            session_id=session_obj.id,
+            turn_index=next_index,
+            role="user",
+            content=payload.content,
+        )
+    )
+    db.add(
+        m.SchoolReflectionCoachTurn(
+            session_id=session_obj.id,
+            turn_index=next_index + 1,
+            role="assistant",
+            content=reply_text,
+            model_used=model_used,
+            sanitized_guard_triggered=guard_triggered,
+        )
+    )
+    session_obj.updated_at = m.now()
+    db.commit()
+    return serialize_school_coach_session(db, item_id, session_obj)
+
+
+@router.post("/api/student/school-exam-reflections/{item_id}/coach/summarize", response_model=SchoolCoachSessionOut)
+def summarize_student_school_reflection_coach(
+    item_id: str,
+    student: str = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """基于学生真实对话忠实整理提醒卡草稿（至少 2 轮学生发言，绝不自动提交复盘）。"""
+    item, exam, topic = _load_owned_lost_school_item(db, item_id, student)
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == student,
+        )
+    ).scalar_one_or_none()
+    if session_obj is None:
+        raise HTTPException(status_code=422, detail="COACH_DIALOGUE_TOO_SHORT")
+
+    turns = db.execute(
+        select(m.SchoolReflectionCoachTurn)
+        .where(m.SchoolReflectionCoachTurn.session_id == session_obj.id)
+        .order_by(m.SchoolReflectionCoachTurn.turn_index.asc())
+    ).scalars().all()
+    user_turns = [t for t in turns if t.role == "user"]
+    effective_user_chars = sum(len(re.findall(r"[\u4e00-\u9fffA-Za-z]", t.content or "")) for t in user_turns)
+    if len(user_turns) < 2 or effective_user_chars < 10:
+        raise HTTPException(status_code=422, detail="COACH_DIALOGUE_TOO_SHORT")
+
+    try:
+        summary, _model_used = ai_tutor.request_school_reflection_summary(
+            subject=exam.subject,
+            topic=topic,
+            question_label=item.question_label,
+            dialogue_turns=[{"role": t.role, "content": t.content} for t in turns],
+        )
+    except ai_tutor.AiTutorConfigError as exc:
+        raise HTTPException(status_code=503, detail="COACH_NOT_CONFIGURED") from exc
+    except ai_tutor.AiTutorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=f"COACH_UNAVAILABLE: {exc}") from exc
+
+    session_obj.draft_summary = summary
+    session_obj.status = "summarized"
+    session_obj.updated_at = m.now()
+    db.commit()
+    return serialize_school_coach_session(db, item_id, session_obj)
 
 
 def _serialize_admin_diagnosis(diag: m.AiErrorDiagnosis | None) -> AdminErrorDiagnosisOut | None:

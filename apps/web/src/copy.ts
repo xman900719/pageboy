@@ -5,7 +5,7 @@ export type ViewId = 'practice' | 'growth' | 'knowledge' | 'reflection'
 
 export const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: 'practice', label: '练习', hint: '智能组卷与 AI 错题引导' },
-  { id: 'reflection', label: '错题复盘', hint: '校考失分归因与复盘' },
+  { id: 'reflection', label: '校考复盘', hint: '校考失分归因与提醒卡' },
   { id: 'growth', label: '成长状态', hint: '优势不足 · 目标 · 验证' },
   { id: 'knowledge', label: '知识点展示', hint: '关系图谱与未掌握标注' },
 ]

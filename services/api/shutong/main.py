@@ -1,12 +1,13 @@
 """Private API foundation. Read CODEX_START_HERE.md before extending."""
 from __future__ import annotations
+import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from fastapi import FastAPI, Depends, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import delete, select, func, text
+from sqlalchemy import delete, or_, select, func, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -16,7 +17,7 @@ from .taxonomy_bridge import resolve_question_to_candidate_codes
 from .content import create_question_draft
 from .ingestion import router as ingestion_router, require_import_integrity
 from .fourcorpus import router as corpus_router
-from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence
+from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence, serialize_school_coach_session
 from .research import official_reject_reason
 from .database import get_db
 from .home import HomeIdentityError
@@ -27,10 +28,11 @@ from . import k12100_backfill
 from . import k12100_report_sync
 from . import school_exam_pipeline as exam_pipeline
 from . import school_report_pipeline as report_pipeline
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolCoachSessionOut, SchoolItemStemExtractIn, SchoolItemStemExtractOut, SchoolItemStemPatchIn, SchoolExamStemsConfirmOut, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, question_label_sort_key, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
+logger = logging.getLogger(__name__)
 app.include_router(ingestion_router)
 app.include_router(corpus_router)
 app.include_router(learning_router)
@@ -338,7 +340,12 @@ def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str =
 CORE_SUBJECTS = ("math", "chinese", "english", "physics")
 
 
-def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None = None) -> dict:
+def _serialize_school_exam_item(
+    i: m.SchoolExamItem,
+    knowledge_name: str | None = None,
+    *,
+    coach_turn_count: int = 0,
+) -> dict:
     """统一序列化校考逐题明细（含失分、结构化复盘状态与自动解析草稿元数据）。"""
     parsed_ref = paper_parser.parse_structured_reflection_note(
         i.error_note,
@@ -364,6 +371,11 @@ def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None 
         "draft_confidence": i.draft_confidence,
         "draft_reason": i.draft_reason,
         "draft_knowledge_candidates": i.draft_knowledge_candidates,
+        "stem_text": i.stem_text,
+        "student_answer_text": i.student_answer_text,
+        "stem_state": i.stem_state,
+        "stem_source": i.stem_source,
+        "coach_turn_count": coach_turn_count,
     }
     if knowledge_name is not None:
         out["knowledge_name"] = knowledge_name
@@ -373,11 +385,32 @@ def _serialize_school_exam_item(i: m.SchoolExamItem, knowledge_name: str | None 
 def _serialize_school_exam_items_with_names(
     db: Session, subject: str, items: list[m.SchoolExamItem]
 ) -> list[dict]:
-    """批量附带课标知识点中文名称序列化校考逐题记录。"""
+    """批量附带课标知识点中文名称及书童对话轮次计数序列化校考逐题记录。"""
     if not items:
         return []
     _, _, name_map, _ = _resolve_school_knowledge_meta(db, subject, {it.knowledge_id for it in items})
-    return [_serialize_school_exam_item(it, knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id)) for it in items]
+    item_ids = [it.id for it in items]
+    cnt_rows = db.execute(
+        select(
+            m.SchoolReflectionCoachSession.school_exam_item_id,
+            func.count(m.SchoolReflectionCoachTurn.id),
+        )
+        .join(
+            m.SchoolReflectionCoachTurn,
+            m.SchoolReflectionCoachTurn.session_id == m.SchoolReflectionCoachSession.id,
+        )
+        .where(m.SchoolReflectionCoachSession.school_exam_item_id.in_(item_ids))
+        .group_by(m.SchoolReflectionCoachSession.school_exam_item_id)
+    ).all()
+    turn_counts = {str(r[0]): int(r[1]) for r in cnt_rows}
+    return [
+        _serialize_school_exam_item(
+            it,
+            knowledge_name=name_map.get(it.knowledge_id, it.knowledge_id),
+            coach_turn_count=turn_counts.get(it.id, 0),
+        )
+        for it in items
+    ]
 
 
 def _apply_school_item_confirmation(item: m.SchoolExamItem, payload: SchoolItemConfirmIn) -> None:
@@ -1483,6 +1516,334 @@ def return_school_exam_item_reflection(
     db.refresh(item)
     return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
 
+
+_STEM_CLAIM_TTL = timedelta(minutes=10)
+
+
+@app.post("/api/school-exams/{exam_id}/extract-stems", response_model=SchoolItemStemExtractOut)
+def extract_school_exam_item_stems(
+    exam_id: str,
+    payload: SchoolItemStemExtractIn | None = None,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """按需分批抽取校考失分题题干与学生作答（原子认领，逐题仅 AI 解析一次，绝不覆盖已确认）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+
+    batch_size = payload.batch_size if payload is not None else 3
+    now_ts = m.now()
+    stale_before = now_ts - _STEM_CLAIM_TTL
+    claim_token = f"__claim:{m.uid()[:12]}"
+
+    # 只查 (id, question_label) 元组，避免在 expire_on_commit=False 下污染 Session identity_map
+    candidate_rows = db.execute(
+        select(m.SchoolExamItem.id, m.SchoolExamItem.question_label).where(
+            m.SchoolExamItem.school_exam_id == exam_id,
+            m.SchoolExamItem.confirmed_by_user.is_(True),
+            m.SchoolExamItem.max_points > 0,
+            m.SchoolExamItem.earned_points < m.SchoolExamItem.max_points,
+            or_(
+                m.SchoolExamItem.stem_state.is_(None),
+                (m.SchoolExamItem.stem_state == "extracting") & (m.SchoolExamItem.stem_state_at < stale_before),
+            ),
+        )
+    ).all()
+    candidate_rows.sort(key=lambda r: question_label_sort_key(r[1]))
+    target_ids = [r[0] for r in candidate_rows[:batch_size]]
+
+    if not target_ids:
+        return SchoolItemStemExtractOut(
+            requested=0,
+            embedded=0,
+            vision=0,
+            not_found=0,
+            remaining_unextracted=0,
+            ai_called=False,
+        )
+
+    db.execute(
+        update(m.SchoolExamItem)
+        .where(
+            m.SchoolExamItem.id.in_(target_ids),
+            or_(
+                m.SchoolExamItem.stem_state.is_(None),
+                (m.SchoolExamItem.stem_state == "extracting") & (m.SchoolExamItem.stem_state_at < stale_before),
+            ),
+        )
+        .values(stem_state="extracting", stem_source=claim_token, stem_state_at=now_ts)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    db.expire_all()
+
+    claimed = db.execute(
+        select(m.SchoolExamItem).where(
+            m.SchoolExamItem.school_exam_id == exam_id,
+            m.SchoolExamItem.stem_state == "extracting",
+            m.SchoolExamItem.stem_source == claim_token,
+        )
+    ).scalars().all()
+    claimed.sort(key=lambda r: question_label_sort_key(r.question_label))
+
+    def _release_claim(rows_to_release: list[m.SchoolExamItem]) -> None:
+        release_ids = [r.id for r in rows_to_release]
+        if not release_ids:
+            return
+        db.execute(
+            update(m.SchoolExamItem)
+            .where(
+                m.SchoolExamItem.id.in_(release_ids),
+                m.SchoolExamItem.stem_source == claim_token,
+            )
+            .values(stem_state=None, stem_source=None, stem_state_at=None)
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+        db.expire_all()
+
+    if not claimed:
+        remaining_cnt = db.execute(
+            select(func.count()).select_from(m.SchoolExamItem).where(
+                m.SchoolExamItem.school_exam_id == exam_id,
+                m.SchoolExamItem.confirmed_by_user.is_(True),
+                m.SchoolExamItem.max_points > 0,
+                m.SchoolExamItem.earned_points < m.SchoolExamItem.max_points,
+                m.SchoolExamItem.stem_state.is_(None),
+            )
+        ).scalar_one()
+        return SchoolItemStemExtractOut(
+            requested=0,
+            embedded=0,
+            vision=0,
+            not_found=0,
+            remaining_unextracted=int(remaining_cnt or 0),
+            ai_called=False,
+        )
+
+    attachments = db.execute(
+        select(m.SchoolPaperAttachment).where(
+            m.SchoolPaperAttachment.school_exam_id == exam_id,
+            m.SchoolPaperAttachment.owner_id == owner,
+        )
+    ).scalars().all()
+    ordered_atts = sorted(attachments, key=lambda a: (1 if "答题卡" in a.filename else 0, a.created_at, a.id))
+
+    loaded_atts: list[dict] = []
+    embedded_by_num: dict[str, str] = {}
+    _, nodes, _, _ = _resolve_school_knowledge_meta(db, exam.subject, set())
+    for att in ordered_atts:
+        try:
+            data = files.load_blob(att)
+        except Exception:
+            continue
+        loaded_atts.append(
+            {
+                "id": att.id,
+                "filename": att.filename,
+                "media_type": att.media_type,
+                "data": data,
+            }
+        )
+        if not embedded_by_num:
+            try:
+                txt = paper_parser.extract_embedded_text(data, att.media_type)
+            except Exception:
+                txt = ""
+            if txt:
+                for parsed in paper_parser.parse_paper_skeleton_from_text(txt, exam.subject, nodes, attachment_id=att.id):
+                    m_num = re.search(r"(\d+)", str(parsed.get("question_label") or ""))
+                    stem = str(parsed.get("stem") or "").strip()
+                    if m_num and stem and m_num.group(1) not in embedded_by_num:
+                        embedded_by_num[m_num.group(1)] = stem[:800]
+
+    embedded_count = 0
+    remaining: list[m.SchoolExamItem] = []
+    for row in claimed:
+        m_num = re.search(r"(\d+)", str(row.question_label or ""))
+        emb_stem = embedded_by_num.get(m_num.group(1)) if m_num else None
+        if emb_stem:
+            row.stem_text = emb_stem
+            row.stem_state = "embedded_draft"
+            row.stem_source = "embedded_text"
+            row.stem_state_at = m.now()
+            embedded_count += 1
+        else:
+            remaining.append(row)
+
+    vision_count = 0
+    not_found_count = 0
+    ai_called = False
+    ai_unavailable_reason: str | None = None
+
+    visual_atts = [it for it in loaded_atts if it["media_type"] in ("application/pdf", "image/png", "image/jpeg")]
+    if remaining and visual_atts:
+        cfg = paper_parser.load_vision_config(require_key=False)
+        if cfg is None:
+            _release_claim(remaining)
+            if embedded_count == 0:
+                raise HTTPException(503, detail="VISION_PARSER_NOT_CONFIGURED")
+            ai_unavailable_reason = "VISION_PARSER_NOT_CONFIGURED"
+        else:
+            try:
+                ai_called = True
+                extracted = paper_parser.extract_lost_item_stems_with_deepseek(
+                    subject=exam.subject,
+                    attachments=visual_atts,
+                    lost_labels=[r.question_label for r in remaining],
+                    cfg=cfg,
+                )
+            except paper_parser.VisionParserUnavailableError as exc:
+                logger.warning("extract-stems vision failed exam=%s labels=%s: %s", exam_id, [r.question_label for r in remaining], exc)
+                _release_claim(remaining)
+                if embedded_count == 0:
+                    raise HTTPException(503, detail=str(exc)) from exc
+                ai_unavailable_reason = str(exc)
+            except Exception as exc:
+                logger.exception("extract-stems unexpected failure exam=%s labels=%s", exam_id, [r.question_label for r in remaining])
+                _release_claim(remaining)
+                if embedded_count == 0:
+                    raise HTTPException(500, detail="VISION_PARSER_UNAVAILABLE") from exc
+                ai_unavailable_reason = "VISION_PARSER_UNAVAILABLE"
+            else:
+                for row in remaining:
+                    hit = extracted.get(row.question_label)
+                    if hit and hit.get("stem_text"):
+                        row.stem_text = hit["stem_text"]
+                        row.student_answer_text = hit.get("student_answer_text")
+                        row.stem_state = "vision_draft"
+                        row.stem_source = "vision"
+                        row.stem_state_at = m.now()
+                        vision_count += 1
+                    else:
+                        row.stem_state = "not_found"
+                        row.stem_source = "vision"
+                        row.stem_state_at = m.now()
+                        not_found_count += 1
+    elif remaining:
+        for row in remaining:
+            row.stem_state = "not_found"
+            row.stem_source = "embedded_text"
+            row.stem_state_at = m.now()
+            not_found_count += 1
+
+    db.commit()
+    remaining_cnt = db.execute(
+        select(func.count()).select_from(m.SchoolExamItem).where(
+            m.SchoolExamItem.school_exam_id == exam_id,
+            m.SchoolExamItem.confirmed_by_user.is_(True),
+            m.SchoolExamItem.max_points > 0,
+            m.SchoolExamItem.earned_points < m.SchoolExamItem.max_points,
+            m.SchoolExamItem.stem_state.is_(None),
+        )
+    ).scalar_one()
+    return SchoolItemStemExtractOut(
+        requested=len(claimed),
+        embedded=embedded_count,
+        vision=vision_count,
+        not_found=not_found_count,
+        remaining_unextracted=int(remaining_cnt or 0),
+        ai_called=ai_called,
+        ai_unavailable_reason=ai_unavailable_reason,
+    )
+
+
+@app.patch("/api/school-exams/{exam_id}/items/{item_id}/stem")
+def patch_school_exam_item_stem(
+    exam_id: str,
+    item_id: str,
+    payload: SchoolItemStemPatchIn,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端手工编辑或确认失分题题干与学生作答（不触碰分数与知识点）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    if not item.confirmed_by_user:
+        raise HTTPException(409, detail="SCHOOL_ITEM_NOT_CONFIRMED")
+    if item.earned_points >= item.max_points:
+        raise HTTPException(422, detail="FULL_SCORE_ITEM_HAS_NO_STEM")
+
+    edited = False
+    if "stem_text" in payload.model_fields_set and payload.stem_text != item.stem_text:
+        item.stem_text = payload.stem_text
+        edited = True
+    if "student_answer_text" in payload.model_fields_set and payload.student_answer_text != item.student_answer_text:
+        item.student_answer_text = payload.student_answer_text
+        edited = True
+    if edited:
+        item.stem_source = "owner_edited"
+
+    if payload.confirm:
+        if not (item.stem_text and item.stem_text.strip()):
+            raise HTTPException(422, detail="STEM_TEXT_REQUIRED_TO_CONFIRM")
+        item.stem_state = "confirmed"
+        item.stem_state_at = m.now()
+    elif edited and item.stem_state in (None, "not_found", "extracting"):
+        item.stem_state = "vision_draft"
+        item.stem_state_at = m.now()
+
+    db.commit()
+    db.refresh(item)
+    return _serialize_school_exam_items_with_names(db, exam.subject, [item])[0]
+
+
+@app.post("/api/school-exams/{exam_id}/confirm-stems", response_model=SchoolExamStemsConfirmOut)
+def confirm_school_exam_item_stems(
+    exam_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端批量确认本场所有待核对题干草稿。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    rows = db.execute(
+        select(m.SchoolExamItem).where(
+            m.SchoolExamItem.school_exam_id == exam_id,
+            m.SchoolExamItem.confirmed_by_user.is_(True),
+            m.SchoolExamItem.max_points > 0,
+            m.SchoolExamItem.earned_points < m.SchoolExamItem.max_points,
+            m.SchoolExamItem.stem_state.in_(("embedded_draft", "vision_draft")),
+        )
+    ).scalars().all()
+    confirmed_count = 0
+    for row in rows:
+        if row.stem_text and row.stem_text.strip():
+            row.stem_state = "confirmed"
+            row.stem_state_at = m.now()
+            confirmed_count += 1
+    db.commit()
+    return SchoolExamStemsConfirmOut(confirmed_count=confirmed_count)
+
+@app.get("/api/school-exams/{exam_id}/items/{item_id}/coach", response_model=SchoolCoachSessionOut)
+def get_admin_school_exam_item_coach(
+    exam_id: str,
+    item_id: str,
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端第四阶段只读查看学生与书童的校考复盘对话过程（零 AI 调用）。"""
+    exam = db.get(m.SchoolExam, exam_id)
+    if exam is None or exam.learner_id != owner:
+        raise HTTPException(404, detail="exam not found")
+    item = db.get(m.SchoolExamItem, item_id)
+    if item is None or item.school_exam_id != exam_id:
+        raise HTTPException(404, detail="item not found")
+    session_obj = db.execute(
+        select(m.SchoolReflectionCoachSession).where(
+            m.SchoolReflectionCoachSession.school_exam_item_id == item_id,
+            m.SchoolReflectionCoachSession.learner_id == owner,
+        )
+    ).scalar_one_or_none()
+    return serialize_school_coach_session(db, item_id, session_obj)
+
+
 @app.delete("/api/school-exams/{exam_id}")
 def delete_school_exam(
     exam_id: str,
@@ -1524,6 +1885,25 @@ def delete_school_exam(
         paper.imported_at = None
         paper.error_code = None
         paper.updated_at = m.now()
+    item_ids = [it.id for it in items]
+    if item_ids:
+        coach_sessions = db.execute(
+            select(m.SchoolReflectionCoachSession).where(
+                m.SchoolReflectionCoachSession.school_exam_item_id.in_(item_ids)
+            )
+        ).scalars().all()
+        coach_session_ids = [cs.id for cs in coach_sessions]
+        if coach_session_ids:
+            db.execute(
+                delete(m.SchoolReflectionCoachTurn).where(
+                    m.SchoolReflectionCoachTurn.session_id.in_(coach_session_ids)
+                )
+            )
+            db.execute(
+                delete(m.SchoolReflectionCoachSession).where(
+                    m.SchoolReflectionCoachSession.id.in_(coach_session_ids)
+                )
+            )
     for row in [*items, *attachments, *ranks]:
         db.delete(row)
     db.delete(exam)

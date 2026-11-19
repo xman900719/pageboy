@@ -66,6 +66,15 @@ class MockAiHandler(BaseHTTPRequestHandler):
                     },
                     ensure_ascii=False,
                 )
+            elif "stuck_point" in joined_prompt and "fix_strategy" in joined_prompt and "error_category" in joined_prompt:
+                content = json.dumps(
+                    {
+                        "error_category": "calculation",
+                        "stuck_point": "去分母移项时把常数项正负号抄反了导致判别式算错",
+                        "fix_strategy": "如果再遇到移项去分母的步骤，我就先圈出负号并代回原式验算一遍。",
+                    },
+                    ensure_ascii=False,
+                )
             elif len(assistant_turns) == 0:
                 content = "我们先不急着下结论。你能先指出题干里哪个已知条件决定了这道题的方向吗？"
             else:

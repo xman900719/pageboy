@@ -273,9 +273,21 @@ describe('examSync 四步状态与核对覆盖', () => {
     expect(parseDraftBasisTags(null, null)).toEqual([])
   })
 
-  it('validateReflectionDraftLocally 拦截套话与刷屏并放行具体复盘', () => {
+  it('validateReflectionDraftLocally 拦截套话、刷屏与未补全的句式起头，并放行具体复盘', () => {
     expect(validateReflectionDraftLocally('太粗心了没看清', '下次一定注意认真审题')).not.toBeNull()
     expect(validateReflectionDraftLocally('1111111111111', 'aaaaaaaaaaaaa')).not.toBeNull()
+    expect(
+      validateReflectionDraftLocally(
+        '题目里的「」条件我没用上，当时以为',
+        '如果再看到「」，我就先「」。',
+      ),
+    ).not.toBeNull()
+    expect(
+      validateReflectionDraftLocally(
+        '题目里的「x大于零」条件我没用上，当时以为可以直接代入负一求解',
+        '如果再看到「分式不等式」，我就先「圈出定义域再求解并逐个验根」。',
+      ),
+    ).toBeNull()
     expect(
       validateReflectionDraftLocally(
         '解分式方程时两边同乘最简公分母后忘记检验增根 x=2',

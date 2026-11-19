@@ -13,6 +13,7 @@ import base64
 from dataclasses import dataclass
 from io import BytesIO
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,8 @@ import httpx
 from PIL import Image, ImageDraw
 
 from . import private_files as files
+
+logger = logging.getLogger(__name__)
 from .guidance import SCHOOL_ERROR_CATEGORIES
 
 # 单次视觉解析最多渲染的页数，兼顾完整试卷覆盖与 DeepSeek 请求体体积安全边界
@@ -1026,13 +1029,47 @@ def mask_top_student_header(png_bytes: bytes, ratio: float = HEADER_MASK_RATIO) 
         return buf.getvalue()
 
 
+def _encode_vision_frame(
+    im: Image.Image,
+    *,
+    mask_header: bool,
+    compress_jpeg: bool,
+    max_edge: int,
+    jpeg_quality: int,
+) -> str:
+    """对单页图像执行可选脱敏、等比缩放并编码为可安全外发的 Data URL。"""
+    rgb = im.convert("RGB")
+    if mask_header:
+        buf = BytesIO()
+        rgb.save(buf, format="PNG")
+        with Image.open(BytesIO(mask_top_student_header(buf.getvalue()))) as masked_im:
+            rgb = masked_im.convert("RGB")
+
+    if compress_jpeg:
+        w, h = rgb.size
+        longest = max(w, h)
+        if max_edge > 0 and longest > max_edge:
+            scale = max_edge / float(longest)
+            rgb = rgb.resize((max(1, int(round(w * scale))), max(1, int(round(h * scale)))), Image.Resampling.LANCZOS)
+        out = BytesIO()
+        rgb.save(out, format="JPEG", quality=jpeg_quality, optimize=True)
+        return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+    out = BytesIO()
+    rgb.save(out, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
 def render_masked_pages_for_vision(
     attachments: list[dict[str, Any]],
     *,
     mask_student_header: bool = True,
     max_pages_per_file: int = MAX_VISION_PAGES_PER_ATTACHMENT,
+    compress_jpeg: bool = False,
+    max_edge: int = 1600,
+    jpeg_quality: int = 85,
 ) -> list[dict[str, Any]]:
-    """将校考 PDF/图片附件转为可安全外发 DeepSeek 视觉模型的脱敏 PNG 帧列表。"""
+    """将校考 PDF/图片附件转为可安全外发 DeepSeek 视觉模型的脱敏图像帧列表。"""
     rendered: list[dict[str, Any]] = []
     for att in attachments:
         att_id = str(att["id"])
@@ -1041,22 +1078,23 @@ def render_masked_pages_for_vision(
         data = bytes(att["data"])
 
         if media_type in ("image/png", "image/jpeg"):
-            with Image.open(BytesIO(data)) as im:
-                buf = BytesIO()
-                im.convert("RGB").save(buf, format="PNG")
-                raw_png = buf.getvalue()
             is_sheet = _looks_like_answer_sheet(filename, data)
-            masked = False
-            if mask_student_header and is_sheet:
-                raw_png = mask_top_student_header(raw_png)
-                masked = True
+            masked = bool(mask_student_header and is_sheet)
+            with Image.open(BytesIO(data)) as im:
+                data_url = _encode_vision_frame(
+                    im,
+                    mask_header=masked,
+                    compress_jpeg=compress_jpeg,
+                    max_edge=max_edge,
+                    jpeg_quality=jpeg_quality,
+                )
             rendered.append(
                 {
                     "attachment_id": att_id,
                     "filename": filename,
                     "page": 1,
                     "masked_header": masked,
-                    "data_url": "data:image/png;base64," + base64.b64encode(raw_png).decode("ascii"),
+                    "data_url": data_url,
                 }
             )
             continue
@@ -1086,29 +1124,65 @@ def render_masked_pages_for_vision(
                 continue
             is_sheet = _looks_like_answer_sheet(filename, data, first_page_path=page_files[0])
             for page_idx, page_file in enumerate(page_files, 1):
-                png_bytes = page_file.read_bytes()
-                masked = False
-                if mask_student_header and page_idx == 1 and is_sheet:
-                    png_bytes = mask_top_student_header(png_bytes)
-                    masked = True
+                masked = bool(mask_student_header and page_idx == 1 and is_sheet)
+                with Image.open(page_file) as im:
+                    data_url = _encode_vision_frame(
+                        im,
+                        mask_header=masked,
+                        compress_jpeg=compress_jpeg,
+                        max_edge=max_edge,
+                        jpeg_quality=jpeg_quality,
+                    )
                 rendered.append(
                     {
                         "attachment_id": att_id,
                         "filename": filename,
                         "page": page_idx,
                         "masked_header": masked,
-                        "data_url": "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii"),
+                        "data_url": data_url,
                     }
                 )
     return rendered
 
 
-def _open_httpx_client(timeout_seconds: float, *, trust_env: bool) -> httpx.Client:
+def _open_httpx_client(timeout: float | httpx.Timeout, *, trust_env: bool) -> httpx.Client:
     """构造 httpx 客户端；宿主机若开启 socks5 全局代理但缺 socksio 则回退直连上游。"""
     try:
-        return httpx.Client(timeout=timeout_seconds, trust_env=trust_env)
+        return httpx.Client(timeout=timeout, trust_env=trust_env)
     except ImportError:
-        return httpx.Client(timeout=timeout_seconds, trust_env=False)
+        return httpx.Client(timeout=timeout, trust_env=False)
+
+
+_INVALID_JSON_ESCAPE_RE = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def parse_model_json_content(raw_content: str) -> dict[str, Any]:
+    """容错解析模型返回的 JSON 文本（剥离 Markdown 围栏、提取对象并修复未双写的 LaTeX 反斜杠）。"""
+    text = (raw_content or "").strip()
+    if not text:
+        raise ValueError("empty json content")
+
+    # 剥离 ```json ... ``` 或 ``` ... ``` 代码块围栏
+    m_fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if m_fence:
+        text = m_fence.group(1).strip()
+
+    if not text.startswith("{"):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start : end + 1]
+
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        # 数学/物理公式常出现未双写的 \sqrt / \angle / \cdot 等导致 JSONDecodeError，修复非法转义后重试
+        repaired = _INVALID_JSON_ESCAPE_RE.sub(r"\\\\", text)
+        parsed = json.loads(repaired)
+
+    if not isinstance(parsed, dict):
+        raise ValueError("json root is not object")
+    return parsed
 
 
 def _post_deepseek_json(
@@ -1117,6 +1191,7 @@ def _post_deepseek_json(
     model: str,
     messages: list[dict[str, Any]],
     max_tokens: int = 8192,
+    timeout_override: float | httpx.Timeout | None = None,
 ) -> dict[str, Any]:
     """向 DeepSeek / OpenAI 兼容端点发送结构化 JSON 请求并做统一错误处理。"""
     endpoint = f"{cfg.base_url}/chat/completions" if cfg.base_url.endswith("/v1") else f"{cfg.base_url}/v1/chat/completions"
@@ -1132,8 +1207,9 @@ def _post_deepseek_json(
         "response_format": {"type": "json_object"},
     }
     is_loopback = (urlparse(endpoint).hostname or "") in {"127.0.0.1", "localhost", "::1"}
+    effective_timeout = timeout_override if timeout_override is not None else cfg.timeout_seconds
     try:
-        with _open_httpx_client(cfg.timeout_seconds, trust_env=not is_loopback) as client:
+        with _open_httpx_client(effective_timeout, trust_env=not is_loopback) as client:
             resp = client.post(endpoint, headers=headers, json=payload)
             resp.raise_for_status()
             body = resp.json()
@@ -1145,13 +1221,24 @@ def _post_deepseek_json(
     except (httpx.RequestError, ValueError) as exc:
         raise VisionParserUnavailableError("VISION_PARSER_UNAVAILABLE") from exc
 
+    choices = body.get("choices") or []
+    first = choices[0] if choices and isinstance(choices[0], dict) else {}
+    finish_reason = first.get("finish_reason")
+    msg_obj = first.get("message") or {}
+    content = str(msg_obj.get("content") or "")
     try:
-        choices = body.get("choices") or []
-        content = ((choices[0] or {}).get("message") or {}).get("content") or ""
-        if not content.strip():
-            raise ValueError("empty json content")
-        return json.loads(content)
+        return parse_model_json_content(content)
     except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        logger.warning(
+            "DeepSeek returned invalid JSON: model=%s finish_reason=%s len=%s has_reasoning=%s head=%r",
+            model,
+            finish_reason,
+            len(content),
+            bool(msg_obj.get("reasoning_content")),
+            content[:240],
+        )
+        if finish_reason == "length":
+            raise VisionParserUnavailableError("VISION_PARSER_TRUNCATED") from exc
         raise VisionParserUnavailableError("VISION_PARSER_INVALID_JSON") from exc
 
 
@@ -1341,6 +1428,118 @@ def parse_items_with_deepseek_vision(
         "model": resolved_cfg.vision_model,
     }
     return items, meta
+
+
+_STEM_ANSWER_LEAK_RE = re.compile(r"(?:参考答案|正确答案|【答案】|【解析】|解题步骤\s*[：:])")
+
+
+def extract_lost_item_stems_with_deepseek(
+    *,
+    subject: str,
+    attachments: list[dict[str, Any]],
+    lost_labels: list[str],
+    cfg: VisionParserConfig,
+) -> dict[str, dict[str, str | None]]:
+    """按需抽取指定失分题号的题干与学生作答（JPEG 适度压缩脱敏外发、只转写不解题）。"""
+    if not lost_labels or not attachments:
+        return {}
+    frames = render_masked_pages_for_vision(
+        attachments,
+        mask_student_header=True,
+        compress_jpeg=True,
+        max_edge=1600,
+        jpeg_quality=85,
+    )
+    if not frames:
+        return {}
+
+    subject_cn = _SUBJECT_CN.get(subject, subject)
+    formatted_labels = [
+        f"{lbl}（第{lbl}题）" if str(lbl).strip().isdigit() else str(lbl)
+        for lbl in lost_labels
+    ]
+    labels_text = "、".join(formatted_labels)
+    prompt_text = (
+        f"你是严谨的初中【{subject_cn}】教研辅助助手。请查看上传的学校考试原卷与（或）学生答题卡图像，"
+        f"仅转写以下指定失分题号的题干与学生作答：{labels_text}。\n"
+        "【硬性纪律】\n"
+        "1. 只输出严格 JSON 对象，格式为 {\"stems\": [{\"question_label\": \"...\", \"stem\": \"...\", \"student_answer\": \"...或null\"}]}。\n"
+        "2. question_label 请保留原始题号（如 \"8\" 或 \"第8题\"）；找不到的题号不要编造，直接省略。\n"
+        "3. stem：逐字转写原题题干（750字以内），数学/物理公式使用 $...$ 或 $$...$$ LaTeX 写法（JSON 字符串内所有 LaTeX 反斜杠必须双写，例如 \\\\frac、\\\\sqrt、\\\\triangle、\\\\angle）；若题干含几何图/电路图/图表，在对应位置写 [图：简述关键已知条件]；语文/英语长阅读理解可写“材料概要（120字内）+ 设问原文”。\n"
+        "4. student_answer：若能在答题卡或卷面上看清学生针对该题号的作答笔迹（含划掉重写的痕迹），请客观转写（350字以内）；若未上传答题卡、未作答或字迹看不清，填 null。\n"
+        "5. 严禁解答题目、推算正确答案、给出解题思路或评价对错；不要输出“参考答案”“解析”字样，也不要用 Markdown 代码块包裹 JSON。\n"
+    )
+
+    content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+    for frame in frames:
+        content_parts.append(
+            {
+                "type": "text",
+                "text": f"[附件 {frame['filename']} 第 {frame['page']} 页{'（顶部已脱敏）' if frame['masked_header'] else ''}]",
+            }
+        )
+        content_parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": frame["data_url"], "detail": "high"},
+            }
+        )
+
+    read_timeout = max(cfg.timeout_seconds, 90.0)
+    parsed_json = _post_deepseek_json(
+        cfg,
+        model=cfg.vision_model,
+        messages=[
+            {
+                "role": "system",
+                "content": "你只输出符合要求的严格 JSON 对象，只客观转写题干与作答，不要做解题推理或长思考，直接输出结果。",
+            },
+            {"role": "user", "content": content_parts},
+        ],
+        max_tokens=8192,
+        timeout_override=httpx.Timeout(connect=15.0, read=read_timeout, write=30.0, pool=15.0),
+    )
+
+    raw_stems = parsed_json.get("stems")
+    if not isinstance(raw_stems, list):
+        return {}
+
+    allowed_exact = {lbl: lbl for lbl in lost_labels}
+    allowed_norm = {normalize_question_label(lbl): lbl for lbl in lost_labels}
+    allowed_num: dict[str, str] = {}
+    for lbl in lost_labels:
+        m_num = re.search(r"(\d+)", str(lbl))
+        if m_num and m_num.group(1) not in allowed_num:
+            allowed_num[m_num.group(1)] = lbl
+
+    result: dict[str, dict[str, str | None]] = {}
+    for entry in raw_stems:
+        if not isinstance(entry, dict):
+            continue
+        raw_lbl = str(entry.get("question_label") or entry.get("label") or "").strip()
+        if not raw_lbl:
+            continue
+        norm_lbl = normalize_question_label(raw_lbl)
+        target_lbl = allowed_exact.get(raw_lbl) or allowed_norm.get(norm_lbl)
+        if target_lbl is None:
+            m_num = re.search(r"(\d+)", raw_lbl)
+            if m_num:
+                target_lbl = allowed_num.get(m_num.group(1))
+        if target_lbl is None or target_lbl in result:
+            continue
+
+        stem = str(entry.get("stem") or "").strip()
+        if not stem or _STEM_ANSWER_LEAK_RE.search(stem):
+            continue
+        raw_ans = entry.get("student_answer")
+        ans = str(raw_ans).strip()[:400] if raw_ans is not None else None
+        if ans == "":
+            ans = None
+        result[target_lbl] = {
+            "stem_text": stem[:800],
+            "student_answer_text": ans,
+        }
+    return result
 
 
 def enrich_external_items_with_deepseek(
@@ -1567,14 +1766,55 @@ def parse_structured_reflection_note(
     }
 
 
+_REFLECTION_STARTER_FRAGMENTS: tuple[str, ...] = (
+    "条件我没用上，当时以为",
+    "辅助线/解题切入点选错了，应该从",
+    "圈出来，确认满足条件再往下算",
+    "说明/单位/验根，导致扣分",
+    "这一步卡住了，没想到要先",
+    "当时心态有点急，跳过",
+    "公式时忘记了前提条件",
+    "做到这题时时间只剩",
+    "答题格式不完整，少了",
+    "移项/去括号时",
+    "写完这一步后，我用",
+    "混了，其实应该是",
+    "条件我没用上",
+    "的方法检查一遍",
+    "这一步，我把",
+    "的符号写反了",
+    "这一步推导",
+    "如果再看到",
+    "来不及检查",
+    "题目里的",
+    "我就先",
+    "直接写了",
+    "这步漏写了",
+    "看成了",
+    "概念和",
+    "算成了",
+    "做到",
+    "入手",
+    "先把",
+)
+
+
+def _strip_starter_fragments(text: str) -> str:
+    """剔除学生端句式起头固定模板外壳，确保仅点击起头不补全时无法过线。"""
+    cleaned = text or ""
+    for frag in sorted(_REFLECTION_STARTER_FRAGMENTS, key=len, reverse=True):
+        cleaned = cleaned.replace(frag, "")
+    return cleaned
+
+
 def _extract_effective_chars(text: str) -> str:
     """仅保留中文字符与英文字母（剥离空白、标点、纯数字），用于真实语义长度统计。"""
     return "".join(re.findall(r"[\u4e00-\u9fffA-Za-z]", text or ""))
 
 
 def _strip_perfunctory_cliches(text: str) -> str:
-    """剔除敷衍套话词库，检验剩余实质内容长度。"""
-    cleaned = text
+    """剔除句式起头外壳与敷衍套话词库，检验剩余实质内容长度。"""
+    cleaned = _strip_starter_fragments(text)
     for phrase in sorted(_PERFUNCTORY_CLICHES, key=len, reverse=True):
         cleaned = cleaned.replace(phrase, "")
     return _extract_effective_chars(cleaned)
@@ -1584,40 +1824,40 @@ def validate_reflection_not_perfunctory(
     stuck_point: str,
     fix_strategy: str,
 ) -> str | None:
-    """第二层本地反敷衍硬规则校验；不通过时返回具体引导提示，通过返回 None。"""
+    """第二层本地反敷衍硬规则校验；不通过时返回书童追问口吻提示，通过返回 None。"""
     stuck = (stuck_point or "").strip()
     fix = (fix_strategy or "").strip()
 
-    stuck_eff = _extract_effective_chars(stuck)
-    fix_eff = _extract_effective_chars(fix)
+    stuck_eff = _extract_effective_chars(_strip_starter_fragments(stuck))
+    fix_eff = _extract_effective_chars(_strip_starter_fragments(fix))
 
     if len(stuck_eff) < 8:
-        return "「具体失分卡点」有效内容过短（需至少 8 个汉字或字母），请写明具体错在哪一步或漏看了哪个条件。"
+        return "能再具体说说当时卡在哪一步、或者漏掉了哪个条件吗？（还需再补充几句具体细节）"
     if len(fix_eff) < 8:
-        return "「正确思路与改进对策」有效内容过短（需至少 8 个汉字或字母），请写明正确解法或具体的检验动作。"
+        return "给下次的自己留一句具体的提醒吧：遇到这类题先做什么、或者用什么方法检查？"
     if len(stuck_eff) + len(fix_eff) < 20:
-        return "两栏合计有效分析不足 20 字，请再补充关键条件、公式或具体步骤。"
+        return "还差一点点细节，再多写几句关键条件或检查动作，下次遇到就能稳稳拿分啦。"
 
     if stuck_eff.lower() == fix_eff.lower():
-        return "「失分卡点」与「改进对策」不能填写完全相同的内容，请分别写清错因和改法。"
+        return "“当时卡在哪”和“下次怎么提醒自己”别写一模一样的哦，分开说说原因和办法。"
 
-    for label, raw, eff in (("具体失分卡点", stuck, stuck_eff), ("正确思路与改进对策", fix, fix_eff)):
+    for label, raw, eff in (("这一步卡点", stuck, stuck_eff), ("给下次的提醒", fix, fix_eff)):
         if re.search(r"(.)\1{3,}", re.sub(r"\s+", "", raw)):
-            return f"「{label}」存在连续重复字符，请认真填写复盘内容。"
+            return f"「{label}」好像出现了连续重复的字符，用自己的话再写清楚一点吧。"
         unique_chars = set(eff.lower())
         if len(unique_chars) < 5:
-            return f"「{label}」有效用字过于单一，请用完整句子说明具体情况。"
+            return f"「{label}」用字太重复啦，试着写一句完整的话说明白。"
         max_freq = max(eff.lower().count(ch) for ch in unique_chars)
         if max_freq / len(eff) > 0.45:
-            return f"「{label}」存在重复灌水字符，请写明真实错因与思路。"
+            return f"「{label}」有不少重复字符，再补充一点真实的思考过程吧。"
 
     # 剥离敷衍套话后剩余实质分析字符校验
     meaningful_stuck = _strip_perfunctory_cliches(stuck)
     meaningful_fix = _strip_perfunctory_cliches(fix)
     if len(meaningful_stuck) < 5:
-        return "「具体失分卡点」不能仅写“粗心/不会/看错了”等套话，请补充具体漏掉的条件或出错步骤。"
+        return "先别只怪“粗心/没看清”，试着写明是哪一个条件、符号或步骤出了偏差？"
     if len(meaningful_fix) < 5:
-        return "「正确思路与改进对策」不能仅写“下次注意/多做题”等套话，请写出具体怎么改、怎么验算。"
+        return "“下次注意”容易忘，换成“如果看到…我就先…”的具体动作会更管用哦。"
     return None
 
 
