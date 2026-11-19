@@ -370,7 +370,7 @@ test('J4d 已录校考台账：单项删除需二次确认，仅删除当前场�
   await examRegion.getByLabel('获得分数').fill('80')
   await examRegion.getByLabel('考试满分').fill('100')
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(page.getByRole('status')).toContainText('学校考试已记录')
+  await expect(examRegion.locator('.exam-detail')).toContainText(title)
 
   await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
   await examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' }).click()
@@ -379,7 +379,7 @@ test('J4d 已录校考台账：单项删除需二次确认，仅删除当前场�
   await examRegion.getByLabel('获得分数').fill('90')
   await examRegion.getByLabel('考试满分').fill('100')
   await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(page.getByRole('status')).toContainText('学校考试已记录')
+  await expect(examRegion.locator('.exam-detail')).toContainText(keepTitle)
   await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-item', { hasText: title })).toHaveCount(1)
   await expect(examRegion.locator('.exam-item', { hasText: keepTitle })).toHaveCount(1)
