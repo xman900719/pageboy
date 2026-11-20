@@ -3,6 +3,8 @@
 export type Subject = 'math' | 'chinese' | 'english' | 'physics'
 // 学校考试额外支持「道法（道德与法治）」归档，核心练习/画像仍严格保持四科不变
 export type SchoolSubject = Subject | 'ethics'
+// 校考新建档案与台账查询支持全科（all）
+export type SchoolArchiveSubject = SchoolSubject | 'all'
 export type Kind = 'single_choice' | 'short_answer' | 'subjective'
 export type Purpose = 'training' | 'evaluation'
 export type GapType = 'INSUFFICIENT_EVIDENCE' | 'KNOWLEDGE_GAP' | 'NO_CONFIRMED_GAP'
@@ -396,6 +398,7 @@ export interface AttemptRow {
 
 export interface SchoolExam {
   id: string
+  subject?: SchoolArchiveSubject
   title: string
   exam_date: string
   earned_points: number
@@ -418,6 +421,7 @@ export interface SchoolPaperAttachment {
   media_type: string
   sha256: string
   byte_size: number
+  category?: 'exam_paper' | 'answer_sheet' | string
   created_at: string
 }
 
@@ -618,7 +622,7 @@ export interface SchoolExamRecurringKnowledge {
 
 export interface SchoolExamErrorAnalysis {
   exam_id: string
-  subject: SchoolSubject
+  subject: SchoolArchiveSubject
   title: string
   exam_date: string
   confirmed_by_user: boolean
@@ -639,7 +643,7 @@ export interface SchoolExamErrorAnalysis {
 }
 
 export interface SchoolExamDetail extends SchoolExam {
-  subject: SchoolSubject
+  subject: SchoolArchiveSubject
   class_highest?: number | null
   grade_highest?: number | null
   items: SchoolExamItem[]
@@ -1022,6 +1026,7 @@ export interface K12100SyncJob {
   kind?: 'report' | 'legacy_collect'
   state: 'queued' | 'collecting' | 'backfilling' | 'completed' | 'failed'
   stage_message: string
+  progress_percent?: number
   created_at: string
   updated_at: string
   exam_keyword: string | null
@@ -1060,6 +1065,7 @@ export interface K12100BackfillOptions {
   replaceUnconfirmedDrafts?: boolean
   useAi?: boolean
   headless?: boolean
+  archiveExamId?: string
 }
 
 export interface GoalResult {
@@ -1261,18 +1267,18 @@ export interface Client {
   validation(subject: Subject): Promise<Validation>
   poolHealth(subject: Subject): Promise<PoolHealth>
   setGoal(input: { subject: Subject; targetPoints: number; maxPoints: number; minutesPerDay: number }): Promise<GoalResult>
-  schoolExams(subject: SchoolSubject): Promise<SchoolExam[]>
+  schoolExams(subject: SchoolArchiveSubject): Promise<SchoolExam[]>
   schoolExamDetail(examId: string): Promise<SchoolExamDetail>
   deleteSchoolExam(examId: string): Promise<{ deleted: boolean; id: string; items_deleted: number; attachments_deleted: number; rank_snapshots_deleted: number; papers_unlinked: number }>
   addSchoolExam(input: {
-    subject: SchoolSubject
+    subject: SchoolArchiveSubject
     title: string
     examDate: string
     earnedPoints: number
     maxPoints: number
     confirmedByUser: boolean
   }): Promise<SchoolExamResult>
-  confirmSchoolExam(examId: string, earnedPoints: number): Promise<SchoolExamResult>
+  confirmSchoolExam(examId: string, earnedPoints: number, subject?: string): Promise<SchoolExamResult>
   uploadSchoolPaper(examId: string, file: File): Promise<SchoolPaperAttachment>
   addSchoolExamItems(examId: string, items: SchoolExamItemInput[]): Promise<{ evidence_created: number }>
   confirmSchoolExamItem(
@@ -1345,7 +1351,7 @@ export interface Client {
   sendSchoolReflectionCoachMessage(itemId: string, content: string): Promise<SchoolCoachSession>
   summarizeSchoolReflectionCoach(itemId: string): Promise<SchoolCoachSession>
   getAdminSchoolExamItemCoach(examId: string, itemId: string): Promise<SchoolCoachSession>
-  schoolExamErrorAnalysis(examId: string): Promise<SchoolExamErrorAnalysis>
+  schoolExamErrorAnalysis(examId: string, subject?: SchoolSubject): Promise<SchoolExamErrorAnalysis>
   schoolExamReports(): Promise<SchoolExamReport[]>
   scanSchoolExamReports(): Promise<SchoolExamReportScanResult>
   matchSchoolExamReport(reportId: string): Promise<{ report: SchoolExamReport; match: { match_state: string; unresolved_subjects: string[]; ambiguous_subjects: string[] } }>
@@ -1358,8 +1364,8 @@ export interface Client {
   buildSchoolExamReportAnswerCards(reportId: string, rotation: number): Promise<{ created: number; attachments: SchoolExamReportAttachment[] }>
   fetchSchoolExamReportAnswerCardImage(reportId: string, attachmentId: string): Promise<Blob>
   k12100SyncStatus(): Promise<K12100RuntimeStatus>
-  schoolExamSyncCenter(): Promise<SchoolExamSyncCenter>
-  scanSchoolExamPapers(): Promise<SchoolExamScanResult>
+  schoolExamSyncCenter(examId?: string): Promise<SchoolExamSyncCenter>
+  scanSchoolExamPapers(options?: { applyImports?: boolean; examId?: string }): Promise<SchoolExamScanResult>
   acquireSchoolExamPapers(): Promise<{ source_adapter: string[]; acquired_count: number; files: string[] }>
   matchSchoolExamPaper(
     paperId: string,
@@ -1376,7 +1382,7 @@ export interface Client {
   schoolExamRanks(examId: string): Promise<SchoolExamRanksPayload>
   confirmSchoolExamRank(examId: string, rankId: string): Promise<SchoolExamRank>
   startK12100SyncJob(options?: K12100BackfillOptions): Promise<K12100SyncJob>
-  startK12100ReportJob(options?: { maxExams?: number; headless?: boolean }): Promise<K12100SyncJob>
+  startK12100ReportJob(options?: { maxExams?: number; headless?: boolean; archiveExamId?: string }): Promise<K12100SyncJob>
   hydrateK12100LocalReports(): Promise<{
     deduped_reports: number
     reparsed_reports: number
@@ -1606,10 +1612,11 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         max_points: maxPoints,
         confirmed_by_user: confirmedByUser,
       }),
-    confirmSchoolExam: (examId, earnedPoints) =>
+    confirmSchoolExam: (examId, earnedPoints, subject) =>
       call<SchoolExamResult>(`/api/school-exams/${encodeURIComponent(examId)}/confirm`, 'POST', {
         confirmed_by_user: true,
         earned_points: earnedPoints,
+        ...(subject ? { subject } : {}),
       }),
     // 私人校卷附件上传（与内容附件共享底层校验，≤35 MiB，绝不提供公开下载接口）
     uploadSchoolPaper: (examId, file) =>
@@ -1742,8 +1749,10 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       call<SchoolCoachSession>(
         `/api/school-exams/${encodeURIComponent(examId)}/items/${encodeURIComponent(itemId)}/coach`,
       ),
-    schoolExamErrorAnalysis: examId =>
-      call<SchoolExamErrorAnalysis>(`/api/school-exams/${encodeURIComponent(examId)}/error-analysis`),
+    schoolExamErrorAnalysis: (examId, subject) =>
+      call<SchoolExamErrorAnalysis>(
+        `/api/school-exams/${encodeURIComponent(examId)}/error-analysis${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`,
+      ),
     schoolExamReports: () => call<SchoolExamReport[]>('/api/school-exams/reports'),
     scanSchoolExamReports: () => call<SchoolExamReportScanResult>('/api/school-exams/reports/scan', 'POST', {}),
     matchSchoolExamReport: reportId =>
@@ -1791,8 +1800,15 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
       return res.blob()
     },
     k12100SyncStatus: () => call<K12100RuntimeStatus>('/api/school-exams/k12100-sync/status'),
-    schoolExamSyncCenter: () => call<SchoolExamSyncCenter>('/api/school-exams/sync-center'),
-    scanSchoolExamPapers: () => call<SchoolExamScanResult>('/api/school-exams/pipeline/scan', 'POST', { apply_imports: false }),
+    schoolExamSyncCenter: examId =>
+      call<SchoolExamSyncCenter>(
+        examId ? `/api/school-exams/sync-center?exam_id=${encodeURIComponent(examId)}` : '/api/school-exams/sync-center',
+      ),
+    scanSchoolExamPapers: options =>
+      call<SchoolExamScanResult>('/api/school-exams/pipeline/scan', 'POST', {
+        apply_imports: options?.applyImports ?? false,
+        ...(options?.examId ? { exam_id: options.examId } : {}),
+      }),
     acquireSchoolExamPapers: () =>
       call<{ source_adapter: string[]; acquired_count: number; files: string[] }>(
         '/api/school-exams/pipeline/acquire',
@@ -1853,11 +1869,13 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
         use_ai: options.useAi ?? true,
         headless: options.headless ?? true,
+        ...(options.archiveExamId ? { archive_exam_id: options.archiveExamId } : {}),
       }),
     startK12100ReportJob: (options = {}) =>
       call<K12100SyncJob>('/api/school-exams/k12100-sync/report-jobs', 'POST', {
         max_exams: options.maxExams ?? 3,
         headless: options.headless ?? false,
+        ...(options.archiveExamId ? { archive_exam_id: options.archiveExamId } : {}),
       }),
     hydrateK12100LocalReports: () =>
       call<{
@@ -1882,6 +1900,7 @@ export function createClient(token: string, role: 'student' | 'admin' = 'student
         upload_missing_cards: options.uploadMissingCards ?? true,
         replace_unconfirmed_drafts: options.replaceUnconfirmedDrafts ?? true,
         use_ai: options.useAi ?? true,
+        ...(options.archiveExamId ? { archive_exam_id: options.archiveExamId } : {}),
       }),
     fetchAttachment: async attachmentId => {
       const res = await fetch(`/api/admin/attachments/${attachmentId}/download`, { headers: { Authorization: `Bearer ${token}` } })

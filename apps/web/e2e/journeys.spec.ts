@@ -279,36 +279,35 @@ test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明�
   await helpDialog.getByRole('button', { name: '关闭说明' }).click()
   await expect(helpDialog).toBeHidden()
 
-  // 默认落在第一阶段「总分台账与建档」第 1 步（无校考时自动进入建档模式，且第 2 步「总分概览与材料入口」严防跳步锁定）
+  // 默认落在第一阶段第 1 步（无校考时自动进入建档模式，且第 2 步「上传原卷」严防跳步锁定；获得分数默认等于考试满分）
   await expect(examRegion.getByLabel('考试名称')).toBeVisible()
   await expect(examRegion.locator('#exam-panel-scores .step-stage-body section.card')).toHaveCount(1)
-  const scoreDetailPill = examRegion.getByRole('button', { name: /总分概览与材料入口/ })
-  await expect(scoreDetailPill).toHaveAttribute('aria-disabled', 'true')
-  await scoreDetailPill.click({ force: true })
+  const uploadPill = examRegion.getByRole('button', { name: /2\. 上传原卷/ })
+  await expect(uploadPill).toHaveAttribute('aria-disabled', 'true')
+  await uploadPill.click({ force: true })
   await expect(examRegion.locator('.gate-alert-banner')).toContainText('不可跳步至')
 
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：学校月考')
   await examRegion.getByLabel('考试日期').fill('2026-10')
-  await examRegion.getByLabel('获得分数').fill('85')
-  await examRegion.getByLabel('考试满分').fill('100')
-  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
 
-  await expect(page.getByRole('status')).toContainText('学校考试已记录')
+  await expect(page.getByRole('status')).toContainText('全科校考档案已创建')
   await expect(page.getByRole('status')).toContainText('总分不产生考点证据')
 
-  // 录入后自动推进到第 2 步「总分概览与材料入口」，此时仅展示单卡，回第 1 步可见台账列表
-  await expect(examRegion.locator('.exam-detail')).toContainText('总分已核对锁定')
+  // 录入后自动推进到第 2 步「上传原卷」，此时仅展示单卡，回第 1 步可见台账列表与「提交考试信息」按钮
+  await expect(examRegion.getByRole('heading', { name: '上传原卷' })).toBeVisible()
   await expect(examRegion.locator('.exam-list')).toHaveCount(0)
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：学校月考')
   await expect(examRegion.locator('.exam-list')).toContainText('2026-10')
-  await expect(examRegion.locator('.exam-list')).toContainText('85 / 100')
-  await expect(examRegion.locator('.exam-list')).toContainText('已核对')
+  await expect(examRegion.locator('.exam-list')).toContainText('100 / 100')
+  await expect(examRegion.locator('.exam-list')).toContainText('未核对')
+  await expect(examRegion.locator('.exam-list')).toContainText('提交考试信息')
 
   // 无逐题失分明细时，「错误分析与复盘」Tab 如实提示数据不足，并可跳转补录小题
   await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
   const analysisPanel = examRegion.locator('#exam-panel-analysis')
-  await expect(analysisPanel).toContainText('当前仅登记了试卷总分，尚无已核对的逐题失分明细')
+  await expect(analysisPanel).toContainText('当前档案尚无已核对总分与逐题明细，暂不足以生成错误分析')
   await analysisPanel.getByRole('button', { name: '前往补录失分小题' }).click()
 
   // 在「已核对明细与补录」第 2 步录入本场失分小题（错因与复盘由学生端完成）
@@ -327,11 +326,9 @@ test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明�
   await examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' }).click()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：九月诊断月考')
   await examRegion.getByLabel('考试日期').fill('2026-09')
-  await examRegion.getByLabel('获得分数').fill('86')
-  await examRegion.getByLabel('考试满分').fill('100')
-  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(examRegion.locator('.exam-detail')).toContainText('虚构测试数据：九月诊断月考')
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
+  await expect(examRegion.getByRole('heading', { name: '上传原卷' })).toBeVisible()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('虚构测试数据：九月诊断月考')
 
   await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
@@ -344,7 +341,7 @@ test('J4 校卷总分：气泡说明可开关、三列台账协同建档并明�
   await expect(itemsPanel).toContainText('第3题')
 
   // 切回 2026-10 场次并打开「错误分析与复盘」Tab，按 1→2→3 单卡步骤验证三段分析与诚实用语
-  await examRegion.getByRole('button', { name: '2026-10 (85/100)' }).click()
+  await examRegion.getByRole('button', { name: '2026-10 (100/100)' }).click()
   await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
   await expect(analysisPanel).toContainText('本场失分概览与错因分布')
   await expect(analysisPanel.locator('.step-stage-body section.card')).toHaveCount(1)
@@ -367,20 +364,16 @@ test('J4d 已录校考台账：单项删除需二次确认，仅删除当前场�
   await examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' }).click()
   await examRegion.getByLabel('考试名称').fill(title)
   await examRegion.getByLabel('考试日期').fill('2026-08')
-  await examRegion.getByLabel('获得分数').fill('80')
-  await examRegion.getByLabel('考试满分').fill('100')
-  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(examRegion.locator('.exam-detail')).toContainText(title)
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
+  await expect(examRegion.getByRole('heading', { name: '上传原卷' })).toBeVisible()
 
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
   await examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' }).click()
   await examRegion.getByLabel('考试名称').fill(keepTitle)
   await examRegion.getByLabel('考试日期').fill('2026-07')
-  await examRegion.getByLabel('获得分数').fill('90')
-  await examRegion.getByLabel('考试满分').fill('100')
-  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(examRegion.locator('.exam-detail')).toContainText(keepTitle)
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
+  await expect(examRegion.getByRole('heading', { name: '上传原卷' })).toBeVisible()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-item', { hasText: title })).toHaveCount(1)
   await expect(examRegion.locator('.exam-item', { hasText: keepTitle })).toHaveCount(1)
 
@@ -402,16 +395,18 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
   await page.getByRole('button', { name: '道法' }).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
-  // 道法尚无校考时自动落在新建档模式；取消勾选“我已人工核对总分”，先以待核对状态归档
+  // 新建档案不分科目、面向全科；若已有全科档案，点击「＋ 新建 / 暂存档案」进入建档表单，取消勾选“我已人工核对总分”
+  const createModeBtn = examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' })
+  if (await createModeBtn.isVisible()) {
+    await createModeBtn.click()
+  }
   await expect(examRegion.getByLabel('考试名称')).toBeVisible()
-  await examRegion.getByLabel(/我已人工核对总分/).uncheck()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月道法统一练习')
   await examRegion.getByLabel('考试日期').fill('2026-10')
-  await examRegion.getByLabel('考试满分').fill('50')
-  await examRegion.getByRole('button', { name: '暂存待核对档案' }).click()
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
 
-  await expect(page.getByRole('status')).toContainText('待核对学校考试档案已暂存')
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await expect(page.getByRole('status')).toContainText('全科校考档案已创建')
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
   await expect(examRegion.locator('.exam-list')).toContainText('未核对')
 
   // 切至第二阶段「原卷提取与明细核对」Tab：未上传原卷且无待核对明细时，第 2 步「逐题明细核对台」应呈锁定拦截态
@@ -421,9 +416,9 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
   await draftStepPill.click({ force: true })
   await expect(examRegion.locator('.gate-alert-banner')).toContainText('不可跳步至')
 
-  // 回到第一阶段第 3 步「上传私有原卷与答题卡」完成隔离上传
+  // 回到第一阶段第 2 步「上传原卷」完成隔离上传（存放于 exam-paper 目录）
   await examRegion.getByRole('tab', { name: /总分台账与建档/ }).click()
-  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /上传私有原卷与答题卡/ }).click()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /2\. 上传原卷/ }).click()
 
   const objs = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
@@ -443,28 +438,23 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
   pdfChunks.push(`trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${bytePos}\n%%EOF\n`)
 
   const scoresPanel = examRegion.locator('#exam-panel-scores')
-  await scoresPanel.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
+  await scoresPanel.getByLabel(/选择原卷文件/).setInputFiles({
     name: 'mock-ethics-paper.pdf',
     mimeType: 'application/pdf',
     buffer: Buffer.from(pdfChunks.join(''), 'ascii'),
   })
-  await scoresPanel.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
+  await scoresPanel.getByRole('button', { name: '上传原卷', exact: true }).click()
 
-  await expect(page.getByRole('status')).toContainText('已加密隔离归档')
+  await expect(page.getByRole('status')).toContainText('已存入档案 exam-paper 目录')
   await expect(scoresPanel).toContainText('mock-ethics-paper.pdf')
-  await expect(scoresPanel).toContainText('私有已隔离')
+  await expect(scoresPanel).toContainText('exam-paper')
   await expect(scoresPanel.locator('a[download]')).toHaveCount(0)
 
-  // 切回「总分台账与建档」第 2 步补录并锁定总分，再回第 1 步确认台账更新
-  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /总分概览与材料入口/ }).click()
-  const detailRegion = examRegion.locator('.exam-detail')
-  await detailRegion.getByLabel('补充实得总分').fill('43')
-  await detailRegion.getByRole('button', { name: '确认并锁定总分' }).click()
-
-  await expect(page.getByRole('status')).toContainText('校考总分已人工核对并锁定')
-  await expect(detailRegion).toContainText('总分已核对锁定')
-  await examRegion.getByRole('button', { name: /选定或新建校考档案/ }).click()
-  await expect(examRegion.locator('.exam-list')).toContainText('43 / 50')
+  // 推进至第 3 步「全科校考同步」，确认可见同步中心后回第 1 步确认台账
+  await scoresPanel.getByRole('button', { name: /下一步：3\. 全科校考同步/ }).click()
+  await expect(scoresPanel.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
+  await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
+  await expect(examRegion.locator('.exam-list')).toContainText('50 / 50')
 
   // 切至「已核对明细与补录」第 2 步录入道法失分小题（确认后进入学生端待复盘）
   await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
@@ -527,16 +517,13 @@ test('J4c 校考待核对明细：纯文字卷提取、题号自然排序、分�
   await examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' }).click()
   await examRegion.getByLabel('考试名称').fill('虚构测试数据：十月数学待核明细演示')
   await examRegion.getByLabel('考试日期').fill('2026-10')
-  await examRegion.getByLabel('获得分数').fill('84')
-  await examRegion.getByLabel('考试满分').fill('100')
-  await examRegion.getByRole('button', { name: '记录已核对总分' }).click()
-  await expect(page.getByRole('status')).toContainText('学校考试已记录')
+  await examRegion.getByRole('button', { name: '提交考试信息并建档' }).click()
+  await expect(page.getByRole('status')).toContainText('全科校考档案已创建')
 
-  // 第一阶段第 2 步仅保留报告/同步入口（不再混放原卷与错误分析），推进至第 3 步上传原卷再进入第二阶段提取与核对
+  // 第一阶段第 2 步上传原卷，再推进至第 3 步并进入第二阶段提取与核对
   const scoresPanel = examRegion.locator('#exam-panel-scores')
   await expect(scoresPanel.getByRole('button', { name: '查看错误分析' })).toHaveCount(0)
-  await scoresPanel.getByRole('button', { name: /下一步：3\. 上传私有原卷与答题卡/ }).click()
-  await scoresPanel.getByLabel(/选择试卷或答题卡文件/).setInputFiles({
+  await scoresPanel.getByLabel(/选择原卷文件/).setInputFiles({
     name: 'mock-math-text-paper.pdf',
     mimeType: 'application/pdf',
     buffer: buildSyntheticTextPdf([
@@ -544,9 +531,10 @@ test('J4c 校考待核对明细：纯文字卷提取、题号自然排序、分�
       '2. Prove triangle congruence',
     ]),
   })
-  await scoresPanel.getByRole('button', { name: '上传原卷 / 答题卡' }).click()
-  await expect(page.getByRole('status')).toContainText('已加密隔离归档')
+  await scoresPanel.getByRole('button', { name: '上传原卷', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已存入档案 exam-paper 目录')
 
+  await scoresPanel.getByRole('button', { name: /下一步：3\. 全科校考同步/ }).click()
   await scoresPanel.getByRole('button', { name: /下一步：进入第二阶段 · 明细提取与核对/ }).click()
   const papersPanel = examRegion.locator('#exam-panel-papers')
   await papersPanel.getByLabel('待核对明细提取方式').selectOption('skeleton_only')
@@ -1246,7 +1234,7 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
       : [],
   })
 
-  await page.route('**/api/school-exams/sync-center', route =>
+  await page.route('**/api/school-exams/sync-center*', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(centerPayload()) }),
   )
   await page.route('**/api/school-exams/pipeline/scan', route => {
@@ -1389,43 +1377,27 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
     await enterBtn.click()
   } else {
     await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
-  await expect(sync).toContainText('SOURCE_NOT_CONFIGURED')
   await expect(sync).toContainText('还没有发现试卷')
-  await expect(sync.getByRole('button', { name: '通过授权来源获取' })).toBeDisabled()
 
-  // 第一步：扫描私有收件箱，列出真实文件索引与卷头摘要
+  // 第一步：扫描原卷目录，列出真实文件索引与卷头摘要
   await sync.getByRole('button', { name: '扫描私有收件箱' }).click()
   await expect(sync).toContainText('虚构测试数据_九年级数学月考试卷.docx')
   await expect(sync).toContainText('身份字段冲突')
-  await sync.getByRole('button', { name: /虚构测试数据_九年级数学月考试卷.docx/ }).click()
 
-  // 第二步：检查卷头依据、候选冲突与人工确认门禁
-  await expect(sync).toContainText('卷头识别依据')
-  await expect(sync).toContainText('身份字段冲突')
-  await expect(sync).toContainText('冲突字段：考试日期')
-  const confirmMatch = sync.getByRole('button', { name: '确认匹配所选考试' })
-  await expect(confirmMatch).toBeDisabled()
-  await sync.getByRole('radio').first().check()
-  await sync.getByLabel(/我已对照卷头与候选考试/).check()
-  await expect(confirmMatch).toBeEnabled()
-  await confirmMatch.click()
-  await expect(sync).toContainText('匹配已完成')
-
-  // 第二步收尾：私有入档后进入第四步核对；档案与排名均来自真实管理端接口
-  await sync.getByRole('button', { name: '将原卷导入该考试' }).click()
+  // 直接进入「核对入档」：档案与排名均来自真实管理端接口
+  await sync.getByRole('button', { name: /核对入档/ }).click()
   await expect(sync).toContainText('核对入档')
   await expect(sync).toContainText('总分待核对')
   await expect(sync).toContainText('第 5 名 / 320 人')
@@ -1444,16 +1416,16 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
 
   await page.evaluate(() => Promise.allSettled(Array.from(document.getAnimations()).map(animation => animation.finished)))
   const axeSync = await new AxeBuilder({ page })
-    .include('#exam-panel-sync')
+    .include('.exam-sync-center')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(axeSync.violations.filter(violation => violation.impact === 'critical' || violation.impact === 'serious')).toEqual([])
 
   // 键盘可操作性：Tab 顺序中的步骤按钮可由 Enter 激活并回写 aria-current。
-  const matchStep = sync.getByRole('button', { name: /^匹配考试/ })
-  await matchStep.focus()
-  await matchStep.press('Enter')
-  await expect(matchStep).toHaveAttribute('aria-current', 'step')
+  const syncStep = sync.getByRole('button', { name: /k12100 报告同步/ })
+  await syncStep.focus()
+  await syncStep.press('Enter')
+  await expect(syncStep).toHaveAttribute('aria-current', 'step')
 
   await expectHonestLanguage(page)
   expect(pageErrors).toEqual([])
@@ -1476,7 +1448,7 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
   expect(created.status()).toBe(201)
   const examId = ((await created.json()) as { id: string }).id
 
-  await page.route('**/api/school-exams/sync-center', route =>
+  await page.route('**/api/school-exams/sync-center*', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1618,17 +1590,16 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
     await enterBtn.click()
   } else {
     await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
@@ -1659,7 +1630,7 @@ test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已�
   expect(created.status()).toBe(201)
   const examId = ((await created.json()) as { id: string }).id
 
-  await page.route('**/api/school-exams/sync-center', route =>
+  await page.route('**/api/school-exams/sync-center*', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1847,17 +1818,16 @@ test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
     await enterBtn.click()
   } else {
     await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   // 无需先在第 1/2 步选试卷，第 3 步应可直接点击
@@ -1875,13 +1845,13 @@ test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已�
     Promise.allSettled(Array.from(document.getAnimations()).map(animation => animation.finished)),
   )
   const axe = await new AxeBuilder({ page })
-    .include('#exam-panel-sync')
+    .include('.exam-sync-center')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(axe.violations).toEqual([])
 
   await sync.getByRole('button', { name: '核对总分 →' }).first().click()
-  await expect(sync).toContainText('第四步 · 虚构测试数据 · 报告同步核对')
+  await expect(sync).toContainText('虚构测试数据 · 报告同步核对')
   await expect(sync).toContainText('总分待核对')
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 })
@@ -1980,7 +1950,7 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
     }),
   )
 
-  await page.route('**/api/school-exams/sync-center', async route => {
+  await page.route('**/api/school-exams/sync-center*', async route => {
     const [mathStateRes, chiStateRes] = await Promise.all([
       page.request.get(`/api/school-exams/${mathExamId}`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } }),
       page.request.get(`/api/school-exams/${chiExamId}`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } }),
@@ -2193,17 +2163,16 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
     await enterBtn.click()
   } else {
     await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
@@ -2240,7 +2209,7 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
     Promise.allSettled(Array.from(document.getAnimations()).map(animation => animation.finished)),
   )
   const axe = await new AxeBuilder({ page })
-    .include('#exam-panel-sync')
+    .include('.exam-sync-center')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(axe.violations).toEqual([])
@@ -2274,7 +2243,7 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
   const examId = ((await created.json()) as { id: string }).id
   let bundleBody: Record<string, unknown> | null = null
 
-  await page.route('**/api/school-exams/sync-center', route =>
+  await page.route('**/api/school-exams/sync-center*', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -2423,17 +2392,16 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
     await enterBtn.click()
   } else {
     await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await sync.getByRole('button', { name: /虚构测试数据_离线回退.docx/ }).click()

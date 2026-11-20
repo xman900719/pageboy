@@ -1391,37 +1391,65 @@ def parse_items_with_deepseek_vision(
         "3. 严禁虚构不存在的题号或预测总分。\n"
     )
 
-    content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
-    for frame in frames:
-        content_parts.append(
-            {
-                "type": "text",
-                "text": f"[附件 {frame['filename']} 第 {frame['page']} 页{'（顶部已脱敏）' if frame['masked_header'] else ''}]",
-            }
-        )
-        content_parts.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": frame["data_url"], "detail": "high"},
-            }
+    default_att_id = str(attachments[0]["id"]) if attachments else None
+    batch_size = 4
+
+    def _run_batch(batch_frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        content_parts: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+        for frame in batch_frames:
+            content_parts.append(
+                {
+                    "type": "text",
+                    "text": f"[附件 {frame['filename']} 第 {frame['page']} 页{'（顶部已脱敏）' if frame['masked_header'] else ''}]",
+                }
+            )
+            content_parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": frame["data_url"], "detail": "high"},
+                }
+            )
+        try:
+            parsed_json = _post_deepseek_json(
+                resolved_cfg,
+                model=resolved_cfg.vision_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你只输出符合要求的严格 JSON 对象，不要做长思考或推理过程，直接输出结果，绝不附带 Markdown 代码块或多余文字。",
+                    },
+                    {"role": "user", "content": content_parts},
+                ],
+                max_tokens=16384,
+            )
+        except VisionParserUnavailableError as exc:
+            if str(exc) == "VISION_PARSER_TRUNCATED" and len(batch_frames) > 1:
+                split_items: list[dict[str, Any]] = []
+                for single_frame in batch_frames:
+                    split_items.extend(_run_batch([single_frame]))
+                return split_items
+            raise
+        batch_att_id = str(batch_frames[0].get("attachment_id") or default_att_id or "") or None
+        return _normalize_ai_draft_items(
+            parsed_json.get("items"),
+            subject=subject,
+            knowledge_catalog=knowledge_catalog,
+            default_attachment_id=batch_att_id,
+            default_confidence="medium",
         )
 
-    parsed_json = _post_deepseek_json(
-        resolved_cfg,
-        model=resolved_cfg.vision_model,
-        messages=[
-            {"role": "system", "content": "你只输出符合要求的严格 JSON 对象，绝不附带 Markdown 代码块或多余文字。"},
-            {"role": "user", "content": content_parts},
-        ],
-    )
-    default_att_id = str(attachments[0]["id"]) if attachments else None
-    items = _normalize_ai_draft_items(
-        parsed_json.get("items"),
-        subject=subject,
-        knowledge_catalog=knowledge_catalog,
-        default_attachment_id=default_att_id,
-        default_confidence="medium",
-    )
+    items: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    for start in range(0, len(frames), batch_size):
+        batch_frames = frames[start : start + batch_size]
+        for row in _run_batch(batch_frames):
+            lbl = str(row.get("question_label") or "")
+            if lbl and lbl in seen_labels:
+                continue
+            if lbl:
+                seen_labels.add(lbl)
+            items.append(row)
+
     meta = {
         "pages_sent": len(frames),
         "masked_pages": sum(1 for f in frames if f["masked_header"]),

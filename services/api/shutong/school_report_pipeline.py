@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from . import models as m
 from . import private_files as files
 from . import school_exam_pipeline as papers
+from .home import build_school_exam_archive_dir_name
 from .school_exam_matcher import (
     build_canonical_exam_key,
     canonical_report_type_and_seq,
@@ -151,7 +152,13 @@ def _clean_report_series_title(raw_title: str | None, fallback_label: str | None
     return (text or fallback_label or "校考")[:160]
 
 
-def _safe_unlink_unused_blob(db: Session, storage_key: str | None) -> None:
+def _write_report_scoped_blob(filename: str, data: bytes) -> tuple[str, str | None]:
+    if files.write_blob is files._ORIGINAL_WRITE_BLOB:
+        return files.write_school_exam_scoped_blob("reports", filename, data)
+    return files.write_blob(data), None
+
+
+def _safe_unlink_unused_blob(db: Session, storage_key: str | None, relative_path: str | None = None) -> None:
     """仅当没有任何报告/附件再引用同一 storage_key 时删除私有 blob。"""
     if not storage_key:
         return
@@ -166,7 +173,10 @@ def _safe_unlink_unused_blob(db: Session, storage_key: str | None) -> None:
     )
     if not in_use:
         try:
-            files.blob_path(storage_key).unlink(missing_ok=True)
+            if relative_path:
+                files.school_exam_file_path(relative_path).unlink(missing_ok=True)
+            else:
+                files.blob_path(storage_key).unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -422,36 +432,41 @@ def register_report_bytes(
         )
         if (ext_id or not canonical.external_exam_id) and new_richness >= old_richness:
             old_key = canonical.storage_key
+            old_rel = canonical.relative_path
             old_cards = db.execute(
                 select(m.SchoolExamReportAttachment).where(m.SchoolExamReportAttachment.report_id == canonical.id)
             ).scalars().all()
-            old_card_keys = [c.storage_key for c in old_cards]
+            old_card_refs = [(c.storage_key, c.relative_path) for c in old_cards]
             for card in old_cards:
                 db.delete(card)
             canonical.sha256 = digest
             canonical.filename = papers._safe_paper_filename(filename)  # noqa: SLF001
             canonical.media_type = media_type
             canonical.byte_size = len(data)
-            canonical.storage_key = files.write_blob(data)
+            new_key, new_rel = _write_report_scoped_blob(canonical.filename, data)
+            canonical.storage_key = new_key
+            canonical.relative_path = new_rel
             if source_ref.startswith("k12100/") or not str(canonical.source_ref or "").startswith("k12100/"):
                 canonical.source_ref = source_ref[:255]
             db.flush()
-            _safe_unlink_unused_blob(db, old_key)
-            for ck in old_card_keys:
-                _safe_unlink_unused_blob(db, ck)
+            _safe_unlink_unused_blob(db, old_key, old_rel)
+            for ck, cr in old_card_refs:
+                _safe_unlink_unused_blob(db, ck, cr)
         else:
             db.flush()
         match_report(db, report=canonical)
         return canonical, False
 
-    storage_key = files.write_blob(data)
+    safe_name = papers._safe_paper_filename(filename)  # noqa: SLF001
+    storage_key, rel_path = _write_report_scoped_blob(safe_name, data)
     report = m.SchoolExamReport(
         learner_id=owner,
         sha256=digest,
-        filename=papers._safe_paper_filename(filename),  # noqa: SLF001
+        filename=safe_name,
         media_type=media_type,
         byte_size=len(data),
         storage_key=storage_key,
+        relative_path=rel_path,
         source_ref=source_ref[:255],
         title=resolved_title[:200] if resolved_title else None,
         academic_year=resolved_year,
@@ -635,7 +650,7 @@ def match_report(db: Session, *, report: m.SchoolExamReport) -> dict[str, Any]:
     for exam in db.execute(
         select(m.SchoolExam).where(m.SchoolExam.learner_id == report.learner_id)
     ).scalars().all():
-        if exam.subject in report_subjects:
+        if exam.subject == "all" or exam.subject in report_subjects:
             continue
         if _exam_matches_identity(report, exam):
             extra_by_subject.setdefault(exam.subject, []).append(exam)
@@ -673,7 +688,13 @@ def match_report(db: Session, *, report: m.SchoolExamReport) -> dict[str, Any]:
     }
 
 
-def build_answer_card_attachments(db: Session, *, report: m.SchoolExamReport, rotation: int = 0) -> dict[str, Any]:
+def build_answer_card_attachments(
+    db: Session,
+    *,
+    report: m.SchoolExamReport,
+    rotation: int = 0,
+    archive_dir: str | None = None,
+) -> dict[str, Any]:
     """把报告册中的答题卡页渲染为私有 PNG；按 (报告, 学科, 页码) 幂等。"""
     pages = report.answer_card_pages or {}
     if not pages:
@@ -681,7 +702,7 @@ def build_answer_card_attachments(db: Session, *, report: m.SchoolExamReport, ro
     if rotation not in {0, 90, 180, 270}:
         raise HTTPException(422, detail="INVALID_ANSWER_CARD_ROTATION")
     try:
-        source = files.blob_path(report.storage_key).read_bytes()
+        source = files.attachment_file_path(report).read_bytes()
     except FileNotFoundError as exc:
         raise HTTPException(409, detail="REPORT_FILE_MISSING") from exc
     import subprocess
@@ -700,13 +721,13 @@ def build_answer_card_attachments(db: Session, *, report: m.SchoolExamReport, ro
         ).scalars().all()
         if (att.subject, att.page_number) not in active_pairs
     ]
-    stale_keys = [att.storage_key for att in stale_cards]
+    stale_refs = [(att.storage_key, att.relative_path) for att in stale_cards]
     for att in stale_cards:
         db.delete(att)
     if stale_cards:
         db.flush()
-        for key in stale_keys:
-            _safe_unlink_unused_blob(db, key)
+        for key, rel in stale_refs:
+            _safe_unlink_unused_blob(db, key, rel)
 
     with TemporaryDirectory(prefix="pageboy-card-") as directory:
         root = Path(directory)
@@ -738,15 +759,18 @@ def build_answer_card_attachments(db: Session, *, report: m.SchoolExamReport, ro
                 if result.returncode != 0 or not images:
                     continue
                 data = images[0].read_bytes()
+                card_filename = f"答题卡-{subject}-{page_number}.png"
+                card_key, card_rel = _write_report_scoped_blob(card_filename, data)
                 attachment = m.SchoolExamReportAttachment(
                     report_id=report.id,
                     learner_id=report.learner_id,
                     subject=subject,
                     page_number=page_number,
-                    filename=f"答题卡-{subject}-{page_number}.png",
+                    filename=card_filename,
                     media_type="image/png",
                     byte_size=len(data),
-                    storage_key=files.write_blob(data),
+                    storage_key=card_key,
+                    relative_path=card_rel,
                     sha256=sha256(data).hexdigest(),
                     rotation=rotation,
                 )
@@ -756,7 +780,7 @@ def build_answer_card_attachments(db: Session, *, report: m.SchoolExamReport, ro
         db.commit()
         for attachment in created:
             db.refresh(attachment)
-        synced = sync_answer_cards_to_ledger(db, report=report)
+        synced = sync_answer_cards_to_ledger(db, report=report, archive_dir=archive_dir)
         db.commit()
         return {"created": len(created), "attachments": [_serialize_card(attachment) for attachment in created], "ledger_synced": synced}
 
@@ -824,6 +848,7 @@ def sync_report_ranks_and_benchmarks(
         )
 
     created_total = 0
+    seen_total_exam_ids: set[str] = set()
     for link in links:
         subject = str(link.get("subject") or "")
         exam = db.get(m.SchoolExam, str(link.get("exam_id") or ""))
@@ -834,10 +859,16 @@ def sync_report_ranks_and_benchmarks(
         if item is not None:
             cls_hi = item.get("class_highest")
             grd_hi = item.get("grade_highest")
-            if cls_hi is not None and (exam.class_highest is None or not exam.confirmed_by_user):
-                exam.class_highest = round(float(cls_hi), 2)
-            if grd_hi is not None and (exam.grade_highest is None or not exam.confirmed_by_user):
-                exam.grade_highest = round(float(grd_hi), 2)
+            if exam.subject != "all":
+                if cls_hi is not None and (exam.class_highest is None or not exam.confirmed_by_user):
+                    exam.class_highest = round(float(cls_hi), 2)
+                if grd_hi is not None and (exam.grade_highest is None or not exam.confirmed_by_user):
+                    exam.grade_highest = round(float(grd_hi), 2)
+            else:
+                if report.total_class_highest is not None and (exam.class_highest is None or not exam.confirmed_by_user):
+                    exam.class_highest = round(float(report.total_class_highest), 2)
+                if report.total_grade_highest is not None and (exam.grade_highest is None or not exam.confirmed_by_user):
+                    exam.grade_highest = round(float(report.total_grade_highest), 2)
             if item.get("class_rank") is not None and int(item["class_rank"]) > 0:
                 subj_entries.append(
                     {
@@ -874,7 +905,8 @@ def sync_report_ranks_and_benchmarks(
                     ownership_basis=ownership_basis,
                 )
             )
-        if total_entries:
+        if total_entries and exam.id not in seen_total_exam_ids:
+            seen_total_exam_ids.add(exam.id)
             created_total += len(
                 papers.persist_rank_entries(
                     db,
@@ -945,9 +977,17 @@ def upsert_exams_from_report(
     *,
     report: m.SchoolExamReport,
     platform_meta: dict[str, Any] | None = None,
+    archive_dir: str | None = None,
+    allow_create: bool = True,
+    archive_exam_id: str | None = None,
 ) -> dict[str, Any]:
     """按下载报告与平台元数据新建、更新未锁分或补全空身份字段；绝不静默覆盖锁分或身份冲突。"""
     meta = platform_meta or {}
+    target_archive_exam: m.SchoolExam | None = None
+    if archive_exam_id:
+        candidate_archive = db.get(m.SchoolExam, archive_exam_id)
+        if candidate_archive is not None and candidate_archive.learner_id == report.learner_id:
+            target_archive_exam = candidate_archive
     norm_date_str, canonical_date = _parse_k12100_exam_date(report.exam_date or meta.get("exam_date"))
     norm_year = normalize_academic_year(report.academic_year or meta.get("academic_year"))
     norm_grade = normalize_grade(report.grade) or normalize_grade(meta.get("grade"))
@@ -958,6 +998,21 @@ def upsert_exams_from_report(
     )
     series_title = _clean_report_series_title(report.title or meta.get("exam_name"), fallback_label=raw_type_display)
     ext_id = report.external_exam_id or (str(meta.get("external_exam_id") or "").strip()[:80] or None)
+    shared_archive_dir = (archive_dir or "").strip() or None
+    if not shared_archive_dir:
+        all_subject_exams = db.execute(
+            select(m.SchoolExam)
+            .where(m.SchoolExam.learner_id == report.learner_id, m.SchoolExam.subject == "all")
+            .order_by(m.SchoolExam.created_at.desc())
+        ).scalars().all()
+        for item in all_subject_exams:
+            if norm_date_str and str(item.exam_date)[:7] != norm_date_str[:7]:
+                continue
+            if series_title and series_title not in item.title and item.title not in series_title:
+                continue
+            if item.archive_dir:
+                shared_archive_dir = item.archive_dir
+                break
 
     actions: list[dict[str, Any]] = []
     counts = {
@@ -972,6 +1027,8 @@ def upsert_exams_from_report(
         "skipped": 0,
     }
 
+    archive_links: list[dict[str, Any]] = []
+    archive_meta_synced = False
     for item in report.subjects or []:
         subject = str(item.get("subject") or "").strip()
         if subject not in VALID_SCHOOL_SUBJECTS:
@@ -1026,6 +1083,99 @@ def upsert_exams_from_report(
             continue
 
         if len(matches) == 0:
+            if not allow_create:
+                if target_archive_exam is not None:
+                    filled_fields: list[str] = []
+                    if not archive_meta_synced:
+                        if not target_archive_exam.grade and norm_grade:
+                            target_archive_exam.grade = norm_grade[:20]
+                            filled_fields.append("grade")
+                        if not target_archive_exam.exam_type and canonical_type:
+                            target_archive_exam.exam_type = canonical_type
+                            filled_fields.append("exam_type")
+                        if not target_archive_exam.exam_type_label and canonical_type_label:
+                            target_archive_exam.exam_type_label = canonical_type_label[:40]
+                            filled_fields.append("exam_type_label")
+                        if not target_archive_exam.academic_year and norm_year:
+                            target_archive_exam.academic_year = norm_year
+                            filled_fields.append("academic_year")
+                        if not target_archive_exam.series_title and series_title:
+                            target_archive_exam.series_title = series_title[:160]
+                            filled_fields.append("series_title")
+                        if not target_archive_exam.external_exam_id and ext_id:
+                            target_archive_exam.external_exam_id = ext_id
+                            filled_fields.append("external_exam_id")
+                        if (
+                            canonical_date is not None
+                            and norm_date_str is not None
+                            and len(norm_date_str) == 10
+                            and target_archive_exam.source_kind == "manual"
+                            and target_archive_exam.exam_date is not None
+                            and target_archive_exam.exam_date.day == 1
+                            and target_archive_exam.exam_date.year == canonical_date.year
+                            and target_archive_exam.exam_date.month == canonical_date.month
+                            and target_archive_exam.exam_date != canonical_date
+                        ):
+                            target_archive_exam.exam_date = canonical_date
+                            filled_fields.append("exam_date")
+                        if shared_archive_dir and not target_archive_exam.archive_dir:
+                            target_archive_exam.archive_dir = shared_archive_dir
+                        if (
+                            target_archive_exam.subject == "all"
+                            and not target_archive_exam.confirmed_by_user
+                            and report.report_total_score is not None
+                            and report.report_total_max is not None
+                            and float(report.report_total_max) > 0
+                        ):
+                            target_archive_exam.earned_points = round(float(report.report_total_score), 2)
+                            target_archive_exam.max_points = round(float(report.report_total_max), 2)
+                        archive_meta_synced = True
+                    archive_links.append(
+                        {
+                            "subject": subject,
+                            "exam_id": target_archive_exam.id,
+                            "title": target_archive_exam.title,
+                            "exam_date": str(target_archive_exam.exam_date),
+                            "match": "EXACT_MATCH",
+                        }
+                    )
+                    act_name = "filled" if filled_fields else "updated"
+                    counts[act_name] += 1
+                    actions.append(
+                        {
+                            "subject": subject,
+                            "subject_label": subject_cn,
+                            "action": act_name,
+                            "exam_id": target_archive_exam.id,
+                            "exam_title": target_archive_exam.title,
+                            "exam_date": str(target_archive_exam.exam_date),
+                            "earned_points": score,
+                            "max_points": max_score,
+                            "confirmed_by_user": bool(item.get("confirmed_by_user")),
+                            "filled_fields": filled_fields,
+                            "conflict_fields": [],
+                            "message": "已同步至当前全科校考档案（未自动新建台账）。",
+                        }
+                    )
+                else:
+                    counts["skipped"] += 1
+                    actions.append(
+                        {
+                            "subject": subject,
+                            "subject_label": subject_cn,
+                            "action": "skipped",
+                            "exam_id": "",
+                            "exam_title": "",
+                            "exam_date": norm_date_str or "",
+                            "earned_points": score,
+                            "max_points": max_score,
+                            "confirmed_by_user": False,
+                            "filled_fields": [],
+                            "conflict_fields": [],
+                            "message": "未匹配到既有校考档案，已按规则跳过自动建档。",
+                        }
+                    )
+                continue
             if canonical_date is None or norm_date_str is None:
                 counts["awaiting_exam_date"] += 1
                 actions.append(
@@ -1101,9 +1251,16 @@ def upsert_exams_from_report(
                 series_title=series_title[:160],
                 external_exam_id=ext_id,
                 source_kind="k12100",
+                archive_dir=shared_archive_dir,
             )
             db.add(exam)
             db.flush()
+            if not shared_archive_dir:
+                shared_archive_dir = build_school_exam_archive_dir_name(
+                    exam.exam_date, series_title or exam.title, exam.id
+                )
+                exam.archive_dir = shared_archive_dir
+            files.ensure_school_exam_archive_dirs(shared_archive_dir)
             counts["created"] += 1
             actions.append(
                 {
@@ -1259,6 +1416,14 @@ def upsert_exams_from_report(
 
     db.flush()
     match_report(db, report=report)
+    if archive_links:
+        existing_links = [
+            lnk for lnk in (report.linked_exam_ids or [])
+            if isinstance(lnk, dict) and lnk.get("subject") not in {a["subject"] for a in archive_links}
+        ]
+        report.linked_exam_ids = [*existing_links, *archive_links]
+        report.match_state = "EXACT_MATCH"
+        db.flush()
     ranks_synced = sync_report_ranks_and_benchmarks(
         db,
         report=report,
@@ -1267,7 +1432,12 @@ def upsert_exams_from_report(
     return {"counts": counts, "actions": actions, "ranks_synced": ranks_synced}
 
 
-def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> int:
+def sync_answer_cards_to_ledger(
+    db: Session,
+    *,
+    report: m.SchoolExamReport,
+    archive_dir: str | None = None,
+) -> int:
     """把报告答题卡页同步为已关联校考的私有附件；按 SHA-256 与规范页码集合去重，避免重复写入。"""
     links = {str(link.get("subject")): str(link.get("exam_id")) for link in (report.linked_exam_ids or [])}
     if not links:
@@ -1299,6 +1469,18 @@ def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> i
         exam_id = links.get(subject)
         if not exam_id:
             continue
+        target_exam = db.get(m.SchoolExam, exam_id)
+        target_archive_dir = (
+            (archive_dir or "").strip()
+            or (target_exam.archive_dir if target_exam and target_exam.archive_dir else "")
+            or build_school_exam_archive_dir_name(
+                report.exam_date or (target_exam.exam_date if target_exam else "unknown"),
+                report.title or (target_exam.title if target_exam else "school-exam"),
+                exam_id,
+            )
+        )
+        if target_exam is not None and not target_exam.archive_dir:
+            target_exam.archive_dir = target_archive_dir
         expected_names = {f"报告答题卡-{c.subject}-第{c.page_number}页.png" for c in cards}
         existing_rows = db.execute(
             select(m.SchoolPaperAttachment)
@@ -1313,9 +1495,10 @@ def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> i
             is_dup_auto = is_auto and att.sha256 in kept_hashes
             if is_stale or is_dup_auto:
                 old_key = att.storage_key
+                old_rel = getattr(att, "relative_path", None)
                 db.delete(att)
                 db.flush()
-                _safe_unlink_unused_blob(db, old_key)
+                _safe_unlink_unused_blob(db, old_key, old_rel)
                 existing_rows.remove(att)
             else:
                 kept_hashes.add(att.sha256)
@@ -1326,7 +1509,7 @@ def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> i
         for card in cards:
             filename = f"报告答题卡-{card.subject}-第{card.page_number}页.png"
             try:
-                data = files.blob_path(card.storage_key).read_bytes()
+                data = files.attachment_file_path(card).read_bytes()
             except FileNotFoundError:
                 continue
             if card.rotation:
@@ -1342,15 +1525,24 @@ def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> i
             if exists is not None:
                 if exists.sha256 != digest:
                     old_key = exists.storage_key
-                    exists.storage_key = files.write_blob(data)
+                    old_rel = getattr(exists, "relative_path", None)
+                    new_key, new_rel = files.write_school_exam_file(
+                        target_archive_dir, "answer-sheet", filename, data
+                    )
+                    exists.storage_key = new_key
+                    exists.relative_path = new_rel
+                    exists.category = "answer_sheet"
                     exists.sha256 = digest
                     exists.byte_size = len(data)
                     known_hashes.add(digest)
                     db.flush()
-                    _safe_unlink_unused_blob(db, old_key)
+                    _safe_unlink_unused_blob(db, old_key, old_rel)
                 continue
             if digest in known_hashes:
                 continue
+            new_key, new_rel = files.write_school_exam_file(
+                target_archive_dir, "answer-sheet", filename, data
+            )
             new_att = m.SchoolPaperAttachment(
                 school_exam_id=exam_id,
                 owner_id=report.learner_id,
@@ -1358,7 +1550,9 @@ def sync_answer_cards_to_ledger(db: Session, *, report: m.SchoolExamReport) -> i
                 media_type="image/png",
                 sha256=digest,
                 byte_size=len(data),
-                storage_key=files.write_blob(data),
+                storage_key=new_key,
+                category="answer_sheet",
+                relative_path=new_rel,
             )
             db.add(new_att)
             known_hashes.add(digest)
@@ -1439,17 +1633,18 @@ def consolidate_duplicate_reports(db: Session, *, owner: str) -> int:
                 winner.status = "confirmed"
 
             loser_key = loser.storage_key
+            loser_rel = loser.relative_path
             loser_cards = db.execute(
                 select(m.SchoolExamReportAttachment).where(m.SchoolExamReportAttachment.report_id == loser.id)
             ).scalars().all()
-            loser_card_keys = [c.storage_key for c in loser_cards]
+            loser_card_refs = [(c.storage_key, c.relative_path) for c in loser_cards]
             for card in loser_cards:
                 db.delete(card)
             db.delete(loser)
             db.flush()
-            _safe_unlink_unused_blob(db, loser_key)
-            for ck in loser_card_keys:
-                _safe_unlink_unused_blob(db, ck)
+            _safe_unlink_unused_blob(db, loser_key, loser_rel)
+            for ck, cr in loser_card_refs:
+                _safe_unlink_unused_blob(db, ck, cr)
             removed += 1
         if winner.grade:
             norm_w_grade = normalize_grade(winner.grade)
@@ -1489,7 +1684,7 @@ def hydrate_incomplete_local_reports(
             )
         )
         if needs_reparse and report.storage_key:
-            blob = files.blob_path(report.storage_key)
+            blob = files.attachment_file_path(report)
             if blob.is_file() and not blob.is_symlink():
                 try:
                     doc = parse_report_pdf(blob.read_bytes(), filename=report.filename, digest=report.sha256)
@@ -1509,8 +1704,21 @@ def hydrate_incomplete_local_reports(
                 except Exception:
                     pass
 
+        linked_archive_id: str | None = None
+        for lnk in report.linked_exam_ids or []:
+            if isinstance(lnk, dict) and lnk.get("exam_id"):
+                cand = db.get(m.SchoolExam, str(lnk["exam_id"]))
+                if cand is not None and cand.subject == "all":
+                    linked_archive_id = cand.id
+                    break
         if report.exam_date:
-            upsert = upsert_exams_from_report(db, report=report, platform_meta={})
+            upsert = upsert_exams_from_report(
+                db,
+                report=report,
+                platform_meta={},
+                allow_create=linked_archive_id is None,
+                archive_exam_id=linked_archive_id,
+            )
             ranks_synced += int(upsert.get("ranks_synced") or 0)
         else:
             match_report(db, report=report)
@@ -1604,6 +1812,7 @@ def generate_item_drafts(
     skipped = 0
     unmapped_subjects: list[str] = []
     catalog_cache: dict[str, list[dict[str, Any]]] = {}
+    exam_subject_cache: dict[str, str] = {}
 
     def _assoc_for(subject: str, label: str, qtype: str | None, max_score: float) -> dict[str, Any]:
         if subject not in catalog_cache:
@@ -1628,8 +1837,23 @@ def generate_item_drafts(
         if not label:
             skipped += 1
             continue
+        if exam_id not in exam_subject_cache:
+            target_exam_row = db.get(m.SchoolExam, exam_id)
+            exam_subject_cache[exam_id] = str(target_exam_row.subject) if target_exam_row is not None else ""
+        if exam_subject_cache[exam_id] == "all":
+            subj_prefix = f"{SUBJECT_CN.get(subject, subject)}·"
+            if not label.startswith(subj_prefix):
+                label = f"{subj_prefix}{label}"[:160]
         max_score = question.get("max_score")
         score = question.get("score")
+        score_rate = question.get("score_rate")
+        if max_score is not None and float(max_score) > 0 and score is not None and float(score) > float(max_score):
+            if score_rate is not None and 0 <= float(score_rate) <= 100:
+                score = round(float(max_score) * (float(score_rate) / 100.0), 2)
+            elif float(score) / 10.0 <= float(max_score):
+                score = round(float(score) / 10.0, 2)
+            else:
+                score = float(max_score)
         qtype = str(question.get("question_type") or "").strip() or None
         exists = db.execute(
             select(m.SchoolExamItem).where(
@@ -1739,7 +1963,7 @@ def ai_map_report_items(db: Session, *, report: m.SchoolExamReport) -> dict[str,
         if original is None:
             continue
         try:
-            data = files.blob_path(original.storage_key).read_bytes()
+            data = files.attachment_file_path(original).read_bytes()
             text, _version = files.parse_text(data, original.media_type)
         except Exception:
             failures.append(subject)

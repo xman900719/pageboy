@@ -116,7 +116,7 @@ async function stabilize(page: Page): Promise<void> {
 async function setupVisualPage(browser: Browser, contextOptions: BrowserContextOptions, state: VisualState): Promise<Page> {
   const context = await browser.newContext(contextOptions)
   const page = await context.newPage()
-  await page.route('**/api/school-exams/sync-center', route =>
+  await page.route('**/api/school-exams/sync-center*', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -279,7 +279,7 @@ async function setupVisualPage(browser: Browser, contextOptions: BrowserContextO
   await page.getByRole('button', { name: '进入' }).click()
   await expect(page.getByRole('navigation', { name: '管理视图' })).toBeVisible()
   await page.getByRole('navigation', { name: '管理视图' }).getByRole('button', { name: '学校考试' }).click()
-  const enterBtn = page.getByRole('button', { name: '进入核对 →' }).first()
+  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
   const titleInput = page.getByLabel('考试名称')
   await expect(enterBtn.or(titleInput)).toBeVisible()
   if (await enterBtn.isVisible()) {
@@ -287,9 +287,9 @@ async function setupVisualPage(browser: Browser, contextOptions: BrowserContextO
   } else {
     await titleInput.fill('视觉巡检占位校考（虚构测试数据）')
     await page.getByLabel('获得分数').fill('88')
-    await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
+    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
   }
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   await expect(page.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
   await stabilize(page)
   return page
@@ -328,13 +328,12 @@ test('V1 桌面：冲突、429 停止与核对入档界面证据', async ({ brow
     totalConfirmed: false,
     examId,
   })
-  await conflict.getByRole('button', { name: /虚构测试数据_九年级数学月考试卷.docx/ }).click()
   await expect(conflict.getByRole('region', { name: '全科校考同步中心' })).toContainText('身份字段冲突')
   await stabilize(conflict)
   await conflict.screenshot({ path: path.join(outputDir, 'sync-center-desktop-conflict.png'), fullPage: true })
 
   const axe = await new AxeBuilder({ page: conflict })
-    .include('#exam-panel-sync')
+    .include('.exam-sync-center')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   fs.writeFileSync(

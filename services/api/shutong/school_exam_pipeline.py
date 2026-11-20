@@ -25,7 +25,14 @@ from sqlalchemy.orm import Session
 
 from . import models as m
 from . import private_files as files
-from .home import HomeIdentityError, assert_no_cross_environment_path, get_env_home, normalize_environment, resolve_home_root
+from .home import (
+    HomeIdentityError,
+    assert_no_cross_environment_path,
+    default_school_exams_dir,
+    get_env_home,
+    normalize_environment,
+    resolve_home_root,
+)
 from .school_exam_headers import analyze_paper_bytes
 from .school_report_parser import classify_report_text
 from .school_exam_matcher import (
@@ -82,12 +89,13 @@ class SourceStatus:
     ready: bool
     source_code: str | None
     message: str
+    directory_display: str | None = None
 
     def as_public_dict(self) -> dict[str, Any]:
         return {
             "environment": self.environment,
             "directory": str(self.inbox_path),
-            "directory_display": f"$PAGEBOY_HOME/{self.environment}/school-exams/inbox",
+            "directory_display": self.directory_display or f"$PAGEBOY_HOME/{self.environment}/school-exams/inbox",
             "real_source_configured": self.real_source_configured,
             "source_kind": "local_inbox",
             "ready": self.ready,
@@ -100,7 +108,7 @@ class SourceStatus:
 
 def school_exam_storage_root(environment: str | None = None) -> Path:
     env = normalize_environment(environment)
-    root = assert_no_cross_environment_path(get_env_home(env) / "school-exams", expected_env=env)
+    root = assert_no_cross_environment_path(default_school_exams_dir(env), expected_env=env)
     return root
 
 
@@ -140,9 +148,31 @@ def ensure_inbox(environment: str | None = None) -> Path:
     return inbox
 
 
-def inspect_source_status(environment: str | None = None) -> SourceStatus:
+def _resolve_scan_target(
+    db: Session,
+    *,
+    owner: str,
+    environment: str | None = None,
+    exam_id: str | None = None,
+) -> tuple[Path, str, str]:
     env = normalize_environment(environment)
-    inbox = school_exam_inbox(env)
+    if exam_id:
+        exam = db.get(m.SchoolExam, exam_id)
+        if exam is not None and exam.learner_id == owner and exam.archive_dir:
+            target = files.school_exam_file_path(f"{exam.archive_dir}/exam-paper")
+            display = f"$PAGEBOY_HOME/{env}/school-exams/{exam.archive_dir}/exam-paper"
+            return target, display, f"{exam.archive_dir}/exam-paper"
+    return school_exam_inbox(env), f"$PAGEBOY_HOME/{env}/school-exams/inbox", "inbox"
+
+
+def inspect_source_status(
+    environment: str | None = None,
+    *,
+    target_dir: Path | None = None,
+    directory_display: str | None = None,
+) -> SourceStatus:
+    env = normalize_environment(environment)
+    inbox = target_dir or school_exam_inbox(env)
     try:
         ready = _assert_directory_mode(inbox, allow_missing=True)
         permission_error = None
@@ -151,11 +181,27 @@ def inspect_source_status(environment: str | None = None) -> SourceStatus:
         permission_error = exc.code
     configured = [name for name, adapter in REGISTERED_SOURCES.items() if adapter.configured()]
     if configured:
-        return SourceStatus(env, inbox, True, ready, None, f"已配置授权卷源：{'、'.join(configured)}")
-    message = "未配置真实授权学校试卷来源；可扫描收件箱中已有文件，但不会伪造远程下载。"
+        return SourceStatus(
+            env,
+            inbox,
+            True,
+            ready,
+            None,
+            f"已配置授权卷源：{'、'.join(configured)}",
+            directory_display=directory_display,
+        )
+    message = "未配置真实授权学校试卷来源；可扫描当前目录中已有原卷，但不会伪造远程下载。"
     if permission_error:
-        message = f"收件箱权限不安全（{permission_error}）；请仅允许当前用户访问后重试。"
-    return SourceStatus(env, inbox, False, ready, SOURCE_NOT_CONFIGURED, message)
+        message = f"扫描目录权限不安全（{permission_error}）；请仅允许当前用户访问后重试。"
+    return SourceStatus(
+        env,
+        inbox,
+        False,
+        ready,
+        SOURCE_NOT_CONFIGURED,
+        message,
+        directory_display=directory_display,
+    )
 
 
 def _safe_paper_filename(name: str) -> str:
@@ -540,14 +586,27 @@ def scan_local_papers(
     environment: str | None = None,
     apply_imports: bool = False,
     source_kind: str = "local_scan",
+    exam_id: str | None = None,
 ) -> dict[str, Any]:
-    """扫描当前环境 inbox 并登记发现；apply_imports 仅处理唯一精确匹配。"""
-    inbox = ensure_inbox(environment)
-    status = inspect_source_status(environment)
+    """扫描当前环境校考目录（优先选中档案 exam-paper/，否则 inbox/）并登记发现；apply_imports 仅处理唯一精确匹配。"""
+    target_dir, directory_display, source_label = _resolve_scan_target(
+        db,
+        owner=owner,
+        environment=environment,
+        exam_id=exam_id,
+    )
+    if source_label == "inbox":
+        inbox = ensure_inbox(environment)
+    else:
+        exam = db.get(m.SchoolExam, exam_id)
+        files.ensure_school_exam_archive_dirs(exam.archive_dir)
+        _assert_directory_mode(target_dir, allow_missing=False)
+        inbox = target_dir
+    status = inspect_source_status(environment, target_dir=inbox, directory_display=directory_display)
     run = m.SchoolExamScanRun(
         learner_id=owner,
         source_kind=source_kind,
-        source_label="inbox",
+        source_label=source_label[:80],
         status="running",
         started_at=m.now(),
     )
@@ -592,8 +651,8 @@ def scan_local_papers(
                 byte_size=len(data),
                 storage_key=storage_key,
                 source_kind=source_kind,
-                source_name="inbox",
-                source_ref=f"inbox/{_safe_paper_filename(path.relative_to(inbox).as_posix())}"[:255],
+                source_name=source_label[:80],
+                source_ref=f"{source_label}/{_safe_paper_filename(path.relative_to(inbox).as_posix())}"[:255],
                 header_text=recognition.text_excerpt,
                 header_fields={**recognition.as_dict(), "complete": recognition.complete},
                 header_confidence=recognition.confidence,
@@ -867,52 +926,73 @@ def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]
     out: list[dict[str, Any]] = []
     for report in reports:
         by_subj: dict[str, m.SchoolExam] = {}
-        for link in report.linked_exam_ids or []:
-            if not isinstance(link, dict):
-                continue
-            exam = exams_by_id.get(str(link.get("exam_id") or ""))
-            if exam is not None:
-                by_subj.setdefault(exam.subject, exam)
-        if report.external_exam_id:
-            for exam in exams_by_ext.get(report.external_exam_id, []):
-                by_subj.setdefault(exam.subject, exam)
-
         report_subj_map = {
             str(entry.get("subject") or ""): entry
             for entry in (report.subjects or [])
             if isinstance(entry, dict) and entry.get("subject")
         }
-        sorted_exams = sorted(
-            by_subj.values(),
-            key=lambda ex: (subj_rank.get(ex.subject, 99), ex.subject, ex.id),
+        for link in report.linked_exam_ids or []:
+            if not isinstance(link, dict):
+                continue
+            exam = exams_by_id.get(str(link.get("exam_id") or ""))
+            if exam is not None:
+                link_subj = str(link.get("subject") or "").strip()
+                if exam.subject == "all" and link_subj and link_subj in _SCHOOL_SUBJECT_CN:
+                    by_subj.setdefault(link_subj, exam)
+                else:
+                    by_subj.setdefault(exam.subject, exam)
+        if report.external_exam_id:
+            for exam in exams_by_ext.get(report.external_exam_id, []):
+                if exam.subject == "all":
+                    for subj_code in report_subj_map:
+                        if subj_code in _SCHOOL_SUBJECT_CN:
+                            by_subj.setdefault(subj_code, exam)
+                else:
+                    by_subj.setdefault(exam.subject, exam)
+
+        sorted_items = sorted(
+            by_subj.items(),
+            key=lambda pair: (subj_rank.get(pair[0], 99), pair[0], pair[1].id),
         )
         exams_out = []
-        for ex in sorted_exams:
-            s_entry = report_subj_map.get(ex.subject, {})
+        for subj_code, ex in sorted_items:
+            s_entry = report_subj_map.get(subj_code, {})
             subj_rank_keys = rank_keys_by_exam.get(ex.id, set())
-            rank_synced_count = sum(1 for sc, _ in subj_rank_keys if sc == ex.subject)
+            rank_synced_count = sum(1 for sc, _ in subj_rank_keys if sc == subj_code)
+            is_all_archive = ex.subject == "all"
+            subj_earned = s_entry.get("score") if is_all_archive and s_entry.get("score") is not None else ex.earned_points
+            subj_max = s_entry.get("max_score") if is_all_archive and s_entry.get("max_score") is not None else ex.max_points
+            subj_confirmed = bool(s_entry.get("confirmed_by_user")) if is_all_archive else bool(ex.confirmed_by_user)
             exams_out.append(
                 {
                     "exam_id": ex.id,
-                    "subject": ex.subject,
-                    "subject_label": _SCHOOL_SUBJECT_CN.get(ex.subject, ex.subject),
+                    "subject": subj_code,
+                    "subject_label": _SCHOOL_SUBJECT_CN.get(subj_code, subj_code),
                     "exam_title": ex.title,
                     "exam_date": str(ex.exam_date),
-                    "earned_points": ex.earned_points,
-                    "max_points": ex.max_points,
-                    "confirmed_by_user": bool(ex.confirmed_by_user),
+                    "earned_points": subj_earned,
+                    "max_points": subj_max,
+                    "confirmed_by_user": subj_confirmed,
                     "draft_count": item_counts.get(ex.id, {}).get("draft", 0),
                     "confirmed_item_count": item_counts.get(ex.id, {}).get("confirmed", 0),
                     "attachment_count": attachment_counts.get(ex.id, 0),
                     "class_rank": s_entry.get("class_rank"),
                     "grade_rank": s_entry.get("grade_rank"),
                     "participants": s_entry.get("participants"),
-                    "class_highest": ex.class_highest if ex.class_highest is not None else s_entry.get("class_highest"),
-                    "grade_highest": ex.grade_highest if ex.grade_highest is not None else s_entry.get("grade_highest"),
+                    "class_highest": (
+                        s_entry.get("class_highest")
+                        if is_all_archive
+                        else (ex.class_highest if ex.class_highest is not None else s_entry.get("class_highest"))
+                    ),
+                    "grade_highest": (
+                        s_entry.get("grade_highest")
+                        if is_all_archive
+                        else (ex.grade_highest if ex.grade_highest is not None else s_entry.get("grade_highest"))
+                    ),
                     "rank_synced_count": rank_synced_count,
                 }
             )
-        seen_subjs = {ex.subject for ex in sorted_exams}
+        seen_subjs = {subj_code for subj_code, _ in sorted_items}
         unlinked_subjects: list[dict[str, Any]] = []
         seen_unlinked: set[str] = set()
         for entry in report.subjects or []:
@@ -977,8 +1057,20 @@ def _sync_readiness(synced_reports: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def get_sync_center(db: Session, *, owner: str, environment: str | None = None) -> dict[str, Any]:
-    status = inspect_source_status(environment)
+def get_sync_center(
+    db: Session,
+    *,
+    owner: str,
+    environment: str | None = None,
+    exam_id: str | None = None,
+) -> dict[str, Any]:
+    target_dir, directory_display, _ = _resolve_scan_target(
+        db,
+        owner=owner,
+        environment=environment,
+        exam_id=exam_id,
+    )
+    status = inspect_source_status(environment, target_dir=target_dir, directory_display=directory_display)
     run = latest_scan_run(db, owner=owner)
     papers = db.execute(
         select(m.SchoolExamPaper)

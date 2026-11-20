@@ -375,6 +375,26 @@ def _normalize_difficulty(raw: str | None) -> tuple[str | None, bool]:
     return text, False
 
 
+def _reconcile_question_scores(
+    max_score: float | None,
+    score: float | None,
+    score_rate: float | None,
+) -> tuple[float | None, float | None]:
+    """校正 OCR 小数点漏识（如满分 0.5、得分 0.5 被误识为 5.0）：绝不允许 实得 > 满分。"""
+    if max_score is not None and max_score > 0 and score is not None and score > max_score:
+        if score_rate is not None and 0 <= score_rate <= 100:
+            score = round(max_score * (score_rate / 100.0), 2)
+        elif abs(score / 10.0 - max_score) < 1e-6 or score / 10.0 <= max_score:
+            score = round(score / 10.0, 2)
+        else:
+            score = max_score
+    elif max_score is None and score is not None and score_rate is not None and score_rate > 0:
+        inferred = round(score * 100.0 / score_rate, 2)
+        if inferred >= score and 0 < inferred <= 150:
+            max_score = inferred
+    return max_score, score
+
+
 def _question_rows(page_number: int, text: str) -> list[ReportQuestion]:
     rows: list[ReportQuestion] = []
     for line in text.splitlines():
@@ -393,8 +413,8 @@ def _question_rows(page_number: int, text: str) -> list[ReportQuestion]:
         tail = values[1:] if values and number_match and values[0] == float(number_match.group(0)) else values
         if len(tail) < 2:
             continue
-        max_score, score = tail[0], tail[1]
         rate = float(tail[2]) if len(tail) > 2 and "%" in line else None
+        max_score, score = _reconcile_question_scores(tail[0], tail[1], rate)
         difficulty_value, difficulty_normalized = _normalize_difficulty(difficulty_match.group(1) if difficulty_match else None)
         question_type_value = _normalize_question_type(type_match.group(1))
         rows.append(
@@ -427,12 +447,19 @@ def _score_row_values(text: str) -> list[float]:
 def _page_subjects(pages: list[tuple[int, str]], subjects: dict[str, ReportSubject]) -> dict[int, str]:
     """按页内“学科成绩分析”标题或成绩单分数归属学科；无证据不猜。"""
     page_subject: dict[int, str] = {}
+    by_assigned_page = {
+        int(item.page): code
+        for code, item in subjects.items()
+        if item.page is not None
+    }
     current: str | None = None
     for page_number, text in pages:
         headings = [_subject_code(match.group(1)) for match in _SUBJECT_HEADING.finditer(text)]
         headings = [code for code in headings if code]
         if headings:
             current = headings[0]
+        elif page_number in by_assigned_page:
+            current = by_assigned_page[page_number]
         elif "成绩单" in text:
             values = _score_row_values(text)
             if values:
@@ -629,10 +656,13 @@ def _tsv_questions(
                 continue
             question_type = _normalize_question_type(str(cells.get("题型") or ""))
             difficulty, _normalized_flag = _normalize_difficulty(str(cells.get("难度") or ""))
-            max_score = _norm_number(str(cells.get("满分") or ""))
-            score = _norm_number(str(cells.get("得分") or ""))
             rate_text = str(cells.get("得分率") or "")
             rate = _norm_number(rate_text.rstrip("%"))
+            max_score, score = _reconcile_question_scores(
+                _norm_number(str(cells.get("满分") or "")),
+                _norm_number(str(cells.get("得分") or "")),
+                rate,
+            )
             key = (code, number)
             if key in seen:
                 continue
@@ -671,9 +701,10 @@ def parse_report_pdf(data: bytes, *, filename: str = "", digest: str = "") -> Re
             for p in pages
         ]
         _section_score_override(ocr_tuples, subject_map, fill_missing_only=True)
-        page_subject = _page_subjects(split_pages(text), subject_map)
+        page_subject = _page_subjects(ocr_tuples, subject_map)
+        doc.answer_card_pages = _answer_cards(ocr_tuples, page_subject)
         wanted = {number for number in question_page_numbers}
-        page_bodies = {number: body for number, body in split_pages(text)}
+        page_bodies = {number: body for number, body in ocr_tuples}
         questions = _tsv_questions(doc, [page for page in pages if page["page"] in wanted], page_subject, page_bodies)
         if questions:
             doc.questions = questions

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, ConfigDict, HttpUrl, StringConstraints, f
 Subject = Literal["math", "chinese", "english", "physics"]
 # 学校考试归档支持额外科目（ethics：道德与法治/道法，暂不建课标知识图谱）
 SchoolExamSubject = Literal["math", "chinese", "english", "physics", "ethics"]
+# 校考档案建档与台账查询支持全科（all）及各单科
+SchoolExamArchiveSubject = Literal["all", "math", "chinese", "english", "physics", "ethics"]
 # 校考失分题标准错因分类
 SchoolErrorCategory = Literal["concept", "calculation", "reading", "method", "norm", "other"]
 # 校考逐题 OCR / 同步草稿可信度标记
@@ -158,10 +160,10 @@ class SelfAssessmentIn(BaseModel):
     self_earned_points: float = Field(ge=0)
 
 class SchoolExamIn(BaseModel):
-    subject: SchoolExamSubject
+    subject: SchoolExamArchiveSubject = "all"
     exam_date: date
     title: str = Field(min_length=1)
-    earned_points: float = Field(ge=0)
+    earned_points: float | None = Field(default=None, ge=0)
     max_points: float = Field(gt=0)
     confirmed_by_user: bool = False
     # 可选考试身份元数据：用于严格匹配与卷头核对，不参与总分/能力证据计算。
@@ -181,14 +183,17 @@ class SchoolExamIn(BaseModel):
 
     @model_validator(mode="after")
     def check_points(self):
+        if self.earned_points is None:
+            self.earned_points = self.max_points
         if self.earned_points > self.max_points:
             raise ValueError("earned_points exceeds max_points")
         return self
 
 
 class SchoolPaperScanIn(BaseModel):
-    """扫描当前环境私有收件箱；只有 CLI run 才允许自动归档精确匹配原件。"""
+    """扫描当前环境校考目录（优先选中档案 exam-paper/，否则 inbox/）；只有 CLI run 才允许自动归档精确匹配原件。"""
     apply_imports: bool = False
+    exam_id: str | None = Field(default=None, max_length=64)
 
 
 class SchoolPaperCollectIn(BaseModel):
@@ -218,6 +223,7 @@ class SchoolExamConfirmIn(BaseModel):
     """人工补充并确认待核对学校考试总分（确认后不可改写）。"""
     confirmed_by_user: bool = Field(strict=True, description="必须为 true，表示人工已核对学校考试总分")
     earned_points: float = Field(ge=0)
+    subject: SchoolExamSubject | None = None
 
     @model_validator(mode="after")
     def require_confirmation(self):
@@ -347,7 +353,7 @@ class StudentSchoolReflectionItemOut(BaseModel):
     """面向学生端的校考失分复盘条目（严禁泄露内部 knowledge_id）。"""
     item_id: str
     exam_id: str
-    subject: SchoolExamSubject
+    subject: SchoolExamArchiveSubject
     exam_title: str
     exam_date: str
     question_label: str
@@ -453,12 +459,12 @@ class SchoolItemConfirmBatchEntryIn(SchoolItemConfirmIn):
 
 class SchoolItemConfirmBatchIn(BaseModel):
     """批量人工确认校考草稿列表。"""
-    items: list[SchoolItemConfirmBatchEntryIn] = Field(min_length=1, max_length=100)
+    items: list[SchoolItemConfirmBatchEntryIn] = Field(min_length=1, max_length=500)
 
 
 class SchoolExamParseDraftsIn(BaseModel):
     """触发从原卷/答题卡附件抽取 M2 逐题待核对草稿的请求。"""
-    attachment_ids: list[str] = Field(min_length=1, max_length=10)
+    attachment_ids: list[str] = Field(min_length=1, max_length=100)
     mode: Literal["auto", "skeleton_only"] = "auto"
     mask_student_header: bool = True
     replace_unconfirmed_drafts: bool = False
@@ -602,7 +608,7 @@ class SchoolExamHistorySummaryOut(BaseModel):
 
 class SchoolExamErrorAnalysisOut(BaseModel):
     exam_id: str
-    subject: SchoolExamSubject
+    subject: SchoolExamArchiveSubject
     title: str
     exam_date: str
     confirmed_by_user: bool
@@ -855,6 +861,7 @@ class K12100SyncJobStartIn(BaseModel):
     replace_unconfirmed_drafts: bool = True
     use_ai: bool = True
     headless: bool = True
+    archive_exam_id: str | None = Field(default=None, max_length=64)
 
 
 class K12100ImportBundleIn(BaseModel):
@@ -875,6 +882,7 @@ class K12100ImportBundleIn(BaseModel):
     upload_missing_cards: bool = True
     replace_unconfirmed_drafts: bool = True
     use_ai: bool = True
+    archive_exam_id: str | None = Field(default=None, max_length=64)
 
 
 class K12100ReportJobStartIn(BaseModel):
@@ -882,6 +890,7 @@ class K12100ReportJobStartIn(BaseModel):
 
     max_exams: int = Field(default=3, ge=1, le=3)
     headless: bool = False
+    archive_exam_id: str | None = Field(default=None, max_length=64)
 
 
 class SchoolExamReportConfirmIn(BaseModel):

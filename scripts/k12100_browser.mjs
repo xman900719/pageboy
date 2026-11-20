@@ -53,6 +53,8 @@ function parseArgs(argv) {
     probeDir: path.join(defaultK12Dir, 'probe_snapshot'),
     output: '',
     examKeyword: '',
+    examDate: '',
+    externalExamId: '',
     maxExams: 2,
     waitSeconds: 180,
     probeBrowseSeconds: 20,
@@ -79,6 +81,12 @@ function parseArgs(argv) {
       i += 1
     } else if (key === '--exam-keyword' && val !== undefined) {
       args.examKeyword = String(val).trim()
+      i += 1
+    } else if (key === '--exam-date' && val !== undefined) {
+      args.examDate = String(val).trim()
+      i += 1
+    } else if (key === '--external-exam-id' && val !== undefined) {
+      args.externalExamId = String(val).trim()
       i += 1
     } else if (key === '--max-exams' && val) {
       const n = Number(val)
@@ -925,6 +933,50 @@ async function ensureOnReportList(page) {
   await humanPause(1600, 2600)
 }
 
+function normalizeExamToken(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/\bc20\d{2}\b/g, '')
+    .replace(/[\s·\-_()（）【】[\].,，。:：/]/g, '')
+}
+
+function matchesTargetExamSession(item, args) {
+  const targetExtId = String(args.externalExamId || '').trim()
+  const targetKeyword = String(args.examKeyword || '').trim()
+  const targetDate = String(args.examDate || '').trim()
+  if (!targetExtId && !targetKeyword && !targetDate) return true
+
+  if (targetExtId && String(item.external_exam_id || '').trim() === targetExtId) {
+    return true
+  }
+
+  let nameMatched = true
+  if (targetKeyword) {
+    const rawItemName = String(item.exam_name || '').trim()
+    const normItem = normalizeExamToken(rawItemName)
+    const normTarget = normalizeExamToken(targetKeyword)
+    if (!normItem || !normTarget) {
+      nameMatched = false
+    } else if (normItem.includes(normTarget) || normTarget.includes(normItem)) {
+      nameMatched = true
+    } else {
+      const tokens = ['期中', '期末', '月考', '统一练习', '一模', '二模', '上学期', '下学期', '秋学期', '春学期']
+      const shared = tokens.filter(t => normItem.includes(t) && normTarget.includes(t))
+      nameMatched = shared.length >= 1
+    }
+  }
+
+  if (!nameMatched) return false
+  if (targetDate && item.exam_date) {
+    const itemMonth = String(item.exam_date).slice(0, 7)
+    const targetMonth = targetDate.slice(0, 7)
+    if (/^\d{4}-\d{2}$/.test(itemMonth) && /^\d{4}-\d{2}$/.test(targetMonth)) {
+      return itemMonth === targetMonth
+    }
+  }
+  return true
+}
+
 async function downloadTotalReports(page, context, state, args) {
   const { skipSet, completeIdentities } = readSkipPayload(args.skipFile)
   const downloadDir = args.downloadDir || path.join(resolveDefaultK12100Dir(), 'tmp_reports')
@@ -981,12 +1033,36 @@ async function downloadTotalReports(page, context, state, args) {
     }
   }
 
-  const targets = homeExams.filter(item => !item.already_synced).slice(0, clampMaxExams(args.maxExams))
+  const hasTargetFilter = Boolean(args.examKeyword || args.examDate || args.externalExamId)
+  const scopedHomeExams = hasTargetFilter
+    ? homeExams.filter(item => matchesTargetExamSession(item, args))
+    : homeExams
+  if (hasTargetFilter && scopedHomeExams.length === 0) {
+    return {
+      status: 'collected',
+      captured_at: new Date().toISOString(),
+      reason: `k12100 首页未找到与当前原卷/档案「${args.examKeyword || args.examDate || args.externalExamId}」匹配的考试场次`,
+      home_exams: homeExams,
+      downloads: [],
+      failures: [
+        {
+          external_exam_id: args.externalExamId || '',
+          exam_name: args.examKeyword || '',
+          code: 'K12100_TARGET_EXAM_NOT_FOUND',
+          reason: `k12100 首页未找到匹配「${args.examKeyword || args.examDate || args.externalExamId}」的考试场次`,
+        },
+      ],
+    }
+  }
+
+  const targets = scopedHomeExams.filter(item => !item.already_synced).slice(0, clampMaxExams(args.maxExams))
   if (targets.length === 0) {
     return {
       status: 'collected',
       captured_at: new Date().toISOString(),
-      reason: `首页共 ${homeExams.length} 场，全部已有完整同步记录，未进入详情页或触发任何下载`,
+      reason: hasTargetFilter
+        ? `匹配场次（${scopedHomeExams.length} 场）已有完整同步记录，未触发重复下载`
+        : `首页共 ${homeExams.length} 场，全部已有完整同步记录，未进入详情页或触发任何下载`,
       home_exams: homeExams,
       downloads: [],
       failures: [],

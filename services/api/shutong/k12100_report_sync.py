@@ -17,7 +17,7 @@ from . import k12100_backfill as backfill
 from . import models as m
 from . import private_files as files
 from . import school_report_pipeline as report_pipeline
-from .home import resolve_repo_root
+from .home import build_school_exam_archive_dir_name, resolve_repo_root
 
 
 class _BrowserInterruptedWithPartial(RuntimeError):
@@ -66,6 +66,9 @@ def _download_reports_with_browser(
     max_exams: int,
     headless: bool,
     download_dir: Path,
+    exam_keyword: str = "",
+    exam_date: str = "",
+    external_exam_id: str = "",
 ) -> dict[str, Any]:
     """调用宿主机 Playwright 下载 k12100 首页未同步场次的「总分」分析报告册 PDF。"""
     node_bin = backfill._find_node_binary()  # noqa: SLF001
@@ -110,6 +113,12 @@ def _download_reports_with_browser(
         str(backfill.clamp_max_exams(max_exams)),
         "--headless" if headless else "--headed",
     ]
+    if exam_keyword.strip():
+        cmd.extend(["--exam-keyword", exam_keyword.strip()])
+    if exam_date.strip():
+        cmd.extend(["--exam-date", exam_date.strip()])
+    if external_exam_id.strip():
+        cmd.extend(["--external-exam-id", external_exam_id.strip()])
 
     child_env = os.environ.copy()
     child_env["K12100_USERNAME"] = creds["K12100_USERNAME"]
@@ -175,6 +184,7 @@ def process_downloaded_reports(
     allowed_root: Path | None = None,
     auto_map_fn: Callable[[Session, m.SchoolExamReport], int] | None = None,
     progress_cb: Callable[[str], None] | None = None,
+    archive_exam_id: str | None = None,
 ) -> dict[str, Any]:
     """解析已下载的 k12100 总分报告，执行新建/更新/补全/草稿与答题卡同步。"""
     status = str(bundle.get("status") or "")
@@ -324,7 +334,26 @@ def process_downloaded_reports(
             totals["failures"] += 1
             continue
 
-        upsert = report_pipeline.upsert_exams_from_report(db, report=report, platform_meta=platform_meta)
+        target_archive_dir: str | None = None
+        if archive_exam_id:
+            target_exam = db.get(m.SchoolExam, archive_exam_id)
+            if target_exam is not None and target_exam.learner_id == owner:
+                if not target_exam.archive_dir:
+                    target_exam.archive_dir = build_school_exam_archive_dir_name(
+                        target_exam.exam_date, target_exam.title, target_exam.id
+                    )
+                    db.flush()
+                files.ensure_school_exam_archive_dirs(target_exam.archive_dir)
+                target_archive_dir = target_exam.archive_dir
+
+        upsert = report_pipeline.upsert_exams_from_report(
+            db,
+            report=report,
+            platform_meta=platform_meta,
+            archive_dir=target_archive_dir,
+            allow_create=archive_exam_id is None,
+            archive_exam_id=archive_exam_id,
+        )
         db.commit()
         db.refresh(report)
 
@@ -337,7 +366,12 @@ def process_downloaded_reports(
         cards_synced = 0
         if report.answer_card_pages:
             try:
-                cards = report_pipeline.build_answer_card_attachments(db, report=report, rotation=0)
+                cards = report_pipeline.build_answer_card_attachments(
+                    db,
+                    report=report,
+                    rotation=0,
+                    archive_dir=target_archive_dir,
+                )
                 cards_created = int(cards.get("created") or 0)
                 cards_synced = int(cards.get("ledger_synced") or 0)
             except HTTPException:
@@ -408,6 +442,7 @@ def start_k12100_report_job(
     auto_map_fn: Callable[[Session, m.SchoolExamReport], int],
     max_exams: int = 3,
     headless: bool = False,
+    archive_exam_id: str | None = None,
 ) -> dict[str, Any]:
     """启动单实例 k12100「总分」报告下载与档案补全任务（与旧同步任务共用互斥锁）。"""
 
@@ -415,8 +450,12 @@ def start_k12100_report_job(
         backfill._update_job(  # noqa: SLF001
             job_id,
             state="collecting",
+            progress_percent=15,
             stage_message="下载前先核对本地已存考试完整性（合并重复记录、从本地 PDF 补全排名与最高分）…",
         )
+        target_exam_keyword = ""
+        target_exam_date = ""
+        target_external_exam_id = ""
         with session_factory() as query_db:
             hydrated = report_pipeline.hydrate_incomplete_local_reports(
                 query_db,
@@ -424,6 +463,21 @@ def start_k12100_report_job(
                 auto_map_fn=auto_map_fn,
             )
             skip_summary = report_pipeline.collect_complete_skip_targets(query_db, owner=owner)
+            if archive_exam_id:
+                target_exam = query_db.get(m.SchoolExam, archive_exam_id)
+                if target_exam is not None and target_exam.learner_id == owner:
+                    target_exam_keyword = str(target_exam.series_title or target_exam.title or "").strip()
+                    target_exam_date = str(target_exam.exam_date or "").strip()
+                    target_external_exam_id = str(target_exam.external_exam_id or "").strip()
+                    if not target_exam_keyword:
+                        paper_row = query_db.execute(
+                            select(m.SchoolExamPaper).where(
+                                m.SchoolExamPaper.owner_id == owner,
+                                m.SchoolExamPaper.school_exam_id == archive_exam_id,
+                            )
+                        ).scalars().first()
+                        if paper_row is not None and paper_row.exam_name:
+                            target_exam_keyword = str(paper_row.exam_name).strip()
 
         existing_ids = set(skip_summary["complete_external_exam_ids"])
         complete_identities = skip_summary["complete_identities"]
@@ -431,7 +485,12 @@ def start_k12100_report_job(
         backfill._update_job(  # noqa: SLF001
             job_id,
             state="collecting",
-            stage_message=f"已完成本地核对（{len(existing_ids)} 场已完整）；正在登录 k12100 首页排查是否有新增或未完整场次…",
+            progress_percent=35,
+            stage_message=(
+                f"已完成本地核对；正在登录 k12100 定向查找「{target_exam_keyword}」总分报告…"
+                if target_exam_keyword
+                else f"已完成本地核对（{len(existing_ids)} 场已完整）；正在登录 k12100 首页排查是否有新增或未完整场次…"
+            ),
         )
         with TemporaryDirectory(prefix="shutong-k12100-reports-") as tmpdir:
             download_dir = Path(tmpdir)
@@ -448,11 +507,15 @@ def start_k12100_report_job(
                     max_exams=backfill.clamp_max_exams(max_exams),
                     headless=headless,
                     download_dir=download_dir,
+                    exam_keyword=target_exam_keyword,
+                    exam_date=target_exam_date,
+                    external_exam_id=target_external_exam_id,
                 )
             except _BrowserInterruptedWithPartial as partial_exc:
                 backfill._update_job(  # noqa: SLF001
                     job_id,
                     state="backfilling",
+                    progress_percent=70,
                     stage_message="下载中途停止，正在将此前已下完的报告入库…",
                 )
                 with session_factory() as worker_db:
@@ -462,7 +525,8 @@ def start_k12100_report_job(
                         bundle=partial_exc.partial_bundle,
                         allowed_root=download_dir,
                         auto_map_fn=auto_map_fn,
-                        progress_cb=lambda msg: backfill._update_job(job_id, stage_message=msg),  # noqa: SLF001
+                        progress_cb=lambda msg: backfill._update_job(job_id, progress_percent=85, stage_message=msg),  # noqa: SLF001
+                        archive_exam_id=archive_exam_id,
                     )
                     worker_db.commit()
                 p_totals = partial_result["totals"]
@@ -473,6 +537,7 @@ def start_k12100_report_job(
                 backfill._update_job(  # noqa: SLF001
                     job_id,
                     state="failed",
+                    progress_percent=100,
                     stage_message=partial_msg,
                     error_code=partial_exc.code,
                     error_message=partial_msg,
@@ -483,6 +548,7 @@ def start_k12100_report_job(
             backfill._update_job(  # noqa: SLF001
                 job_id,
                 state="backfilling",
+                progress_percent=70,
                 stage_message="报告下载完成，正在解析全科成绩、更新考试档案与待核对草稿…",
             )
             with session_factory() as worker_db:
@@ -492,7 +558,8 @@ def start_k12100_report_job(
                     bundle=bundle,
                     allowed_root=download_dir,
                     auto_map_fn=auto_map_fn,
-                    progress_cb=lambda msg: backfill._update_job(job_id, stage_message=msg),  # noqa: SLF001
+                    progress_cb=lambda msg: backfill._update_job(job_id, progress_percent=85, stage_message=msg),  # noqa: SLF001
+                    archive_exam_id=archive_exam_id,
                 )
                 worker_db.commit()
 
@@ -500,16 +567,18 @@ def start_k12100_report_job(
         totals = result["totals"]
         if totals["downloaded"] == 0 and totals["failures"] == 0:
             summary = f"核对完成：k12100 首页共 {totals['home_exams']} 场考试，全部已有完整同步记录，未执行重复下载。"
+        elif totals["downloaded"] == 0 and totals["failures"] > 0:
+            summary = result["failures"][0].get("reason") or "未找到匹配的考试场次。"
         else:
             summary = (
-                f"报告同步完成：下载 {totals['downloaded']} 份，新建 {totals['created_exams']} 科、"
-                f"更新 {totals['updated_exams']} 科、补全 {totals['filled_exams']} 科、"
+                f"报告同步完成：下载 {totals['downloaded']} 份，更新 {totals['updated_exams']} 科、补全 {totals['filled_exams']} 科、"
                 f"同步排名 {totals.get('ranks_synced', 0)} 条、"
                 f"新增草稿 {totals['drafts_created']} 题、更新草稿 {totals['drafts_updated']} 题。"
             )
         backfill._update_job(  # noqa: SLF001
             job_id,
             state="completed",
+            progress_percent=100,
             stage_message=summary,
             report_result=result,
         )

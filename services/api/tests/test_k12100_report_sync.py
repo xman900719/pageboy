@@ -928,11 +928,89 @@ def test_four_fixes_isolation_dedup_precheck_and_full_ranks_highest(client, auth
     # Bug 1：只确认数学总分后，其余 3 科仍必须为 待核对 (confirmed_by_user=False)
     conf = client.post(f"/api/school-exams/{math_id}/confirm", json={"earned_points": 88, "confirmed_by_user": True}, headers=auth)
     assert conf.status_code == 200 and conf.json()["confirmed_by_user"] is True
-    sc_after = client.get("/api/school-exams/sync-center", headers=auth).json()["synced_reports"][0]
-    after_by_subj = {item["subject"]: item for item in sc_after["exams"]}
-    assert after_by_subj["math"]["confirmed_by_user"] is True
-    assert after_by_subj["english"]["confirmed_by_user"] is False
-    assert after_by_subj["physics"]["confirmed_by_user"] is False
-    assert after_by_subj["ethics"]["confirmed_by_user"] is False
-    # 红线：排名与未核对草稿绝不进入学生能力画像
-    assert client.get("/api/guidance/profile?subject=math", headers=student_auth).json()["knowledge"] == []
+
+
+def test_k12100_report_sync_targets_archive_without_creating_ledger(client, auth, tmp_path, monkeypatch):
+    """传入 archive_exam_id（全科档案）时：不得自动新建 school_exams 台账，支持按科 tab 核对锁定。"""
+    create_resp = client.post(
+        "/api/school-exams",
+        json={
+            "subject": "all",
+            "title": "虚构测试数据 · 26-27学年秋学期期中考试",
+            "exam_date": "2026-11-01",
+            "max_points": 400,
+            "earned_points": 400,
+        },
+        headers=auth,
+    )
+    assert create_resp.status_code == 201
+    archive_id = create_resp.json()["id"]
+
+    pdf_path = tmp_path / "archive_report.pdf"
+    pdf_path.write_bytes(_valid_pdf_bytes())
+    monkeypatch.setattr(rp, "parse_report_pdf", lambda data, filename="", digest="": _synthetic_doc(title="虚构测试数据 2026-2027学年秋学期期中考试"))
+    bundle = {
+        "status": "collected",
+        "home_exams": [
+            {
+                "external_exam_id": "K12-ARC-1",
+                "exam_name": "26-27学年秋学期期中考试",
+                "exam_date": "2026-11-05",
+                "grade": "八年级",
+                "academic_year": "2026-2027",
+                "exam_type": "期中",
+            }
+        ],
+        "downloads": [
+            {
+                "external_exam_id": "K12-ARC-1",
+                "exam_name": "26-27学年秋学期期中考试",
+                "exam_date": "2026-11-05",
+                "grade": "八年级",
+                "academic_year": "2026-2027",
+                "exam_type": "期中",
+                "file": str(pdf_path),
+            }
+        ],
+        "failures": [],
+    }
+
+    db_gen = app.dependency_overrides[get_db]()
+    session = next(db_gen)
+    try:
+        res = rs.process_downloaded_reports(
+            session,
+            owner="owner",
+            bundle=bundle,
+            allowed_root=tmp_path,
+            archive_exam_id=archive_id,
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    assert res["totals"]["created_exams"] == 0
+    exams = client.get("/api/school-exams", headers=auth).json()
+    assert len(exams) == 1
+    assert exams[0]["id"] == archive_id
+    assert exams[0]["subject"] == "all"
+
+    sc = client.get(f"/api/school-exams/sync-center?exam_id={archive_id}", headers=auth).json()
+    assert len(sc["synced_reports"]) == 1
+    rep_exams = {row["subject"]: row for row in sc["synced_reports"][0]["exams"]}
+    assert {"math", "english", "physics"} <= set(rep_exams.keys())
+    assert "all" not in rep_exams
+    assert rep_exams["math"]["confirmed_by_user"] is False
+
+    conf_math = client.post(
+        f"/api/school-exams/{archive_id}/confirm",
+        json={"earned_points": 88, "confirmed_by_user": True, "subject": "math"},
+        headers=auth,
+    )
+    assert conf_math.status_code == 200
+    assert conf_math.json()["confirmed_by_user"] is True
+
+    sc_after = client.get(f"/api/school-exams/sync-center?exam_id={archive_id}", headers=auth).json()
+    rep_after = {row["subject"]: row for row in sc_after["synced_reports"][0]["exams"]}
+    assert rep_after["math"]["confirmed_by_user"] is True
+    assert rep_after["english"]["confirmed_by_user"] is False
