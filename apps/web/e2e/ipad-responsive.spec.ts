@@ -108,23 +108,18 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expect(page.getByRole('region', { name: '学校考试总分' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  // 第 1 步先建档进入第 2 步「总分概览与材料入口」，再从第 2 步跳转全科同步与报告导入（测完在 UI 删除占位档案，保持空库给 J4）
+  // 第 1 步先建档进入第 2 步「上传原卷」，再进入第 3 步「全科校考同步」（测完在 UI 删除占位档案，保持空库给 J4）
   await page.getByLabel('考试名称').fill('视口巡检占位校考（虚构测试数据）')
+  await expect(page.getByLabel('获得分数')).toHaveValue('100')
   await page.getByLabel('获得分数').fill('88')
-  await page.getByRole('button', { name: /记录已核对总分|暂存待核对档案/ }).click()
-  await expect(page.getByRole('button', { name: /2\. 全科校考同步/ })).toBeVisible()
+  await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
+  await expect(page.getByRole('heading', { name: '上传原卷' })).toBeVisible()
 
-  await page.getByRole('button', { name: /2\. 全科校考同步/ }).click()
+  await page.locator('ol.step-pill-bar').getByRole('button', { name: /3\. 全科校考同步/ }).click()
   await expect(page.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  await page.getByRole('button', { name: /返回第一阶段/ }).click()
-  await page.getByRole('button', { name: /1\. 报告导入与核对/ }).click()
-  await expect(page.getByRole('region', { name: '校考报告导入与核对' })).toBeVisible()
-  await expectNoHorizontalOverflow(page)
-
-  await page.getByRole('button', { name: /返回第一阶段/ }).click()
-  await page.getByRole('button', { name: /← 返回第 1 步切换或新建场次/ }).click()
+  await page.locator('ol.step-pill-bar').getByRole('button', { name: /1\. 选定或新建校考档案/ }).click()
   await page.getByRole('button', { name: '删除 视口巡检占位校考（虚构测试数据）' }).click()
   await page.getByRole('button', { name: '确认删除 视口巡检占位校考（虚构测试数据）' }).click()
   await expect(page.getByLabel('考试名称')).toBeVisible()

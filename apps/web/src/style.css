@@ -2092,6 +2092,15 @@ button.exam-sync-step:hover:not(:disabled) b { color: var(--ink) }
 .exam-sync-safety ul { margin: 4px 0 0; padding-left: 18px; font-size: 0.75rem; line-height: 1.55 }
 .exam-sync-progress { padding: 8px 10px; border: 1px solid var(--teal-line); border-radius: 8px; background: var(--teal-soft) }
 .exam-sync-progress-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.8rem }
+.exam-sync-progress-bar { margin: 8px 0; height: 8px; border-radius: 999px; background: rgba(15, 23, 42, 0.1); overflow: hidden }
+.exam-sync-progress-fill { display: block; height: 100%; border-radius: 999px; background: var(--teal); transition: width 0.25s ease }
+.exam-sync-progress-fill.completed { background: #16a34a }
+.exam-sync-progress-fill.failed { background: #dc2626 }
+.exam-sync-subject-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 }
+.exam-sync-subject-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 0.85rem; cursor: pointer }
+.exam-sync-subject-tab.active { border-color: var(--teal); background: var(--teal-soft); font-weight: 600 }
+.parse-attach-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 10px 0 6px }
+.parse-select-all { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; color: var(--teal); cursor: pointer }
 .exam-sync-result { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line) }
 .exam-sync-result h4 { margin: 0 0 6px; font-size: 0.86rem }
 .exam-sync-home-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 }

@@ -872,6 +872,12 @@ components:
     K12100ReportJobStartIn:
       description: 启动宿主机 k12100「总分」分析报告自动下载与考试档案同步任务。
       properties:
+        archive_exam_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Archive Exam Id
         headless:
           default: false
           title: Headless
@@ -887,6 +893,12 @@ components:
     K12100SyncJobStartIn:
       description: 手动发起宿主机 k12100.com 全科采集补全任务的请求参数。
       properties:
+        archive_exam_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Archive Exam Id
         confirm_total_scores:
           default: false
           title: Confirm Total Scores
@@ -1907,6 +1919,17 @@ components:
           minimum: 0.0
           title: Earned Points
           type: number
+        subject:
+          anyOf:
+          - enum:
+            - math
+            - chinese
+            - english
+            - physics
+            - ethics
+            type: string
+          - type: 'null'
+          title: Subject
       required:
       - confirmed_by_user
       - earned_points
@@ -1965,6 +1988,7 @@ components:
           type: string
         subject:
           enum:
+          - all
           - math
           - chinese
           - english
@@ -2271,9 +2295,11 @@ components:
           title: Confirmed By User
           type: boolean
         earned_points:
-          minimum: 0.0
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - type: 'null'
           title: Earned Points
-          type: number
         exam_date:
           format: date
           title: Exam Date
@@ -2324,7 +2350,9 @@ components:
           - type: 'null'
           title: Series Title
         subject:
+          default: all
           enum:
+          - all
           - math
           - chinese
           - english
@@ -2345,10 +2373,8 @@ components:
           title: Title
           type: string
       required:
-      - subject
       - exam_date
       - title
-      - earned_points
       - max_points
       title: SchoolExamIn
       type: object
@@ -2480,7 +2506,7 @@ components:
         attachment_ids:
           items:
             type: string
-          maxItems: 10
+          maxItems: 100
           minItems: 1
           title: Attachment Ids
           type: array
@@ -2783,7 +2809,7 @@ components:
         items:
           items:
             $ref: '#/components/schemas/SchoolItemConfirmBatchEntryIn'
-          maxItems: 100
+          maxItems: 500
           minItems: 1
           title: Items
           type: array
@@ -2951,12 +2977,18 @@ components:
       title: SchoolPaperMatchIn
       type: object
     SchoolPaperScanIn:
-      description: 扫描当前环境私有收件箱；只有 CLI run 才允许自动归档精确匹配原件。
+      description: 扫描当前环境校考目录（优先选中档案 exam-paper/，否则 inbox/）；只有 CLI run 才允许自动归档精确匹配原件。
       properties:
         apply_imports:
           default: false
           title: Apply Imports
           type: boolean
+        exam_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Exam Id
       title: SchoolPaperScanIn
       type: object
     SelfAssessmentIn:
@@ -3279,6 +3311,7 @@ components:
           title: Student Answer Excerpt
         subject:
           enum:
+          - all
           - math
           - chinese
           - english
@@ -5852,9 +5885,11 @@ paths:
       parameters:
       - in: query
         name: subject
-        required: true
+        required: false
         schema:
+          default: all
           enum:
+          - all
           - math
           - chinese
           - english
@@ -5958,6 +5993,12 @@ paths:
             schema:
               description: 向开发/生产端上传宿主机脱敏 k12100 采集包执行全科补全的请求载荷。
               properties:
+                archive_exam_id:
+                  anyOf:
+                  - maxLength: 64
+                    type: string
+                  - type: 'null'
+                  title: Archive Exam Id
                 bundle:
                   additionalProperties: true
                   title: Bundle
@@ -6318,7 +6359,8 @@ paths:
       summary: Reject School Exam Paper
   /api/school-exams/pipeline/scan:
     post:
-      description: 扫描当前环境 0700 私有收件箱；所有论文先待核对，逐题仍走既有 ocr_draft 门禁。
+      description: 扫描当前环境 0700 校考目录（优先选中档案 exam-paper/，否则 inbox/）；所有原卷先待核对，逐题仍走既有
+        ocr_draft 门禁。
       operationId: scan_school_exam_papers_api_school_exams_pipeline_scan_post
       parameters:
       - in: header
@@ -6750,6 +6792,15 @@ paths:
       description: 返回四步同步中心的真实后端状态：卷源、扫描、试卷与严格匹配候选。
       operationId: get_school_exam_sync_center_api_school_exams_sync_center_get
       parameters:
+      - in: query
+        name: exam_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          title: Exam Id
       - in: header
         name: authorization
         required: false
@@ -6923,6 +6974,20 @@ paths:
         schema:
           title: Exam Id
           type: string
+      - in: query
+        name: subject
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - math
+            - chinese
+            - english
+            - physics
+            - ethics
+            type: string
+          - type: 'null'
+          title: Subject
       - in: header
         name: authorization
         required: false

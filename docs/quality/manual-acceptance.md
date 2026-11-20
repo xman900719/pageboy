@@ -120,6 +120,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 17** | [17-school-exam-reflection-coach.md](checklists/17-school-exam-reflection-coach.md) | 校考「书童陪你想」苏格拉底对话复盘、持久化恢复、整理草稿回填三步卡与管理端只读回溯（ST-023） | 依赖【主题 16 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 18** | [18-knowledge-dual-games-and-admin-control.md](checklists/18-knowledge-dual-games-and-admin-control.md) | 知识点展示双游戏（知识合成工坊 & 迷雾科技树探险）大留白大字号布局与管理端基础管控联动 | 依赖【主题 7 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 19** | [19-knowledge-graph-flow-ui.md](checklists/19-knowledge-graph-flow-ui.md) | 学生端知识点关系图谱重构（Vue Flow + Dagre 自上而下领域分组有向图、脉络聚焦、跨领域桥梁与 iPad 触控适配） | 依赖【主题 7、18 通过】 | **[x] 已通过（2026-11-19）** |
+| **主题 20** | [20-school-exam-stage1-storage-reorg.md](checklists/20-school-exam-stage1-storage-reorg.md) | 管理端校考第一阶段三步重组（全科新建档、提交考试信息、上传原卷入 `exam-paper/`、全科同步答题卡入 `answer-sheet/`、取消总分概览与材料入口、分科 Tab 核对与诊断） | 依赖【主题 13 通过】 | **[x] 已通过核验** |
 
 ---
 

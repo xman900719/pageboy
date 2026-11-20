@@ -16,6 +16,7 @@ const tmpRoot = process.env.E2E_TMP_DIR ?? '/tmp/opencode'
 const webPort = process.env.E2E_WEB_PORT ?? '5173'
 const dbFile = `${tmpRoot}/st008-e2e.sqlite3`
 const attachmentsDir = `${tmpRoot}/st008-e2e-attachments`
+const schoolExamsDir = `${tmpRoot}/st008-e2e-school-exams`
 const standardsDir = process.env.SHUTONG_STANDARDS_DIR ?? `${tmpRoot}/st008-e2e-standards`
 /**
  * ST-010 iPad 仿真通道：`npm run test:e2e:ipad`（E2E_DEVICE=ipad）时整套测试改在
@@ -47,7 +48,7 @@ export default defineConfig({
       // 端口 18765：宿主机 8000 被无关常驻服务（aegis）占用，D1 已把 vite 代理目标
       // 改为可经 API_PROXY_TARGET 覆盖，E2E 因此统一走 18765。
       command:
-        `bash -c 'mkdir -p "${tmpRoot}" && rm -f "${dbFile}" && rm -rf "${attachmentsDir}" && ${pyCmd} -c "import shutong.models; from shutong.database import Base, engine; Base.metadata.create_all(engine)" && ${pyCmd} -m uvicorn shutong.main:app --host 127.0.0.1 --port 18765'`,
+        `bash -c 'mkdir -p "${tmpRoot}" && rm -f "${dbFile}" && rm -rf "${attachmentsDir}" "${schoolExamsDir}" && ${pyCmd} -c "import shutong.models; from shutong.database import Base, engine; Base.metadata.create_all(engine)" && ${pyCmd} -m uvicorn shutong.main:app --host 127.0.0.1 --port 18765'`,
       url: 'http://127.0.0.1:18765/health/live',
       reuseExistingServer: false,
       timeout: 60_000,
@@ -62,6 +63,7 @@ export default defineConfig({
         SHUTONG_ALLOW_SYNTHETIC_STANDARDS: '1',
         DATABASE_URL: `sqlite+pysqlite:////${dbFile}`,
         SHUTONG_PRIVATE_DIR: attachmentsDir,
+        SHUTONG_SCHOOL_EXAMS_DIR: schoolExamsDir,
         SHUTONG_STANDARDS_DIR: standardsDir,
         // 必须用绝对路径指向当前 checkout，避免从已安装的旧 shutong 包导入。
         PYTHONPATH: apiRoot,

@@ -221,9 +221,9 @@ export function compareQuestionLabel(a: string, b: string): number {
   return a.localeCompare(b, 'zh-CN', { numeric: true })
 }
 
-/** 纯数字题号格式化为「第 N 题」，其余保留原样。 */
+/** 纯数字题号格式化为「第 N 题」（自动剥离全科档案的「学科·」内部前缀），其余保留原样。 */
 export function formatQuestionLabelHeading(label: string): string {
-  const trimmed = label.trim()
+  const trimmed = label.trim().replace(/^(?:语文|数学|英语|物理|道德与法治|道法|历史|地理|生物|化学)·/, '').trim()
   if (/^\d+$/.test(trimmed)) return `第 ${trimmed} 题`
   return trimmed
 }

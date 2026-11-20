@@ -1253,6 +1253,23 @@ _ETHICS_STUDENT_TOPICS = {
 _SCHOOL_SUBJECTS_ORDER = ("math", "chinese", "english", "physics", "ethics")
 
 
+def _resolve_reflection_subject(exam_subject: str, knowledge_id: str) -> str:
+    """若场次为全科档案（all），根据知识点前缀推断单科学科。"""
+    if exam_subject != "all":
+        return exam_subject
+    kid = str(knowledge_id or "").strip().lower()
+    for prefix, subj in (
+        ("math", "math"),
+        ("chinese", "chinese"),
+        ("english", "english"),
+        ("physics", "physics"),
+        ("ethics", "ethics"),
+    ):
+        if kid.startswith(f"{prefix}.") or kid.startswith(f"{prefix}_"):
+            return subj
+    return "all"
+
+
 def _resolve_student_school_topic(subject: str, knowledge_id: str, name_map: dict[str, str]) -> str:
     """将校考内部知识点编码安全映射为面向学生的自然语言考点名称，绝不泄露内部编码。"""
     kid = str(knowledge_id or "").strip()
@@ -1292,9 +1309,10 @@ def list_student_school_exam_reflections(
 
     for item, exam in rows:
         parsed = parse_structured_reflection_note(item.error_note, item.error_category, is_lost=True)
+        effective_subject = _resolve_reflection_subject(exam.subject, item.knowledge_id)
         if parsed["reflection_status"] in {"pending", "needs_revision"}:
-            pending_counts[exam.subject] = pending_counts.get(exam.subject, 0) + 1
-        if subject is None or exam.subject == subject:
+            pending_counts[effective_subject] = pending_counts.get(effective_subject, 0) + 1
+        if subject is None or exam.subject == subject or effective_subject == subject or exam.subject == "all":
             filtered_rows.append((item, exam, parsed))
 
     nodes_cache: dict[str, tuple[list[dict], dict[str, str]]] = {}
@@ -1326,10 +1344,11 @@ def list_student_school_exam_reflections(
     )
 
     for item, exam, parsed in filtered_rows:
-        if exam.subject not in nodes_cache:
-            nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
-            nodes_cache[exam.subject] = (nodes, {n["code"]: n["name"] for n in nodes})
-        _nodes, name_map = nodes_cache[exam.subject]
+        effective_subject = _resolve_reflection_subject(exam.subject, item.knowledge_id)
+        if effective_subject not in nodes_cache:
+            nodes, _ = _load_effective_knowledge_nodes(db, effective_subject)
+            nodes_cache[effective_subject] = (nodes, {n["code"]: n["name"] for n in nodes})
+        _nodes, name_map = nodes_cache[effective_subject]
         is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
         stem_excerpt = item.stem_text if is_stem_confirmed else None
         student_answer_excerpt = (
@@ -1340,11 +1359,11 @@ def list_student_school_exam_reflections(
             StudentSchoolReflectionItemOut(
                 item_id=item.id,
                 exam_id=exam.id,
-                subject=exam.subject,
+                subject=effective_subject,
                 exam_title=exam.title,
                 exam_date=str(exam.exam_date),
                 question_label=item.question_label,
-                topic=_resolve_student_school_topic(exam.subject, item.knowledge_id, name_map),
+                topic=_resolve_student_school_topic(effective_subject, item.knowledge_id, name_map),
                 earned_points=item.earned_points,
                 max_points=item.max_points,
                 lost_points=round(max(0.0, item.max_points - item.earned_points), 2),
@@ -1390,9 +1409,10 @@ def submit_student_school_exam_reflection(
     if local_err is not None:
         raise HTTPException(status_code=422, detail=f"REFLECTION_TOO_PERFUNCTORY: {local_err}")
 
-    nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
+    effective_subject = _resolve_reflection_subject(exam.subject, item.knowledge_id)
+    nodes, _ = _load_effective_knowledge_nodes(db, effective_subject)
     name_map = {n["code"]: n["name"] for n in nodes}
-    topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
+    topic = _resolve_student_school_topic(effective_subject, item.knowledge_id, name_map)
     is_stem_confirmed = item.stem_state == "confirmed" and bool(item.stem_text)
     stem_excerpt = item.stem_text if is_stem_confirmed else None
     student_answer_excerpt = (
@@ -1401,7 +1421,7 @@ def submit_student_school_exam_reflection(
 
     # Stage 2: DeepSeek 语义审阅官把关（未配置或超时时平滑降级为本地严规放行）
     passed, coach_feedback, audit_mode = audit_reflection_with_deepseek(
-        subject=exam.subject,
+        subject=effective_subject,
         topic=topic,
         question_label=item.question_label,
         stem_excerpt=stem_excerpt,
@@ -1424,7 +1444,7 @@ def submit_student_school_exam_reflection(
     return StudentSchoolReflectionItemOut(
         item_id=item.id,
         exam_id=exam.id,
-        subject=exam.subject,
+        subject=effective_subject,
         exam_title=exam.title,
         exam_date=str(exam.exam_date),
         question_label=item.question_label,
@@ -1460,9 +1480,10 @@ def _load_owned_lost_school_item(
         raise HTTPException(status_code=409, detail="SCHOOL_ITEM_NOT_CONFIRMED")
     if item.earned_points >= item.max_points:
         raise HTTPException(status_code=422, detail="FULL_SCORE_ITEM_HAS_NO_ERROR_CATEGORY")
-    nodes, _ = _load_effective_knowledge_nodes(db, exam.subject)
+    effective_subject = _resolve_reflection_subject(exam.subject, item.knowledge_id)
+    nodes, _ = _load_effective_knowledge_nodes(db, effective_subject)
     name_map = {n["code"]: n["name"] for n in nodes}
-    topic = _resolve_student_school_topic(exam.subject, item.knowledge_id, name_map)
+    topic = _resolve_student_school_topic(effective_subject, item.knowledge_id, name_map)
     return item, exam, topic
 
 

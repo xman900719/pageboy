@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 from datetime import date, datetime, timezone
 from hashlib import sha256
+import inspect
 import ipaddress
 import json
 import os
@@ -36,7 +37,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
-from .home import HomeIdentityError, assert_no_cross_environment_path, get_env_home, normalize_environment, resolve_repo_root
+from .home import (
+    HomeIdentityError,
+    assert_no_cross_environment_path,
+    build_school_exam_archive_dir_name,
+    get_env_home,
+    normalize_environment,
+    resolve_repo_root,
+)
 from .school_exam_matcher import ExamIdentity, match_exam_identity, normalize_academic_year
 from .school_exam_pipeline import persist_rank_entries
 
@@ -1102,6 +1110,70 @@ def _collect_card_blobs(subj_pkt: dict[str, Any]) -> list[tuple[str, bytes]]:
     return blobs
 
 
+def _resolve_shared_archive_dir(
+    db: Session,
+    *,
+    owner: str,
+    archive_exam_id: str | None,
+    exam_date: Any,
+    title: str,
+) -> str | None:
+    if archive_exam_id:
+        target = db.get(m.SchoolExam, archive_exam_id)
+        if target is not None and target.learner_id == owner:
+            if not target.archive_dir:
+                target.archive_dir = build_school_exam_archive_dir_name(target.exam_date, target.title, target.id)
+                db.flush()
+            files.ensure_school_exam_archive_dirs(target.archive_dir)
+            return target.archive_dir
+    all_subject_exams = db.execute(
+        select(m.SchoolExam)
+        .where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == "all")
+        .order_by(m.SchoolExam.created_at.desc())
+    ).scalars().all()
+    month = str(exam_date)[:7] if exam_date else ""
+    clean_title = (title or "").strip()
+    for item in all_subject_exams:
+        if month and str(item.exam_date)[:7] != month:
+            continue
+        if clean_title and clean_title not in item.title and item.title not in clean_title:
+            continue
+        if not item.archive_dir:
+            item.archive_dir = build_school_exam_archive_dir_name(item.exam_date, item.title, item.id)
+            db.flush()
+        files.ensure_school_exam_archive_dirs(item.archive_dir)
+        return item.archive_dir
+    return None
+
+
+def _call_save_paper(
+    save_paper_fn: Callable[..., dict[str, Any]],
+    db: Session,
+    exam_id: str,
+    owner: str,
+    filename: str,
+    media_type: str,
+    raw_bytes: bytes,
+    digest: str,
+    *,
+    archive_dir: str | None,
+) -> dict[str, Any]:
+    sig = inspect.signature(save_paper_fn)
+    if "category" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return save_paper_fn(
+            db,
+            exam_id,
+            owner,
+            filename,
+            media_type,
+            raw_bytes,
+            digest,
+            category="answer_sheet",
+            archive_dir_override=archive_dir,
+        )
+    return save_paper_fn(db, exam_id, owner, filename, media_type, raw_bytes, digest)
+
+
 def apply_k12100_bundle(
     db: Session,
     *,
@@ -1109,7 +1181,7 @@ def apply_k12100_bundle(
     raw_bundle: dict[str, Any],
     resolve_knowledge_fn: Callable[[Session, str, set[str]], tuple[bool, list[dict], dict[str, str], dict[str, list[str]]]],
     persist_drafts_fn: Callable[..., tuple[list[m.SchoolExamItem], list[str]]],
-    save_paper_fn: Callable[[Session, str, str, str, str, bytes, str | None], dict[str, Any]],
+    save_paper_fn: Callable[..., dict[str, Any]],
     exam_keyword: str | None = None,
     target_exam_date: date | None = None,
     series_title_prefix: str | None = None,
@@ -1119,6 +1191,7 @@ def apply_k12100_bundle(
     upload_missing_cards: bool = True,
     replace_unconfirmed_drafts: bool = True,
     use_ai: bool = True,
+    archive_exam_id: str | None = None,
 ) -> dict[str, Any]:
     """执行严格身份匹配后的全科补全；未唯一匹配时不合并，仅返回待人工处理结果。"""
     packets = normalize_k12100_bundle(raw_bundle, exam_keyword=exam_keyword, max_exams=max_exams)
@@ -1136,6 +1209,13 @@ def apply_k12100_bundle(
         pkt_date = _parse_date_safe(pkt.get("exam_date"))
         # R2 红线：平台未提供可验证日期时绝不补 today()；只允许显式 target 或真实平台日期。
         canonical_date = target_exam_date or pkt_date
+        pkt_archive_dir = _resolve_shared_archive_dir(
+            db,
+            owner=owner,
+            archive_exam_id=archive_exam_id,
+            exam_date=canonical_date,
+            title=pkt["exam_title"],
+        )
 
         for subj_pkt in pkt["subjects"]:
             subject = subj_pkt["subject"]
@@ -1236,8 +1316,16 @@ def apply_k12100_bundle(
                     series_title=canonical_prefix[:160],
                     external_exam_id=header_identity.external_exam_id,
                     source_kind="k12100",
+                    archive_dir=pkt_archive_dir,
                 )
                 db.add(exam)
+                db.flush()
+                if not pkt_archive_dir:
+                    pkt_archive_dir = build_school_exam_archive_dir_name(
+                        exam.exam_date, canonical_prefix or exam.title, exam.id
+                    )
+                    exam.archive_dir = pkt_archive_dir
+                files.ensure_school_exam_archive_dirs(pkt_archive_dir)
                 db.commit()
                 db.refresh(exam)
                 created_exams_count += 1
@@ -1322,7 +1410,7 @@ def apply_k12100_bundle(
             if rank_created:
                 db.commit()
 
-            # 若该科当前没有任何附件且开启补全开关，写入已校验的答题卡 JPEG（带 SHA-256 去重）
+            # 若该科当前没有答题卡附件且开启补全开关，写入已校验的答题卡 JPEG（落于档案 answer-sheet/，带 SHA-256 去重）
             existing_atts = db.execute(
                 select(m.SchoolPaperAttachment).where(
                     m.SchoolPaperAttachment.school_exam_id == exam.id,
@@ -1332,11 +1420,28 @@ def apply_k12100_bundle(
             existing_hashes = {a.sha256 for a in existing_atts}
             uploaded_for_subj = 0
             if upload_missing_cards and len(existing_atts) == 0:
+                if not pkt_archive_dir:
+                    pkt_archive_dir = exam.archive_dir or build_school_exam_archive_dir_name(
+                        exam.exam_date, canonical_prefix or exam.title, exam.id
+                    )
+                if not exam.archive_dir:
+                    exam.archive_dir = pkt_archive_dir
+                    db.commit()
                 for fname, raw_bytes in _collect_card_blobs(subj_pkt):
                     digest = sha256(raw_bytes).hexdigest()
                     if digest in existing_hashes:
                         continue
-                    save_paper_fn(db, exam.id, owner, fname, "image/jpeg", raw_bytes, digest)
+                    _call_save_paper(
+                        save_paper_fn,
+                        db,
+                        exam.id,
+                        owner,
+                        fname,
+                        "image/jpeg",
+                        raw_bytes,
+                        digest,
+                        archive_dir=pkt_archive_dir,
+                    )
                     existing_hashes.add(digest)
                     uploaded_for_subj += 1
                     attachments_uploaded_total += 1
@@ -1521,6 +1626,7 @@ def _snapshot_job(job: dict[str, Any]) -> dict[str, Any]:
         "kind": job.get("kind", "legacy_collect"),
         "state": job["state"],
         "stage_message": job["stage_message"],
+        "progress_percent": int(job.get("progress_percent") or 0),
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
         "exam_keyword": job.get("exam_keyword"),
@@ -1574,6 +1680,7 @@ def launch_k12100_job(
             "kind": kind,
             "state": "queued",
             "stage_message": initial_stage_message,
+            "progress_percent": 5,
             "created_at": now_iso,
             "updated_at": now_iso,
             "exam_keyword": None,
@@ -1684,7 +1791,7 @@ def start_k12100_sync_job(
     owner: str,
     resolve_knowledge_fn: Callable[[Session, str, set[str]], tuple[bool, list[dict], dict[str, str], dict[str, list[str]]]],
     persist_drafts_fn: Callable[..., tuple[list[m.SchoolExamItem], list[str]]],
-    save_paper_fn: Callable[[Session, str, str, str, str, bytes, str | None], dict[str, Any]],
+    save_paper_fn: Callable[..., dict[str, Any]],
     exam_keyword: str | None = None,
     target_exam_date: date | None = None,
     series_title_prefix: str | None = None,
@@ -1695,6 +1802,7 @@ def start_k12100_sync_job(
     replace_unconfirmed_drafts: bool = True,
     use_ai: bool = True,
     headless: bool = True,
+    archive_exam_id: str | None = None,
 ) -> dict[str, Any]:
     """宿主机环境下加锁启动单实例后台 k12100 全科采集与补全任务（禁止并发）。"""
 
@@ -1734,6 +1842,7 @@ def start_k12100_sync_job(
                 upload_missing_cards=upload_missing_cards,
                 replace_unconfirmed_drafts=replace_unconfirmed_drafts,
                 use_ai=use_ai,
+                archive_exam_id=archive_exam_id,
             )
         _update_job(
             job_id,

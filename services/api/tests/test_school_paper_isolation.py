@@ -12,7 +12,7 @@ from sqlalchemy import select
 from shutong import models as m
 from shutong.database import get_db
 from shutong.main import app
-from shutong.private_files import private_root
+from shutong.private_files import private_root, school_exams_root
 
 
 @contextmanager
@@ -62,20 +62,68 @@ def blob_count(root):
 def test_paper_upload_stores_privately_without_storage_key(client, auth, private_dir):
     exam_id = make_exam(client, auth)
     png = png_bytes()
-    before = blob_count(private_dir)
+    before_private = blob_count(private_dir)
     attached = upload_paper(client, auth, exam_id, data=png)
     assert attached.status_code == 201
     meta = attached.json()
     assert set(meta) == {"id", "filename", "media_type", "sha256", "byte_size", "created_at"}
     assert "storage_key" not in meta  # AC-SEC-01：存储键不进 HTTP 响应
+    assert "relative_path" not in meta
     assert meta["filename"] == "虚构测试数据-周测卷.png" and meta["media_type"] == "image/png"
     assert re.fullmatch(r"[0-9a-f]{64}", meta["sha256"]) and meta["sha256"] == sha256(png).hexdigest()
     assert meta["byte_size"] == len(png) and meta["created_at"]
     assert private_root() == private_dir.resolve()
-    assert blob_count(private_dir) == before + 1  # 文件实体落在私有根目录下，且仅新增一个
-    assert png in {path.read_bytes() for path in private_dir.iterdir()}
-    for path in private_dir.iterdir():
-        assert path.stat().st_mode & 0o777 == 0o600  # write_blob 私有权限
+    assert blob_count(private_dir) == before_private  # 校考原卷不再写入 data/attachments
+    with database() as db:
+        exam = db.get(m.SchoolExam, exam_id)
+        assert exam is not None and exam.archive_dir
+        exam_paper_dir = school_exams_root() / exam.archive_dir / "exam-paper"
+        answer_sheet_dir = school_exams_root() / exam.archive_dir / "answer-sheet"
+        assert exam_paper_dir.is_dir() and answer_sheet_dir.is_dir()
+        files_in_dir = list(exam_paper_dir.iterdir())
+        assert len(files_in_dir) == 1
+        assert files_in_dir[0].read_bytes() == png
+        assert files_in_dir[0].stat().st_mode & 0o777 == 0o600
+
+
+def test_create_all_subject_exam_defaults_earned_to_max_and_cleans_dirs(client, auth, private_dir):
+    created = client.post(
+        "/api/school-exams",
+        json={
+            "title": "虚构测试数据：全科月考",
+            "exam_date": "2026-11",
+            "max_points": 120,
+            "confirmed_by_user": False,
+        },
+        headers=auth,
+    )
+    assert created.status_code == 201, created.text
+    exam_id = created.json()["id"]
+    assert created.json()["subject"] == "all"
+
+    detail = client.get(f"/api/school-exams/{exam_id}", headers=auth)
+    assert detail.status_code == 200
+    assert detail.json()["earned_points"] == 120
+    assert detail.json()["max_points"] == 120
+    assert detail.json()["subject"] == "all"
+
+    math_list = client.get("/api/school-exams?subject=math", headers=auth)
+    assert math_list.status_code == 200
+    assert any(item["id"] == exam_id and item["subject"] == "all" for item in math_list.json())
+
+    with database() as db:
+        archive_dir = db.get(m.SchoolExam, exam_id).archive_dir
+    archive_path = school_exams_root() / archive_dir
+    assert (archive_path / "exam-paper").is_dir()
+    assert (archive_path / "answer-sheet").is_dir()
+
+    uploaded = upload_paper(client, auth, exam_id)
+    assert uploaded.status_code == 201
+    assert len(list((archive_path / "exam-paper").iterdir())) == 1
+
+    deleted = client.delete(f"/api/school-exams/{exam_id}?confirm=true", headers=auth)
+    assert deleted.status_code == 200
+    assert not archive_path.exists()
 
 
 def test_paper_upload_validates_type(client, auth, private_dir):
@@ -164,3 +212,122 @@ def test_exam_detail_lists_paper_metadata_only(client, auth, private_dir):
     assert len(keys) == 1 and re.fullmatch(r"[0-9a-f]{32}", keys[0])  # 键确实存在于数据库
     assert keys[0] not in json.dumps(body)  # 但从不离开 API
     assert "storage_key" not in json.dumps(body)
+
+
+def test_k12100_import_bundle_writes_answer_sheets_to_archive_dir(client, auth, private_dir):
+    import base64
+
+    created = client.post(
+        "/api/school-exams",
+        json={
+            "title": "虚构测试数据：十一月全科统练",
+            "exam_date": "2026-11",
+            "max_points": 100,
+            "confirmed_by_user": False,
+        },
+        headers=auth,
+    )
+    assert created.status_code == 201
+    archive_exam_id = created.json()["id"]
+
+    jpg_buf = BytesIO()
+    Image.new("RGB", (40, 40), "white").save(jpg_buf, format="JPEG")
+    card_b64 = base64.b64encode(jpg_buf.getvalue()).decode("ascii")
+
+    bundle = {
+        "schema_version": 1,
+        "exams": [
+            {
+                "exam_title": "虚构测试数据：十一月全科统练",
+                "exam_date": "2026-11-12",
+                "subjects": [
+                    {
+                        "subject": "math",
+                        "subject_cn": "数学",
+                        "earned_points": 88,
+                        "max_points": 100,
+                        "identity": {
+                            "exam_date": "2026-11-12",
+                            "academic_year": "2026-2027",
+                            "grade": "9",
+                            "exam_type": "unified_practice",
+                            "series_title": "虚构测试数据：十一月全科统练",
+                        },
+                        "card_images": [
+                            {"filename": "数学答题卡_1.jpg", "data_base64": card_b64}
+                        ],
+                        "small_questions": [
+                            {"question_label": "第1题", "earned_points": 4, "max_points": 4}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    res = client.post(
+        "/api/school-exams/k12100-sync/import-bundle",
+        json={
+            "bundle": bundle,
+            "archive_exam_id": archive_exam_id,
+            "upload_missing_cards": True,
+            "extract_existing_pdfs": False,
+        },
+        headers=auth,
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["totals"]["attachments_uploaded"] == 1
+
+    with database() as db:
+        archive_exam = db.get(m.SchoolExam, archive_exam_id)
+        archive_dir = archive_exam.archive_dir
+        assert archive_dir
+    answer_sheet_dir = school_exams_root() / archive_dir / "answer-sheet"
+    assert answer_sheet_dir.is_dir()
+    saved_cards = list(answer_sheet_dir.iterdir())
+    assert len(saved_cards) == 1
+    assert saved_cards[0].read_bytes() == jpg_buf.getvalue()
+    assert blob_count(private_dir) == 0  # 答题卡不落入 data/attachments
+
+
+def test_sync_center_and_scan_target_selected_archive_exam_paper_dir(client, auth, private_dir):
+    created = client.post(
+        "/api/school-exams",
+        json={
+            "title": "虚构测试数据：扫描目录检验",
+            "exam_date": "2026-11",
+            "max_points": 100,
+            "confirmed_by_user": False,
+        },
+        headers=auth,
+    )
+    assert created.status_code == 201
+    exam_id = created.json()["id"]
+
+    uploaded = upload_paper(client, auth, exam_id, filename="虚构测试数据-扫描原卷.png")
+    assert uploaded.status_code == 201
+
+    center = client.get(f"/api/school-exams/sync-center?exam_id={exam_id}", headers=auth)
+    assert center.status_code == 200
+    assert center.json()["source"]["directory_display"].endswith("/exam-paper")
+
+    scanned = client.post(
+        "/api/school-exams/pipeline/scan",
+        json={"exam_id": exam_id},
+        headers=auth,
+    )
+    assert scanned.status_code == 200, scanned.text
+    assert scanned.json()["run"]["discovered_count"] == 1
+    assert scanned.json()["papers"][0]["filename"] == "虚构测试数据-扫描原卷.png"
+
+    with database() as db:
+        archive_dir = db.get(m.SchoolExam, exam_id).archive_dir
+    archive_path = school_exams_root() / archive_dir
+    assert archive_path.is_dir()
+
+    deleted = client.delete(f"/api/school-exams/{exam_id}?confirm=true", headers=auth)
+    assert deleted.status_code == 200
+    assert not archive_path.exists()
+    center_after = client.get("/api/school-exams/sync-center", headers=auth)
+    assert center_after.status_code == 200
+    assert center_after.json()["papers"] == []

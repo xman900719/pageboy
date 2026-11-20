@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
-  ApiError,
   describeError,
   type ApiClient,
   type K12100BackfillResult,
@@ -15,8 +14,6 @@ import {
   type SchoolExamRanksPayload,
   type SchoolExamScanRun,
   type SchoolExamSyncCenter,
-  type SchoolPaperFieldComparison,
-  type SchoolPaperMatchCandidate,
   type SchoolSubject,
 } from '../../api'
 import { fmtBytes, fmtPoints, shortTime } from '../../copy'
@@ -26,13 +23,11 @@ import {
   formatPaperSubject,
   formatRankValue,
   getMatchMeta,
-  getPaperNextStep,
   getReportActionMeta,
   RANK_SCOPE_LABELS,
   summarizeReportJob,
   type SyncStep,
 } from '../../examSync'
-import HelpBubble from '../HelpBubble.vue'
 import type { NoticeTone } from '../Notice.vue'
 import StepFlowWorkspace from './StepFlowWorkspace.vue'
 import type { StepDefinition, StepFlowContext } from './stepFlow'
@@ -71,34 +66,11 @@ function fmtExamMonth(value?: string | null): string {
   return /^\d{4}-\d{2}/.test(text) ? text.slice(0, 7) : (text || '')
 }
 
-const CONFIDENCE_LABELS: Record<string, string> = { high: '高置信', medium: '中等置信', low: '低置信' }
-const FIELD_STATUS_LABELS: Record<string, string> = { found: '已识别', missing: '缺失', ambiguous: '冲突' }
-const FIELD_LABELS: Record<string, string> = {
-  academic_year: '学年度',
-  grade: '年级',
-  exam_type: '考试类型',
-  subject: '学科',
-  exam_date: '考试日期',
-}
 const SOURCE_KIND_LABELS: Record<string, string> = {
   manual: '手工建档',
   k12100: '平台同步',
   local_scan: '本地扫描',
   import: '离线导入',
-}
-const CORE_COMPARISON_FIELDS = new Set(['subject', 'academic_year', 'grade', 'exam_type', 'exam_date'])
-const SUBJECT_LABELS: Record<string, string> = {
-  math: '数学',
-  chinese: '语文',
-  english: '英语',
-  physics: '物理',
-  ethics: '道德与法治',
-}
-const COMPARISON_LABELS: Record<string, string> = {
-  match: '一致',
-  conflict: '冲突',
-  different: '名称不同',
-  missing: '缺失',
 }
 
 const center = ref<SchoolExamSyncCenter | null>(null)
@@ -106,13 +78,7 @@ const loading = ref(false)
 const loadError = ref('')
 const activeStep = ref<SyncStep>(1)
 const selectedPaperId = ref<string | null>(null)
-const candidateExamId = ref('')
-const manualConfirmChecked = ref(false)
 const scanning = ref(false)
-const acquiring = ref(false)
-const matching = ref(false)
-const importing = ref(false)
-const rejecting = ref(false)
 const actionNotice = ref('')
 const actionTone = ref<'info' | 'caution' | 'error'>('info')
 
@@ -125,6 +91,19 @@ const startingJob = ref(false)
 const focusedExamId = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
+const SUBJECT_LABELS: Record<string, string> = {
+  chinese: '语文',
+  math: '数学',
+  english: '英语',
+  physics: '物理',
+  daofa: '道德与法治',
+  history: '历史',
+  geography: '地理',
+  biology: '生物',
+  chemistry: '化学',
+  all: '全科',
+}
+
 const reviewDetail = ref<SchoolExamDetail | null>(null)
 const reviewRanks = ref<SchoolExamRanksPayload | null>(null)
 const reviewLoading = ref(false)
@@ -133,6 +112,7 @@ const confirmTotalAcknowledged = ref(false)
 const confirmingTotal = ref(false)
 const confirmingRankId = ref<string | null>(null)
 const reviewError = ref('')
+const activeReviewSubject = ref<string>('')
 
 const advancedOpen = ref(false)
 const showBrowser = ref(true)
@@ -150,9 +130,6 @@ const papers = computed(() => center.value?.papers ?? [])
 const selectedPaper = computed(
   () => papers.value.find(paper => paper.id === selectedPaperId.value) ?? null,
 )
-const matchedPaperCount = computed(
-  () => papers.value.filter(paper => paper.status === 'matched' || paper.status === 'imported').length,
-)
 const isJobActive = computed(
   () => job.value?.state === 'queued' || job.value?.state === 'collecting' || job.value?.state === 'backfilling',
 )
@@ -169,8 +146,92 @@ const reportSummary = computed(() => summarizeReportJob(lastReportResult.value))
 const syncedReports = computed<K12100SyncedReportSummary[]>(() => center.value?.synced_reports ?? [])
 const syncReadiness = computed<K12100SyncReadiness | null>(() => center.value?.sync_readiness ?? null)
 const hydratingLocal = ref(false)
-const selectedCandidates = computed<SchoolPaperMatchCandidate[]>(() => selectedPaper.value?.candidates ?? [])
 const reviewCoverage = computed(() => deriveReviewCoverage(reviewDetail.value, reviewRanks.value))
+
+const jobProgress = computed(() => {
+  const j = job.value
+  if (!j) return 0
+  if (typeof j.progress_percent === 'number' && j.progress_percent > 0) {
+    return Math.min(100, Math.max(0, Math.round(j.progress_percent)))
+  }
+  return { queued: 10, collecting: 40, backfilling: 75, completed: 100, failed: 100 }[j.state] ?? 0
+})
+
+interface ReviewSubjectTab {
+  subject: string
+  subject_label: string
+  exam_id: string
+  earned_points: number | null
+  max_points: number | null
+  confirmed_by_user: boolean
+}
+
+const matchedReviewReport = computed<K12100SyncedReportSummary | null>(() => {
+  const examId = currentExamId.value
+  if (!syncedReports.value.length) return null
+  if (examId) {
+    const found = syncedReports.value.find(rep => rep.exams.some(ex => ex.exam_id === examId))
+    if (found) return found
+  }
+  return syncedReports.value.length === 1 ? syncedReports.value[0] : null
+})
+
+const reviewSubjectTabs = computed<ReviewSubjectTab[]>(() => {
+  const rep = matchedReviewReport.value
+  if (rep && rep.exams.length > 0) {
+    return rep.exams.map(ex => ({
+      subject: ex.subject,
+      subject_label: ex.subject_label || SUBJECT_LABELS[ex.subject] || ex.subject,
+      exam_id: ex.exam_id,
+      earned_points: ex.earned_points,
+      max_points: ex.max_points,
+      confirmed_by_user: ex.confirmed_by_user,
+    }))
+  }
+  if (reviewDetail.value) {
+    const subj = reviewDetail.value.subject || 'all'
+    return [
+      {
+        subject: subj,
+        subject_label: SUBJECT_LABELS[subj] || subj,
+        exam_id: reviewDetail.value.id,
+        earned_points: reviewDetail.value.earned_points,
+        max_points: reviewDetail.value.max_points,
+        confirmed_by_user: reviewDetail.value.confirmed_by_user,
+      },
+    ]
+  }
+  return []
+})
+
+const activeReviewTab = computed<ReviewSubjectTab | null>(() => {
+  const tabs = reviewSubjectTabs.value
+  if (!tabs.length) return null
+  return tabs.find(t => t.subject === activeReviewSubject.value) ?? tabs[0]
+})
+
+const activeSubjectConfirmed = computed(() => {
+  if (reviewDetail.value?.subject === 'all' && activeReviewTab.value && activeReviewTab.value.subject !== 'all') {
+    return activeReviewTab.value.confirmed_by_user
+  }
+  return Boolean(reviewDetail.value?.confirmed_by_user)
+})
+
+const activeSubjectRanks = computed(() => {
+  const ranks = reviewRanks.value?.ranks ?? []
+  const tabSubj = activeReviewTab.value?.subject
+  if (!tabSubj || tabSubj === 'all') return ranks
+  const scoped = ranks.filter(r => r.subject_scope === tabSubj)
+  return scoped.length > 0 ? scoped : ranks.filter(r => r.subject_scope === 'total' || !r.subject_scope)
+})
+
+const filteredMissingRankScopes = computed(() =>
+  reviewCoverage.value.missingRankScopes.filter(scope => scope !== 'school' && scope !== 'region'),
+)
+
+const filteredReportMissingScopes = computed(() =>
+  (reviewRanks.value?.missing_scopes ?? []).filter(scope => scope !== 'school' && scope !== 'region'),
+)
 
 const activeStepStr = computed({
   get: () => String(activeStep.value),
@@ -199,19 +260,10 @@ const syncSteps = computed<StepDefinition[]>(() => {
     {
       id: '1',
       title: '发现试卷',
-      subtitle: '扫描收件箱并选定试卷',
+      subtitle: '扫描原卷目录并查看列表',
       badge: center.value ? `${papers.value.length} 份` : '待加载',
       done: paper !== null,
       prereqMet: true,
-    },
-    {
-      id: '2',
-      title: '匹配考试',
-      subtitle: '联合身份字段，人工消歧',
-      badge: center.value ? `${matchedPaperCount.value} 已匹配` : '待加载',
-      done: Boolean(paper && ['matched', 'imported'].includes(paper.status)),
-      prereqMet: paper !== null,
-      lockReason: '请先在第 1 步扫描私有收件箱并选定一份试卷。',
     },
     {
       id: '3',
@@ -233,7 +285,7 @@ const syncSteps = computed<StepDefinition[]>(() => {
       badgeTone: reviewDetail.value?.confirmed_by_user ? 'good' : 'wait',
       done: Boolean(reviewDetail.value?.confirmed_by_user),
       prereqMet: Boolean(currentExamId.value),
-      lockReason: '请先关联试卷或从第 3 步报告结果选择一场考试后再核对入档。',
+      lockReason: '请先从 k12100 报告同步结果或已发现试卷选择一场考试后再核对入档。',
     },
   ]
 })
@@ -274,31 +326,11 @@ function getJobStateLabel(state: string | null | undefined): string {
   }[state ?? ''] ?? '未开始'
 }
 
-function visibleComparisons(candidate: SchoolPaperMatchCandidate) {
-  return (candidate.comparisons ?? []).filter(
-    comparison => CORE_COMPARISON_FIELDS.has(comparison.field) || comparison.state === 'conflict',
-  )
-}
-
-function comparisonValue(comparison: SchoolPaperFieldComparison, value: string | null): string {
-  if (!value) return '缺失'
-  if (comparison.field === 'subject') return SUBJECT_LABELS[value] || value
-  return value
-}
-
-function comparisonClass(state: string): string {
-  return state === 'match' ? 'good' : state === 'conflict' ? 'bad' : state === 'missing' ? 'subtle' : 'wait'
-}
-
-function openTab(tab: OpenTab) {
-  if (currentExamId.value) emit('open-exam', currentExamId.value, tab)
-}
-
 async function loadCenter(preferPaperId?: string) {
   loading.value = true
   loadError.value = ''
   try {
-    const data = await props.client.schoolExamSyncCenter()
+    const data = await props.client.schoolExamSyncCenter(props.selectedExamId || undefined)
     center.value = data
     const preferred = preferPaperId && data.papers.some(paper => paper.id === preferPaperId)
       ? preferPaperId
@@ -306,7 +338,6 @@ async function loadCenter(preferPaperId?: string) {
         ? selectedPaperId.value
         : (data.papers[0]?.id ?? null)
     selectedPaperId.value = preferred
-    syncCandidateSelection()
   } catch (error) {
     center.value = null
     loadError.value = describeError(error)
@@ -315,24 +346,10 @@ async function loadCenter(preferPaperId?: string) {
   }
 }
 
-function syncCandidateSelection() {
-  const paper = selectedPaper.value
-  if (!paper) {
-    candidateExamId.value = ''
-    return
-  }
-  const known = paper.candidates.some(candidate => candidate.exam_id === candidateExamId.value)
-  if (!known) {
-    candidateExamId.value = paper.school_exam_id ?? paper.candidates[0]?.exam_id ?? ''
-  }
-  manualConfirmChecked.value = false
-}
-
 function selectPaper(paper: SchoolExamPaper) {
   selectedPaperId.value = paper.id
-  syncCandidateSelection()
-  activeStep.value = getPaperNextStep(paper)
   if (paper.status === 'imported') {
+    activeStep.value = 4
     void loadReview(paper.school_exam_id ?? currentExamId.value)
   }
 }
@@ -346,7 +363,9 @@ async function scanInbox() {
   scanning.value = true
   actionNotice.value = ''
   try {
-    const result = await props.client.scanSchoolExamPapers()
+    const result = await props.client.scanSchoolExamPapers({
+      examId: props.selectedExamId || undefined,
+    })
     await loadCenter()
     const run: SchoolExamScanRun = result.run
     const tone = run.error_count > 0 || run.invalid_count > 0 ? 'caution' : 'info'
@@ -365,106 +384,6 @@ async function scanInbox() {
     props.notify(describeError(error), 'error')
   } finally {
     scanning.value = false
-  }
-}
-
-async function tryAcquire() {
-  acquiring.value = true
-  actionNotice.value = ''
-  try {
-    const result = await props.client.acquireSchoolExamPapers()
-    await loadCenter()
-    setNotice(`授权来源取得 ${result.acquired_count} 份试卷，已重新扫描登记。`)
-    props.notify('授权卷源获取完成。', 'success')
-  } catch (error) {
-    const code = error instanceof ApiError ? error.code : ''
-    const message = code === 'SOURCE_NOT_CONFIGURED'
-      ? '未配置真实授权学校试卷来源；本地扫描仍可用，系统不会伪造远程下载。'
-      : describeError(error)
-    setNotice(message, 'caution')
-    props.notify(message, 'caution')
-  } finally {
-    acquiring.value = false
-  }
-}
-
-async function runMatch(manual: boolean) {
-  const paper = selectedPaper.value
-  if (!paper) return
-  if (manual && !manualConfirmChecked.value) {
-    setNotice('人工匹配前必须勾选“我已对照卷头与候选考试”。', 'caution')
-    return
-  }
-  if (manual && !candidateExamId.value) {
-    setNotice('请先选择一个候选考试。', 'caution')
-    return
-  }
-  matching.value = true
-  actionNotice.value = ''
-  try {
-    const result = await props.client.matchSchoolExamPaper(
-      paper.id,
-      manual ? { examId: candidateExamId.value, confirmedByHuman: true } : {},
-    )
-    await loadCenter(paper.id)
-    setNotice(
-      manual
-        ? '已记录人工匹配；请继续导入原卷，再核对成绩与逐题明细。'
-        : result.match
-          ? `匹配结果：${getMatchMeta(result.match.state).label}。`
-          : '已重新执行匹配。',
-      result.paper.status === 'matched' ? 'info' : 'caution',
-    )
-    if (result.paper.status === 'matched') {
-      manualConfirmChecked.value = false
-    }
-  } catch (error) {
-    setNotice(describeError(error), 'error')
-    props.notify(describeError(error), 'error')
-  } finally {
-    matching.value = false
-  }
-}
-
-async function importPaper() {
-  const paper = selectedPaper.value
-  if (!paper) return
-  importing.value = true
-  actionNotice.value = ''
-  try {
-    const result = await props.client.importSchoolExamPaper(paper.id)
-    await loadCenter(paper.id)
-    emit('papers-imported', result.paper.school_exam_id ?? currentExamId.value ?? '')
-    if (result.paper.school_exam_id) {
-      await loadReview(result.paper.school_exam_id)
-      activeStep.value = 4
-    }
-    setNotice(
-      result.already_imported
-        ? '该试卷此前已入私有档案，无重复附件。'
-        : `原卷已入私有档案${result.attachment_created ? '' : '（哈希已存在，未重复保存）'}。`,
-    )
-    props.notify('校考试卷已入私有档案。', 'success')
-  } catch (error) {
-    setNotice(describeError(error), 'error')
-    props.notify(describeError(error), 'error')
-  } finally {
-    importing.value = false
-  }
-}
-
-async function rejectPaper() {
-  const paper = selectedPaper.value
-  if (!paper) return
-  rejecting.value = true
-  try {
-    await props.client.rejectSchoolExamPaper(paper.id)
-    await loadCenter(paper.id)
-    setNotice('已人工忽略该试卷；原始文件仍保留在私有收件箱，未删除。')
-  } catch (error) {
-    setNotice(describeError(error), 'error')
-  } finally {
-    rejecting.value = false
   }
 }
 
@@ -542,6 +461,7 @@ async function startReportSync() {
     const created = await props.client.startK12100ReportJob({
       maxExams: 3,
       headless: !showBrowser.value,
+      archiveExamId: currentExamId.value || props.selectedExamId || undefined,
     })
     job.value = created
     startPolling(created.job_id)
@@ -562,6 +482,17 @@ function inspectReportExam(examId: string) {
   void loadReview(examId)
 }
 
+function selectReviewSubject(tab: ReviewSubjectTab) {
+  activeReviewSubject.value = tab.subject
+  confirmTotalAcknowledged.value = false
+  if (tab.exam_id && tab.exam_id !== reviewDetail.value?.id) {
+    focusedExamId.value = tab.exam_id
+    void loadReview(tab.exam_id)
+    return
+  }
+  confirmTotalInput.value = tab.earned_points ?? ''
+}
+
 async function loadReview(examId: string | null) {
   if (!examId) {
     reviewDetail.value = null
@@ -577,7 +508,16 @@ async function loadReview(examId: string | null) {
     ])
     reviewDetail.value = detail
     reviewRanks.value = ranks
-    confirmTotalInput.value = detail.confirmed_by_user ? detail.earned_points : detail.earned_points || ''
+    const tabs = reviewSubjectTabs.value
+    if (tabs.length > 0 && !tabs.some(t => t.subject === activeReviewSubject.value)) {
+      activeReviewSubject.value = tabs[0].subject
+    }
+    const activeTab = tabs.find(t => t.subject === activeReviewSubject.value) ?? tabs[0]
+    if (activeTab && detail.subject === 'all' && activeTab.subject !== 'all') {
+      confirmTotalInput.value = activeTab.earned_points ?? ''
+    } else {
+      confirmTotalInput.value = detail.confirmed_by_user ? detail.earned_points : detail.earned_points || ''
+    }
     confirmTotalAcknowledged.value = false
   } catch (error) {
     reviewDetail.value = null
@@ -598,7 +538,11 @@ async function confirmTotal() {
   confirmingTotal.value = true
   reviewError.value = ''
   try {
-    await props.client.confirmSchoolExam(detail.id, Number(confirmTotalInput.value))
+    const subjParam =
+      detail.subject === 'all' && activeReviewTab.value && activeReviewTab.value.subject !== 'all'
+        ? activeReviewTab.value.subject
+        : undefined
+    await props.client.confirmSchoolExam(detail.id, Number(confirmTotalInput.value), subjParam)
     props.notify('该科总分已人工核对并锁定；其余学科保持各自独立核对状态。', 'success')
     focusedExamId.value = detail.id
     await Promise.all([
@@ -677,6 +621,7 @@ async function handleBundleFile(event: Event) {
       uploadMissingCards: true,
       replaceUnconfirmedDrafts: true,
       useAi: true,
+      archiveExamId: props.selectedExamId || undefined,
     })
     lastResult.value = result
     const blocked = result.totals.subjects_blocked ?? 0
@@ -720,6 +665,7 @@ watch(
 watch(
   () => props.selectedExamId,
   examId => {
+    void loadCenter(selectedPaperId.value ?? undefined)
     if (examId && !focusedExamId.value) void loadReview(examId)
   },
 )
@@ -737,7 +683,7 @@ onBeforeUnmount(() => {
         <span class="muted tiny">{{ sourceStatusText }}</span>
       </div>
       <div class="exam-sync-dir" :title="center?.source.directory || ''">
-        <span class="muted tiny">私有收件箱</span>
+        <span class="muted tiny">{{ selectedExamId ? '档案原卷目录' : '私有收件箱' }}</span>
         <code>{{ center?.source.directory_display || '$PAGEBOY_HOME/development/school-exams/inbox' }}</code>
       </div>
       <div class="exam-sync-top-actions">
@@ -761,12 +707,9 @@ onBeforeUnmount(() => {
     >
       <!-- 第一步：发现试卷（合并为单一卡片） -->
       <template #step-1>
-        <article class="card" aria-label="第一步：发现试卷">
+        <article class="card" aria-label="发现试卷">
           <div class="card-head">
-            <div>
-              <h3>第一步 · 试卷发现与收件箱列表</h3>
-              <p class="card-sub">本地扫描不会伪造远程下载；任何文件都不会自动进入公共题库。</p>
-            </div>
+            <p class="card-sub" style="margin: 0;">本地扫描不会伪造远程下载；任何文件都不会自动进入公共题库。</p>
             <div class="card-head-tools">
               <span :class="['chip', sourceTone]">{{ sourceStatusText }}</span>
               <span class="chip subtle">待核对 {{ center?.counts.needs_review ?? 0 }} · 已匹配 {{ center?.counts.matched ?? 0 }} · 已入档 {{ center?.counts.imported ?? 0 }}</span>
@@ -799,24 +742,7 @@ onBeforeUnmount(() => {
             <button type="button" class="primary" :disabled="scanning" @click="scanInbox">
               {{ scanning ? '正在扫描…' : '扫描私有收件箱' }}
             </button>
-            <button
-              type="button"
-              class="ghost"
-              :disabled="acquiring || !center?.source.real_source_configured"
-              :title="center?.source.real_source_configured ? '调用已授权来源适配器' : '未配置真实授权来源，不能伪造下载'"
-              @click="tryAcquire"
-            >
-              {{ acquiring ? '获取中…' : '通过授权来源获取' }}
-            </button>
-            <HelpBubble compact title="为什么显示来源未配置" label="来源说明">
-              <p>系统只登记仓库中已审核的合法来源适配器。当前没有学校月考/期中/期末真实卷源与授权方式，因此不会猜测 URL、不会抓取第三方试卷。</p>
-              <p>你仍可把合法取得的文件放入私有收件箱后扫描；原始文件不会被删除或改名。</p>
-            </HelpBubble>
           </div>
-
-          <p v-if="center && !center.source.real_source_configured" class="exam-sync-blocked" role="note" style="margin-bottom: 12px;">
-            <b>SOURCE_NOT_CONFIGURED</b>：{{ center.source.message }}
-          </p>
 
           <details v-if="center?.latest_scan?.errors.length" class="exam-sync-details" style="margin-bottom: 12px;">
             <summary>查看最近扫描被跳过的文件</summary>
@@ -862,139 +788,11 @@ onBeforeUnmount(() => {
         </article>
       </template>
 
-      <!-- 第二步：匹配考试（单一焦点卡内分节呈递） -->
-      <template #step-2>
-        <article v-if="selectedPaper" class="card" aria-label="第二步：匹配考试">
-          <div class="card-head">
-            <div>
-              <h3>第二步 · 卷头识别与候选考试匹配</h3>
-              <p class="card-sub">{{ selectedPaper.filename }}</p>
-            </div>
-            <div class="card-head-tools">
-              <span :class="['chip', selectedPaper.header.complete ? 'good' : 'wait']">
-                {{ CONFIDENCE_LABELS[selectedPaper.header.confidence || ''] || '待识别' }}
-              </span>
-              <span :class="['chip', getMatchMeta(selectedPaper.match_state).tone]">
-                {{ getMatchMeta(selectedPaper.match_state).label }}
-              </span>
-            </div>
-          </div>
-
-          <h4 class="sub-head" style="margin-top: 4px;">卷头识别依据</h4>
-          <dl class="exam-sync-identity">
-            <div><dt>学年度</dt><dd>{{ selectedPaper.header.academic_year || '缺失' }}</dd></div>
-            <div><dt>年级</dt><dd>{{ selectedPaper.header.grade || '缺失' }}</dd></div>
-            <div><dt>考试类型</dt><dd>{{ selectedPaper.header.exam_type_label || EXAM_TYPE_LABELS[selectedPaper.header.exam_type || ''] || '缺失' }}</dd></div>
-            <div><dt>学科</dt><dd>{{ formatPaperSubject(selectedPaper) === '学科待识别' ? '缺失' : formatPaperSubject(selectedPaper) }}</dd></div>
-            <div><dt>考试日期</dt><dd>{{ fmtExamMonth(selectedPaper.header.exam_date) || '缺失' }}</dd></div>
-          </dl>
-
-          <details class="exam-sync-details" style="margin-bottom: 12px;">
-            <summary>查看五字段证据与脱敏卷头摘录</summary>
-            <ul class="exam-sync-fields" tabindex="0" aria-label="卷头字段识别状态">
-              <li v-for="(field, key) in selectedPaper.header.fields" :key="key">
-                <span>{{ FIELD_LABELS[key] || key }}</span>
-                <span :class="['chip', field.status === 'found' ? 'good' : field.status === 'ambiguous' ? 'bad' : 'subtle']">
-                  {{ FIELD_STATUS_LABELS[field.status] || field.status }}
-                </span>
-                <small>{{ field.evidence || '无识别依据' }}</small>
-              </li>
-            </ul>
-            <pre class="exam-sync-excerpt" tabindex="0">{{ selectedPaper.header.text_excerpt || '未提取到文字层。' }}</pre>
-          </details>
-
-          <p v-if="selectedPaper.header.warnings.length" class="exam-sync-blocked" role="note" style="margin-bottom: 12px;">
-            {{ selectedPaper.header.warnings.join('；') }}
-          </p>
-
-          <h4 class="sub-head" style="margin-top: 12px;">候选考试与字段差异</h4>
-          <p class="muted tiny" style="margin-top: 0;">只有五项核心字段共同成立且候选唯一，或人工确认消歧后才可导入并进入采集。</p>
-
-          <div v-if="selectedCandidates.length === 0" class="exam-sync-empty">
-            <b>没有可比较的候选</b>
-            <p>先在“总分台账与建档”新建对应考试档案，再回来人工选择。</p>
-            <button type="button" class="ghost" @click="emit('open-exam', '', 'scores')">前往新建考试档案</button>
-          </div>
-          <ul v-else class="exam-sync-candidates" tabindex="0" aria-label="k12100 候选考试列表">
-            <li v-for="candidate in selectedCandidates" :key="candidate.exam_id" class="exam-sync-candidate">
-              <label class="exam-sync-candidate-head">
-                <input
-                  v-model="candidateExamId"
-                  type="radio"
-                  :value="candidate.exam_id"
-                  :disabled="selectedPaper.status === 'imported'"
-                />
-                <span>
-                  <b>{{ candidate.title || '未命名考试' }}</b>
-                  <small>{{ fmtExamMonth(candidate.exam_date) || '日期缺失' }} · {{ candidate.manual ? '人工候选' : `匹配分 ${candidate.score ?? 0}` }}</small>
-                </span>
-                <span v-if="candidate.exact && !candidate.conflicts?.length" class="chip good">精确</span>
-              </label>
-              <ul v-if="visibleComparisons(candidate).length" class="exam-sync-compare">
-                <li v-for="cmp in visibleComparisons(candidate)" :key="`${candidate.exam_id}-${cmp.field}`">
-                  <span>{{ cmp.label }}</span>
-                  <span class="exam-sync-compare-values">
-                    <em>{{ comparisonValue(cmp, cmp.expected) }}</em>
-                    <span aria-hidden="true">↔</span>
-                    <em>{{ comparisonValue(cmp, cmp.actual) }}</em>
-                  </span>
-                  <span :class="['chip', comparisonClass(cmp.state)]">{{ COMPARISON_LABELS[cmp.state] || cmp.state }}</span>
-                </li>
-              </ul>
-              <p v-if="candidate.conflicts?.length" class="muted tiny">
-                冲突字段：{{ candidate.conflicts.map(field => FIELD_LABELS[field] || field).join('、') }}
-              </p>
-            </li>
-          </ul>
-
-          <div v-if="selectedCandidates.length" class="exam-sync-confirm-box">
-            <label class="exam-sync-check">
-              <input v-model="manualConfirmChecked" type="checkbox" :disabled="selectedPaper.status === 'imported'" />
-              <span>我已对照卷头与候选考试，人工确认这是同一场考试。</span>
-            </label>
-            <div class="exam-sync-action-row">
-              <button
-                type="button"
-                class="primary"
-                :disabled="matching || manualConfirmChecked === false || selectedPaper.status === 'imported'"
-                @click="runMatch(true)"
-              >
-                {{ matching ? '保存中…' : '确认匹配所选考试' }}
-              </button>
-              <button type="button" class="ghost" :disabled="matching" @click="runMatch(false)">
-                {{ matching ? '匹配中…' : '重新执行自动匹配' }}
-              </button>
-              <button
-                type="button"
-                class="ghost"
-                :disabled="rejecting || selectedPaper.status === 'imported'"
-                @click="rejectPaper"
-              >
-                {{ rejecting ? '处理中…' : '人工忽略此试卷' }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="selectedPaper.status === 'matched'" class="exam-sync-next-card">
-            <p><b>匹配已完成。</b>下一步把原卷纳入该考试私有附件，再启动信息采集。</p>
-            <div class="exam-sync-action-row">
-              <button type="button" class="primary" :disabled="importing" @click="importPaper">
-                {{ importing ? '入档中…' : '将原卷导入该考试' }}
-              </button>
-              <button type="button" class="ghost" @click="goStep(3)">先查看采集范围</button>
-            </div>
-          </div>
-        </article>
-      </template>
-
       <!-- 第三步：k12100 报告同步（自动下载总分报告、新建/更新/补全考试档案） -->
       <template #step-3>
         <article class="card" aria-label="第三步：k12100 报告同步">
           <div class="card-head">
-            <div>
-              <h3>第三步 · 从 k12100 下载总分报告并同步</h3>
-              <p class="card-sub">考试时间取自 k12100 首页，学年 / 年级 / 考试类型 / 学科取自下载的总分分析报告与首页元数据；自动跳过已有报告的场次。</p>
-            </div>
+            <p class="card-sub" style="margin: 0;">考试时间取自 k12100 首页，学年 / 年级 / 考试类型 / 学科取自下载的总分分析报告与首页元数据；按原卷所属场次下载。</p>
             <div class="card-head-tools">
               <span :class="['chip', job?.state === 'failed' ? 'bad' : job?.state === 'completed' ? 'good' : isJobActive ? 'wait' : 'subtle']">
                 {{ job ? getJobStateLabel(job.state) : '未启动' }}
@@ -1006,7 +804,7 @@ onBeforeUnmount(() => {
             <div><b>考试档案</b><span>首页考试时间 + 报告学年度 / 年级 / 类型 / 学科；缺失自动新建或补全</span></div>
             <div><b>成绩更新</b><span>更新未锁定档案总分（保持待核对）；已锁分冲突只提示不覆盖</span></div>
             <div><b>逐题与答案</b><span>新建或更新未确认 ocr_draft 得分；保护已确认小题</span></div>
-            <div><b>答题卡附件</b><span>从报告册切分并同步各科答题卡至私有附件存储</span></div>
+            <div><b>答题卡附件</b><span>从报告册切分并同步各科答题卡至档案目录 answer-sheet/</span></div>
           </div>
 
           <div class="exam-sync-safety" role="note" style="margin-bottom: 10px;">
@@ -1018,7 +816,7 @@ onBeforeUnmount(() => {
           </div>
 
           <p v-if="runtime && !runtime.can_run_local" class="exam-sync-blocked" role="note">
-            本机直连不可用：{{ runtime.unavailable_reason || '当前环境无法启动宿主机浏览器' }}。可使用下方离线采集包或「报告导入与核对」本地扫描。
+            本机直连不可用：{{ runtime.unavailable_reason || '当前环境无法启动宿主机浏览器' }}。可使用下方离线采集包同步。
           </p>
           <p v-else-if="runtime" class="muted tiny">
             账号 {{ runtime.credentials.username_masked || '未配置' }} · 环境 {{ runtime.environment }}
@@ -1078,7 +876,17 @@ onBeforeUnmount(() => {
           <div v-if="job" class="exam-sync-progress" aria-live="polite" style="margin-bottom: 10px;">
             <div class="exam-sync-progress-head">
               <b>{{ job.stage_message }}</b>
-              <span class="muted tiny">{{ shortTime(job.updated_at) }}</span>
+              <span class="muted tiny">{{ jobProgress }}% · {{ shortTime(job.updated_at) }}</span>
+            </div>
+            <div
+              class="exam-sync-progress-bar"
+              role="progressbar"
+              :aria-valuenow="jobProgress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-label="同步任务进度"
+            >
+              <span :class="['exam-sync-progress-fill', job.state]" :style="{ width: `${jobProgress}%` }"></span>
             </div>
             <dl class="exam-sync-facts compact">
               <div><dt>任务状态</dt><dd>{{ getJobStateLabel(job.state) }}</dd></div>
@@ -1317,24 +1125,46 @@ active_job={{ isJobActive }}</pre>
         </article>
       </template>
 
-      <!-- 第四步：核对入档（总分锁定 & 本人排名统一于单卡内） -->
+      <!-- 第四步：核对入档（所有科目分 Tab 核对总分与本人排名） -->
       <template #step-4>
         <div v-if="reviewLoading" class="card exam-sync-empty">正在读取成绩、待核对明细与本人排名…</div>
         <article v-else class="card" aria-label="第四步：核对入档">
           <div class="card-head">
-            <div>
-              <h3>第四步 · {{ reviewDetail?.title || currentExamTitle }}（核对入档）</h3>
-              <p class="card-sub">{{ fmtExamMonth(reviewDetail?.exam_date) }} · 源：{{ SOURCE_KIND_LABELS[reviewDetail?.source_kind || 'manual'] || reviewDetail?.source_kind || '手工建档' }}</p>
-            </div>
-            <span :class="['chip', reviewDetail?.confirmed_by_user ? 'good' : 'wait']">
-              {{ reviewDetail?.confirmed_by_user ? '总分已核对' : '总分待核对' }}
+            <p class="card-sub" style="margin: 0;">{{ reviewDetail?.title || currentExamTitle }} · {{ fmtExamMonth(reviewDetail?.exam_date) }} · 源：{{ SOURCE_KIND_LABELS[reviewDetail?.source_kind || 'manual'] || reviewDetail?.source_kind || '手工建档' }}</p>
+            <span :class="['chip', activeSubjectConfirmed ? 'good' : 'wait']">
+              {{ activeSubjectConfirmed ? '总分已核对' : '总分待核对' }}
             </span>
+          </div>
+
+          <div v-if="reviewSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="核对科目切换">
+            <button
+              v-for="tab in reviewSubjectTabs"
+              :key="tab.subject"
+              type="button"
+              role="tab"
+              :aria-selected="activeReviewTab?.subject === tab.subject"
+              :class="['exam-sync-subject-tab', { active: activeReviewTab?.subject === tab.subject }]"
+              @click="selectReviewSubject(tab)"
+            >
+              <span>{{ tab.subject_label }}</span>
+              <span :class="['chip', 'tiny', tab.confirmed_by_user ? 'good' : 'wait']">
+                {{ tab.confirmed_by_user ? '已核' : '待核' }}
+              </span>
+            </button>
           </div>
 
           <div class="exam-sync-review-kpis">
             <div>
-              <b>{{ reviewDetail ? `${fmtPoints(reviewDetail.earned_points)} / ${fmtPoints(reviewDetail.max_points)}` : '—' }}</b>
-              <span>总分（待核对不进入画像）</span>
+              <b>
+                {{
+                  activeReviewTab && activeReviewTab.earned_points !== null && activeReviewTab.max_points !== null
+                    ? `${fmtPoints(activeReviewTab.earned_points)} / ${fmtPoints(activeReviewTab.max_points)}`
+                    : reviewDetail
+                      ? `${fmtPoints(reviewDetail.earned_points)} / ${fmtPoints(reviewDetail.max_points)}`
+                      : '—'
+                }}
+              </b>
+              <span>{{ activeReviewTab ? `${activeReviewTab.subject_label}总分` : '总分' }}（待核对不进入画像）</span>
             </div>
             <div>
               <b>{{ reviewCoverage.confirmedItems }} 题</b>
@@ -1350,8 +1180,8 @@ active_job={{ isJobActive }}</pre>
             </div>
           </div>
 
-          <div v-if="!reviewDetail?.confirmed_by_user" class="exam-sync-confirm-box">
-            <h4 style="margin-top: 0;">人工核对总分</h4>
+          <div v-if="!activeSubjectConfirmed" class="exam-sync-confirm-box">
+            <h4 style="margin-top: 0;">人工核对总分{{ activeReviewTab ? `（${activeReviewTab.subject_label}）` : '' }}</h4>
             <p class="muted tiny">只有你对照成绩单确认后才会锁定；平台采集值默认不自动确认。</p>
             <div class="exam-sync-inline-form">
               <label>
@@ -1374,16 +1204,22 @@ active_job={{ isJobActive }}</pre>
           <div style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line);">
             <div class="card-head">
               <div>
-                <h4 style="margin: 0;">本人排名快照（{{ reviewRanks?.ranks.length ?? 0 }} 个范围）</h4>
+                <h4 style="margin: 0;">本人排名快照（{{ activeSubjectRanks.length }} 个范围）</h4>
                 <p class="card-sub">平台实际提供的本人排名；独立保存，不进入知识点能力画像。</p>
               </div>
             </div>
-            <div v-if="reviewRanks && reviewRanks.ranks.length === 0" class="exam-sync-empty">
+            <div v-if="reviewRanks && activeSubjectRanks.length === 0" class="exam-sync-empty">
               <b>平台未提供可用排名</b>
-              <p>系统不会用 0 或推算值补齐。缺失范围：{{ reviewRanks.missing_scopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') }}。</p>
+              <p>
+                {{
+                  filteredReportMissingScopes.length
+                    ? `系统不会用 0 或推算值补齐。缺失范围：${filteredReportMissingScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、')}。`
+                    : '系统不会用 0 或推算值补齐。'
+                }}
+              </p>
             </div>
             <ul v-else class="exam-sync-ranks" tabindex="0" aria-label="本人排名列表">
-              <li v-for="rank in reviewRanks?.ranks ?? []" :key="rank.id">
+              <li v-for="rank in activeSubjectRanks" :key="rank.id">
                 <div class="exam-sync-rank-main">
                   <b>{{ RANK_SCOPE_LABELS[rank.scope] || rank.scope }}</b>
                   <span>{{ formatRankValue(rank) }}</span>
@@ -1432,30 +1268,17 @@ active_job={{ isJobActive }}</pre>
             <p class="muted tiny">{{ reviewRanks?.disclaimer || '本人排名不得用于推断中考成绩。' }}</p>
             <div class="exam-sync-missing">
               <b>缺失信息</b>
-              <span>{{ reviewCoverage.missingRankScopes.length ? reviewCoverage.missingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '四个排名范围均已提供' }}</span>
+              <span>{{ filteredMissingRankScopes.length ? filteredMissingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '班级、年级排名均已提供' }}</span>
             </div>
           </div>
 
           <p v-if="reviewError" class="exam-sync-banner bad" role="alert">{{ reviewError }}</p>
-
-          <div class="handoff-box">
-            <div>
-              <strong>入档核对就绪</strong>
-              <span>若有待核对明细，请前往「原卷与明细核对」确认入账后再看错误分析。</span>
-            </div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <button type="button" class="primary small" @click="openTab('papers')">去逐题明细核对台 →</button>
-              <button type="button" class="ghost small" @click="openTab('scores')">查看总分台账</button>
-              <button type="button" class="ghost small" @click="openTab('analysis')">错误分析</button>
-            </div>
-          </div>
         </article>
       </template>
     </StepFlowWorkspace>
 
     <footer class="exam-sync-footer stage-wrap">
       <p>待核对明细、未锁定总分和本人排名都不会写入学生端能力画像。所有自动获取都受账号授权、平台规则与低频边界约束。</p>
-      <span class="chip subtle">ST-EXAM-AUTOSYNC-01</span>
     </footer>
   </section>
 </template>

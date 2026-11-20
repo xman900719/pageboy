@@ -61,6 +61,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_STUDENT_TOKEN", "test-student-secret")
     monkeypatch.setenv("SHUTONG_TOKEN", "test-admin-secret")
     monkeypatch.setenv("SHUTONG_ALLOW_SYNTHETIC_STANDARDS", "1")
+    monkeypatch.setenv("SHUTONG_SCHOOL_EXAMS_DIR", str(tmp_path / "school-exams"))
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "attachments"))
     engine = create_engine("sqlite+pysqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)

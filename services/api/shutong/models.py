@@ -124,6 +124,7 @@ class SchoolExam(Base):
     source_kind: Mapped[str] = mapped_column(String(24), default="manual", server_default="manual")
     class_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
     grade_highest: Mapped[float | None] = mapped_column(Float, nullable=True)
+    archive_dir: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 class Goal(Base):
@@ -218,6 +219,8 @@ class SchoolPaperAttachment(Base):
     byte_size: Mapped[int] = mapped_column(Integer)
     # 仅私有存储定位；绝不进入 HTTP 响应（AC-SEC-01）。
     storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    category: Mapped[str] = mapped_column(String(24), default="exam_paper", server_default="exam_paper")
+    relative_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -232,6 +235,7 @@ class SchoolExamPaper(Base):
     media_type: Mapped[str] = mapped_column(String(128))
     byte_size: Mapped[int] = mapped_column(Integer)
     storage_key: Mapped[str] = mapped_column(String(32))
+    relative_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     source_kind: Mapped[str] = mapped_column(String(24), default="local_scan")
     source_name: Mapped[str] = mapped_column(String(80), default="inbox")
     source_ref: Mapped[str] = mapped_column(String(255))
@@ -520,6 +524,7 @@ class SchoolExamReport(Base):
     media_type: Mapped[str] = mapped_column(String(128))
     byte_size: Mapped[int] = mapped_column(Integer)
     storage_key: Mapped[str] = mapped_column(String(32))
+    relative_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     source_ref: Mapped[str] = mapped_column(String(255))
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     academic_year: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -570,6 +575,7 @@ class SchoolExamReportAttachment(Base):
     media_type: Mapped[str] = mapped_column(String(64), default="image/png")
     byte_size: Mapped[int] = mapped_column(Integer)
     storage_key: Mapped[str] = mapped_column(String(32), unique=True)
+    relative_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     sha256: Mapped[str] = mapped_column(String(64))
     rotation: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

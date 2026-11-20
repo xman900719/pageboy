@@ -20,7 +20,7 @@ from .fourcorpus import router as corpus_router
 from .learning_api import router as learning_router, get_evidence, _load_effective_knowledge_nodes, _get_mapped_evidence, serialize_school_coach_session
 from .research import official_reject_reason
 from .database import get_db
-from .home import HomeIdentityError
+from .home import HomeIdentityError, build_school_exam_archive_dir_name
 from . import models as m
 from . import private_files as files
 from . import school_paper_parser as paper_parser
@@ -28,7 +28,7 @@ from . import k12100_backfill
 from . import k12100_report_sync
 from . import school_exam_pipeline as exam_pipeline
 from . import school_report_pipeline as report_pipeline
-from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolCoachSessionOut, SchoolItemStemExtractIn, SchoolItemStemExtractOut, SchoolItemStemPatchIn, SchoolExamStemsConfirmOut, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject
+from .schemas import SourceIn, QuestionIn, QuestionRevisionOut, AttemptIn, SelfAssessmentIn, SchoolExamIn, SchoolExamConfirmIn, SchoolExamItemsIn, SchoolExamItemAnalysisIn, AdminReturnReflectionIn, SchoolCoachSessionOut, SchoolItemStemExtractIn, SchoolItemStemExtractOut, SchoolItemStemPatchIn, SchoolExamStemsConfirmOut, SchoolExamErrorAnalysisOut, SchoolItemConfirmIn, SchoolItemConfirmBatchIn, SchoolExamParseDraftsIn, SchoolExamSyncDraftsIn, SchoolExamAutoAssociateIn, SchoolExamAutoAssociateOut, K12100SyncJobStartIn, K12100ImportBundleIn, K12100ReportJobStartIn, SchoolPaperScanIn, SchoolPaperMatchIn, SchoolPaperCollectIn, SchoolExamRankConfirmIn, SchoolExamReportConfirmIn, SchoolExamReportPatchIn, SchoolExamReportSubjectIn, GoalIn, Subject, SchoolExamSubject, SchoolExamArchiveSubject
 from .guidance import Evidence, MODEL_VERSION, summarize, make_plan, compare_validation, pool_health, compute_knowledge_mastery, analyze_school_exam_errors, question_label_sort_key, MIN_DISTINCT_ITEMS
 
 app = FastAPI(title="书童 ShuTong API", version="0.1.0", docs_url=None, redoc_url=None)
@@ -299,16 +299,50 @@ def list_attempts(subject: Subject, student: str = Depends(require_student), db:
 @app.post("/api/school-exams", status_code=201)
 def add_school_exam(payload: SchoolExamIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
     record = m.SchoolExam(learner_id=owner, **payload.model_dump())
-    db.add(record); db.commit(); db.refresh(record)
-    return {"id": record.id, "status": "user_confirmed" if record.confirmed_by_user else "unconfirmed", "knowledge_evidence_created": False}
+    db.add(record)
+    db.flush()
+    record.archive_dir = build_school_exam_archive_dir_name(record.exam_date, record.title, record.id)
+    files.ensure_school_exam_archive_dirs(record.archive_dir)
+    db.commit()
+    db.refresh(record)
+    return {
+        "id": record.id,
+        "subject": record.subject,
+        "status": "user_confirmed" if record.confirmed_by_user else "unconfirmed",
+        "knowledge_evidence_created": False,
+    }
 
 @app.get("/api/school-exams")
-def get_school_exams(subject: SchoolExamSubject, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
-    exams = db.execute(select(m.SchoolExam).where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == subject).order_by(m.SchoolExam.exam_date.desc())).scalars().all()
-    return [{"id": e.id, "title": e.title, "exam_date": str(e.exam_date), "earned_points": e.earned_points, "max_points": e.max_points, "confirmed_by_user": e.confirmed_by_user,
-             "school_name": e.school_name, "grade": e.grade, "exam_type": e.exam_type, "exam_type_label": e.exam_type_label,
-             "academic_year": e.academic_year, "term": e.term, "series_title": e.series_title,
-             "external_exam_id": e.external_exam_id, "source_kind": e.source_kind} for e in exams]
+def get_school_exams(
+    subject: SchoolExamArchiveSubject = "all",
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    stmt = select(m.SchoolExam).where(m.SchoolExam.learner_id == owner)
+    if subject != "all":
+        stmt = stmt.where(m.SchoolExam.subject.in_([subject, "all"]))
+    exams = db.execute(stmt.order_by(m.SchoolExam.exam_date.desc())).scalars().all()
+    return [
+        {
+            "id": e.id,
+            "subject": e.subject,
+            "title": e.title,
+            "exam_date": str(e.exam_date),
+            "earned_points": e.earned_points,
+            "max_points": e.max_points,
+            "confirmed_by_user": e.confirmed_by_user,
+            "school_name": e.school_name,
+            "grade": e.grade,
+            "exam_type": e.exam_type,
+            "exam_type_label": e.exam_type_label,
+            "academic_year": e.academic_year,
+            "term": e.term,
+            "series_title": e.series_title,
+            "external_exam_id": e.external_exam_id,
+            "source_kind": e.source_kind,
+        }
+        for e in exams
+    ]
 
 @app.post("/api/school-exams/{exam_id}/confirm")
 def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str = Depends(require_admin), db: Session = Depends(get_db)):
@@ -316,6 +350,61 @@ def confirm_school_exam(exam_id: str, payload: SchoolExamConfirmIn, owner: str =
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
+    if payload.subject and exam.subject == "all":
+        from sqlalchemy.orm.attributes import flag_modified
+
+        reports = db.execute(
+            select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner)
+        ).scalars().all()
+        target_report = None
+        for rep in reports:
+            if any(isinstance(lnk, dict) and lnk.get("exam_id") == exam.id for lnk in (rep.linked_exam_ids or [])):
+                target_report = rep
+                break
+        if target_report is None:
+            raise HTTPException(404, detail="linked report not found")
+        updated_subjects = [dict(item) if isinstance(item, dict) else item for item in (target_report.subjects or [])]
+        matched_entry = next(
+            (item for item in updated_subjects if isinstance(item, dict) and item.get("subject") == payload.subject),
+            None,
+        )
+        if matched_entry is None:
+            raise HTTPException(404, detail="subject not found in linked report")
+        if matched_entry.get("confirmed_by_user"):
+            if payload.earned_points == matched_entry.get("score"):
+                raise HTTPException(409, detail="SCHOOL_EXAM_ALREADY_CONFIRMED")
+            raise HTTPException(409, detail="SCHOOL_EXAM_IMMUTABLE")
+        subj_max = matched_entry.get("max_score")
+        if subj_max is not None and payload.earned_points > float(subj_max):
+            raise HTTPException(422, detail="earned_points exceeds max_points")
+        matched_entry["score"] = payload.earned_points
+        matched_entry["confirmed_by_user"] = True
+        target_report.subjects = updated_subjects
+        flag_modified(target_report, "subjects")
+        all_confirmed = all(
+            bool(item.get("confirmed_by_user"))
+            for item in updated_subjects
+            if isinstance(item, dict) and item.get("subject")
+        )
+        if all_confirmed and updated_subjects:
+            exam.confirmed_by_user = True
+            total_earned = sum(float(item.get("score") or 0) for item in updated_subjects if isinstance(item, dict))
+            total_max = sum(float(item.get("max_score") or 0) for item in updated_subjects if isinstance(item, dict))
+            if total_max > 0:
+                exam.earned_points = round(total_earned, 2)
+                exam.max_points = round(total_max, 2)
+        db.commit()
+        db.refresh(exam)
+        return {
+            "id": exam.id,
+            "subject": payload.subject,
+            "title": exam.title,
+            "exam_date": str(exam.exam_date),
+            "earned_points": payload.earned_points,
+            "max_points": float(subj_max) if subj_max is not None else exam.max_points,
+            "confirmed_by_user": True,
+            "knowledge_evidence_created": False,
+        }
     if exam.confirmed_by_user:
         if payload.earned_points == exam.earned_points:
             raise HTTPException(409, detail="SCHOOL_EXAM_ALREADY_CONFIRMED")
@@ -516,6 +605,38 @@ def _resolve_school_knowledge_meta(
     db: Session, subject: str, raw_kids: set[str]
 ) -> tuple[bool, list[dict], dict[str, str], dict[str, list[str]]]:
     """为管理端校考分析解析知识点中文名与旧新编码映射（道法保留自定义主题原名）。"""
+    if subject == "all":
+        merged_nodes: list[dict] = []
+        node_names: dict[str, str] = {}
+        alias_map: dict[str, list[str]] = {}
+        for core_subj in CORE_SUBJECTS:
+            sub_nodes, _ = _load_effective_knowledge_nodes(db, core_subj)
+            merged_nodes.extend(sub_nodes)
+            for n in sub_nodes:
+                node_names[n["code"]] = n["name"]
+        name_map: dict[str, str] = {}
+        for kid in raw_kids:
+            if kid == "ethics.general":
+                name_map[kid] = "道法综合主题"
+                continue
+            mapped: list[str] = []
+            for core_subj in CORE_SUBJECTS:
+                if kid.startswith(core_subj):
+                    mapped = resolve_question_to_candidate_codes(core_subj, [kid])
+                    break
+            if not mapped:
+                for core_subj in CORE_SUBJECTS:
+                    mapped = resolve_question_to_candidate_codes(core_subj, [kid])
+                    if mapped:
+                        break
+            if mapped:
+                alias_map[kid] = mapped
+            resolved = node_names.get(kid) or TAXONOMY_MAP.get(kid) or SYNTHETIC_MAP.get(kid)
+            if not resolved and mapped:
+                resolved = node_names.get(mapped[0]) or TAXONOMY_MAP.get(mapped[0])
+            name_map[kid] = resolved or kid
+        return True, merged_nodes, name_map, alias_map
+
     if subject not in CORE_SUBJECTS:
         name_map = {
             kid: ("道法综合主题" if kid == "ethics.general" else (TAXONOMY_MAP.get(kid) or SYNTHETIC_MAP.get(kid) or kid))
@@ -662,6 +783,30 @@ def discard_school_exam_item(
     return {"status": "discarded", "id": item_id, "question_label": label}
 
 
+def _infer_attachment_subject(filename: str, fallback: str = "math") -> str:
+    lower = str(filename or "").lower()
+    if "语文" in lower or "chinese" in lower:
+        return "chinese"
+    if "数学" in lower or "math" in lower:
+        return "math"
+    if "英语" in lower or "english" in lower:
+        return "english"
+    if "物理" in lower or "physics" in lower:
+        return "physics"
+    if "道德与法治" in lower or "道法" in lower or "ethics" in lower or "daofa" in lower:
+        return "ethics"
+    return fallback if fallback != "all" else "math"
+
+
+_SUBJECT_CN_PREFIX: dict[str, str] = {
+    "chinese": "语文",
+    "math": "数学",
+    "english": "英语",
+    "physics": "物理",
+    "ethics": "道德与法治",
+}
+
+
 @app.post("/api/school-exams/{exam_id}/parse-drafts")
 def parse_school_exam_drafts(
     exam_id: str,
@@ -689,16 +834,32 @@ def parse_school_exam_drafts(
     if any(att.media_type not in supported for att in attachments):
         raise HTTPException(422, detail="UNSUPPORTED_ATTACHMENT_FOR_PARSING")
 
-    _, knowledge_catalog, _, _ = _resolve_school_knowledge_meta(db, exam.subject, set())
     loaded = [
         {
             "id": att.id,
             "filename": att.filename,
             "media_type": att.media_type,
             "data": files.load_blob(att),
+            "subject": exam.subject if exam.subject != "all" else _infer_attachment_subject(att.filename),
         }
         for att in attachments
     ]
+
+    catalog_by_subj: dict[str, list[dict]] = {}
+
+    def _catalog_for(subj: str) -> list[dict]:
+        if subj not in catalog_by_subj:
+            _, cat, _, _ = _resolve_school_knowledge_meta(db, subj, set())
+            catalog_by_subj[subj] = cat
+        return catalog_by_subj[subj]
+
+    def _prefix_if_all(subj: str, row: dict) -> dict:
+        if exam.subject == "all":
+            cn = _SUBJECT_CN_PREFIX.get(subj)
+            lbl = str(row.get("question_label") or "").strip()
+            if cn and lbl and not any(lbl.startswith(f"{p}·") for p in _SUBJECT_CN_PREFIX.values()):
+                row = {**row, "question_label": f"{cn}·{lbl}"[:160]}
+        return row
 
     def _collect_skeleton() -> list[dict]:
         combined: list[dict] = []
@@ -707,9 +868,11 @@ def parse_school_exam_drafts(
             text = paper_parser.extract_embedded_text(item["data"], item["media_type"])
             if not text:
                 continue
-            for row in paper_parser.parse_paper_skeleton_from_text(
-                text, exam.subject, knowledge_catalog, attachment_id=item["id"]
+            item_subj = item["subject"]
+            for raw_row in paper_parser.parse_paper_skeleton_from_text(
+                text, item_subj, _catalog_for(item_subj), attachment_id=item["id"]
             ):
+                row = _prefix_if_all(item_subj, raw_row)
                 if row["question_label"] not in seen_lbls:
                     seen_lbls.add(row["question_label"])
                     combined.append(row)
@@ -725,14 +888,28 @@ def parse_school_exam_drafts(
         cfg = paper_parser.load_vision_config(require_key=False)
         visual_attachments = [it for it in loaded if it["media_type"] != files.DOCX_MEDIA_TYPE]
         if cfg is not None and visual_attachments:
+            draft_items = []
+            seen_v_lbls: set[str] = set()
+            by_subj_vis: dict[str, list[dict]] = {}
+            for it in visual_attachments:
+                by_subj_vis.setdefault(it["subject"], []).append(it)
             try:
-                draft_items, meta = paper_parser.parse_items_with_deepseek_vision(
-                    subject=exam.subject,
-                    knowledge_catalog=knowledge_catalog,
-                    attachments=visual_attachments,
-                    mask_student_header=payload.mask_student_header,
-                    cfg=cfg,
-                )
+                for vis_subj, vis_list in by_subj_vis.items():
+                    sub_items, sub_meta = paper_parser.parse_items_with_deepseek_vision(
+                        subject=vis_subj,
+                        knowledge_catalog=_catalog_for(vis_subj),
+                        attachments=vis_list,
+                        mask_student_header=payload.mask_student_header,
+                        cfg=cfg,
+                    )
+                    meta["pages_sent"] = int(meta.get("pages_sent") or 0) + int(sub_meta.get("pages_sent") or 0)
+                    meta["masked_pages"] = int(meta.get("masked_pages") or 0) + int(sub_meta.get("masked_pages") or 0)
+                    meta["model"] = sub_meta.get("model")
+                    for raw_row in sub_items:
+                        row = _prefix_if_all(vis_subj, raw_row)
+                        if row["question_label"] not in seen_v_lbls:
+                            seen_v_lbls.add(row["question_label"])
+                            draft_items.append(row)
             except paper_parser.VisionParserConfigError as exc:
                 raise HTTPException(503, detail=str(exc)) from exc
             except paper_parser.VisionParserUnavailableError as exc:
@@ -830,6 +1007,7 @@ def start_k12100_sync_job_endpoint(
         replace_unconfirmed_drafts=payload.replace_unconfirmed_drafts,
         use_ai=payload.use_ai,
         headless=payload.headless,
+        archive_exam_id=payload.archive_exam_id,
     )
 
 
@@ -847,6 +1025,7 @@ def start_k12100_report_sync_job_endpoint(
         auto_map_fn=_auto_map_report_items,
         max_exams=opts.max_exams,
         headless=opts.headless,
+        archive_exam_id=opts.archive_exam_id,
     )
 
 
@@ -893,10 +1072,14 @@ def _raise_pipeline_error(exc: exam_pipeline.PaperPipelineError):
 
 
 @app.get("/api/school-exams/sync-center")
-def get_school_exam_sync_center(owner: str = Depends(require_admin), db: Session = Depends(get_db)):
+def get_school_exam_sync_center(
+    exam_id: str | None = Query(default=None, max_length=64),
+    owner: str = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     """返回四步同步中心的真实后端状态：卷源、扫描、试卷与严格匹配候选。"""
     try:
-        return exam_pipeline.get_sync_center(db, owner=owner)
+        return exam_pipeline.get_sync_center(db, owner=owner, exam_id=exam_id)
     except exam_pipeline.PaperPipelineError as exc:
         _raise_pipeline_error(exc)
     except HomeIdentityError as exc:
@@ -959,7 +1142,7 @@ def _auto_associate_exam_items(
         if by_number:
             break
         try:
-            data = files.blob_path(att.storage_key).read_bytes()
+            data = files.attachment_file_path(att).read_bytes()
             text = paper_parser.extract_embedded_text(data, att.media_type)
         except Exception:
             text = ""
@@ -999,55 +1182,76 @@ def _auto_associate_exam_items(
     if not targets:
         return {"updated": 0, "tier1_matched": 0, "tier2_ai": 0, "tier3_inferred": 0, "skipped_confirmed": skipped_confirmed}
 
-    assocs = paper_parser.auto_associate_school_items(
-        subject=exam.subject,
-        knowledge_catalog=nodes,
-        items=payload_rows,
-        use_ai=use_ai,
-    )
+    if exam.subject == "all":
+        att_subj_by_id = {
+            att.id: _infer_attachment_subject(att.filename)
+            for att in attachments
+        }
+        targets_by_subj: dict[str, list[tuple[m.SchoolExamItem, dict]]] = {}
+        for row, p_row in zip(targets, payload_rows):
+            inferred = _infer_school_item_subject(row.question_label, None)
+            if not inferred and row.draft_source_attachment_id:
+                inferred = att_subj_by_id.get(row.draft_source_attachment_id)
+            if not inferred:
+                inferred = _infer_school_item_subject(row.question_label, row.knowledge_id) or "math"
+            targets_by_subj.setdefault(inferred, []).append((row, p_row))
+    else:
+        targets_by_subj = {exam.subject: list(zip(targets, payload_rows))}
+
     updated = 0
     tier1 = 0
     tier2 = 0
     tier3 = 0
-    valid_names = {str(n["code"]): str(n.get("name") or n["code"]) for n in nodes if n.get("code")}
 
-    for row, assoc in zip(targets, assocs):
-        has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
-        cands = assoc["draft_knowledge_candidates"]
-        if not overwrite_existing and has_kid and row.draft_confidence != "type_inferred":
-            existing_first = [
-                {
-                    "knowledge_id": row.knowledge_id,
-                    "title": valid_names.get(row.knowledge_id, row.knowledge_id),
-                    "reason": "保留既有已选考点",
-                }
-            ]
-            row.draft_knowledge_candidates = paper_parser.ensure_three_candidates(
-                existing_first,
-                subject=exam.subject,
-                knowledge_catalog=nodes,
-                question_label=row.question_label,
-                max_points=row.max_points,
-                fallback_candidates=cands,
-            )
+    for item_subj, pair_list in targets_by_subj.items():
+        _, subj_nodes, _, _ = _resolve_school_knowledge_meta(db, item_subj, set())
+        subj_targets = [pair[0] for pair in pair_list]
+        subj_payloads = [pair[1] for pair in pair_list]
+        assocs = paper_parser.auto_associate_school_items(
+            subject=item_subj,
+            knowledge_catalog=subj_nodes,
+            items=subj_payloads,
+            use_ai=use_ai,
+        )
+        valid_names = {str(n["code"]): str(n.get("name") or n["code"]) for n in subj_nodes if n.get("code")}
+
+        for row, assoc in zip(subj_targets, assocs):
+            has_kid = bool(row.knowledge_id and row.knowledge_id != "unmapped")
+            cands = assoc["draft_knowledge_candidates"]
+            if not overwrite_existing and has_kid and row.draft_confidence != "type_inferred":
+                existing_first = [
+                    {
+                        "knowledge_id": row.knowledge_id,
+                        "title": valid_names.get(row.knowledge_id, row.knowledge_id),
+                        "reason": "保留既有已选考点",
+                    }
+                ]
+                row.draft_knowledge_candidates = paper_parser.ensure_three_candidates(
+                    existing_first,
+                    subject=item_subj,
+                    knowledge_catalog=subj_nodes,
+                    question_label=row.question_label,
+                    max_points=row.max_points,
+                    fallback_candidates=cands,
+                )
+                updated += 1
+                continue
+
+            row.knowledge_id = assoc["knowledge_id"]
+            row.draft_knowledge_candidates = cands
+            row.draft_confidence = assoc["draft_confidence"]
+            basis = str(assoc.get("basis_note") or "").strip()
+            if basis:
+                base_reason = re.sub(r"；(?:[^；]*先验|[^；]*命中[^；]*|AI语义:[^；]*)$", "", str(row.draft_reason or "").strip())
+                row.draft_reason = f"{base_reason}；{basis}"[:500] if base_reason else basis[:500]
+            method = assoc.get("method")
+            if method == "auto_matched":
+                tier1 += 1
+            elif method == "ai_matched":
+                tier2 += 1
+            else:
+                tier3 += 1
             updated += 1
-            continue
-
-        row.knowledge_id = assoc["knowledge_id"]
-        row.draft_knowledge_candidates = cands
-        row.draft_confidence = assoc["draft_confidence"]
-        basis = str(assoc.get("basis_note") or "").strip()
-        if basis:
-            base_reason = re.sub(r"；(?:[^；]*先验|[^；]*命中[^；]*|AI语义:[^；]*)$", "", str(row.draft_reason or "").strip())
-            row.draft_reason = f"{base_reason}；{basis}"[:500] if base_reason else basis[:500]
-        method = assoc.get("method")
-        if method == "auto_matched":
-            tier1 += 1
-        elif method == "ai_matched":
-            tier2 += 1
-        else:
-            tier3 += 1
-        updated += 1
 
     return {
         "updated": updated,
@@ -1228,7 +1432,7 @@ def get_report_answer_card_image(
     if attachment is None or attachment.report_id != report_id or attachment.learner_id != owner:
         raise HTTPException(404, detail="attachment not found")
     try:
-        data = files.blob_path(attachment.storage_key).read_bytes()
+        data = files.attachment_file_path(attachment).read_bytes()
     except FileNotFoundError as exc:
         raise HTTPException(409, detail="ATTACHMENT_FILE_MISSING") from exc
     if attachment.rotation:
@@ -1260,12 +1464,13 @@ def scan_school_exam_papers(
     owner: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """扫描当前环境 0700 私有收件箱；所有论文先待核对，逐题仍走既有 ocr_draft 门禁。"""
+    """扫描当前环境 0700 校考目录（优先选中档案 exam-paper/，否则 inbox/）；所有原卷先待核对，逐题仍走既有 ocr_draft 门禁。"""
     try:
         return exam_pipeline.scan_local_papers(
             db,
             owner=owner,
             apply_imports=bool(payload and payload.apply_imports),
+            exam_id=payload.exam_id if payload else None,
         )
     except exam_pipeline.PaperPipelineError as exc:
         _raise_pipeline_error(exc)
@@ -1443,6 +1648,7 @@ async def import_k12100_bundle_endpoint(
         upload_missing_cards=payload.upload_missing_cards,
         replace_unconfirmed_drafts=payload.replace_unconfirmed_drafts,
         use_ai=payload.use_ai,
+        archive_exam_id=payload.archive_exam_id,
     )
 
 @app.post("/api/school-exams/{exam_id}/items/auto-associate", response_model=SchoolExamAutoAssociateOut)
@@ -1862,9 +2068,10 @@ def delete_school_exam(
         select(m.SchoolPaperAttachment).where(m.SchoolPaperAttachment.school_exam_id == exam_id)
     ).scalars().all()
     # 先删私有原件；文件删除失败则中止，避免留下数据库孤儿。
+    archive_dir = exam.archive_dir
     for attachment in attachments:
         try:
-            files.blob_path(attachment.storage_key).unlink(missing_ok=True)
+            files.unlink_attachment_blob(attachment)
         except OSError as exc:
             raise HTTPException(409, detail="SCHOOL_EXAM_ATTACHMENT_DELETE_FAILED") from exc
 
@@ -1877,14 +2084,68 @@ def delete_school_exam(
     papers = db.execute(
         select(m.SchoolExamPaper).where(m.SchoolExamPaper.school_exam_id == exam_id)
     ).scalars().all()
+    if archive_dir:
+        archive_papers = db.execute(
+            select(m.SchoolExamPaper).where(
+                m.SchoolExamPaper.learner_id == owner,
+                or_(
+                    m.SchoolExamPaper.source_ref.like(f"{archive_dir}/%"),
+                    m.SchoolExamPaper.source_ref.like(f"%{archive_dir}/%"),
+                    m.SchoolExamPaper.relative_path.like(f"{archive_dir}/%"),
+                ),
+            )
+        ).scalars().all()
+        seen_paper_ids = {p.id for p in papers}
+        for ap in archive_papers:
+            if ap.id not in seen_paper_ids:
+                papers.append(ap)
+                seen_paper_ids.add(ap.id)
+
     for paper in papers:
-        paper.school_exam_id = None
-        paper.status = "needs_review"
-        paper.match_state = "NEEDS_REVIEW"
-        paper.match_candidates = []
-        paper.imported_at = None
-        paper.error_code = None
-        paper.updated_at = m.now()
+        in_archive = bool(archive_dir) and (
+            f"{archive_dir}/" in str(paper.source_ref or "")
+            or str(getattr(paper, "relative_path", "") or "").startswith(f"{archive_dir}/")
+        )
+        if in_archive:
+            paper_key = paper.storage_key
+            paper_rel = getattr(paper, "relative_path", None)
+            db.delete(paper)
+            db.flush()
+            report_pipeline._safe_unlink_unused_blob(db, paper_key, paper_rel)  # noqa: SLF001
+        else:
+            paper.school_exam_id = None
+            paper.status = "needs_review"
+            paper.match_state = "NEEDS_REVIEW"
+            paper.match_candidates = []
+            paper.imported_at = None
+            paper.error_code = None
+            paper.updated_at = m.now()
+
+    reports = db.execute(
+        select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner)
+    ).scalars().all()
+    for rep in reports:
+        links = list(rep.linked_exam_ids or [])
+        filtered_links = [lk for lk in links if str(lk.get("exam_id") or "") != exam_id]
+        if len(filtered_links) == len(links):
+            continue
+        if filtered_links:
+            rep.linked_exam_ids = filtered_links
+        else:
+            rep_key = rep.storage_key
+            rep_rel = getattr(rep, "relative_path", None)
+            rep_cards = db.execute(
+                select(m.SchoolExamReportAttachment).where(m.SchoolExamReportAttachment.report_id == rep.id)
+            ).scalars().all()
+            rep_card_refs = [(c.storage_key, getattr(c, "relative_path", None)) for c in rep_cards]
+            for card in rep_cards:
+                db.delete(card)
+            db.delete(rep)
+            db.flush()
+            report_pipeline._safe_unlink_unused_blob(db, rep_key, rep_rel)  # noqa: SLF001
+            for ck, cr in rep_card_refs:
+                report_pipeline._safe_unlink_unused_blob(db, ck, cr)  # noqa: SLF001
+
     item_ids = [it.id for it in items]
     if item_ids:
         coach_sessions = db.execute(
@@ -1907,7 +2168,19 @@ def delete_school_exam(
     for row in [*items, *attachments, *ranks]:
         db.delete(row)
     db.delete(exam)
+    db.flush()
+    still_using_archive = (
+        bool(archive_dir)
+        and db.execute(
+            select(m.SchoolExam.id).where(m.SchoolExam.archive_dir == archive_dir).limit(1)
+        ).first()
+        is not None
+    )
     db.commit()
+    if archive_dir and not still_using_archive:
+        files.remove_school_exam_archive_dir(archive_dir)
+    else:
+        files.cleanup_empty_school_exam_archive_dir(archive_dir)
     return {
         "deleted": True,
         "id": exam_id,
@@ -1918,9 +2191,36 @@ def delete_school_exam(
     }
 
 
+_SUBJECT_LABEL_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("语文·", "chinese"),
+    ("数学·", "math"),
+    ("英语·", "english"),
+    ("物理·", "physics"),
+    ("道德与法治·", "ethics"),
+    ("道法·", "ethics"),
+    ("历史·", "history"),
+    ("地理·", "geography"),
+    ("生物·", "biology"),
+    ("化学·", "chemistry"),
+)
+
+
+def _infer_school_item_subject(question_label: str, knowledge_id: str | None) -> str | None:
+    label = str(question_label or "").strip()
+    for prefix, code in _SUBJECT_LABEL_PREFIXES:
+        if label.startswith(prefix):
+            return code
+    kid = str(knowledge_id or "").strip().lower()
+    for code in ("chinese", "math", "english", "physics", "ethics", "history", "geography", "biology", "chemistry"):
+        if kid.startswith(f"{code}."):
+            return code
+    return None
+
+
 @app.get("/api/school-exams/{exam_id}/error-analysis", response_model=SchoolExamErrorAnalysisOut)
 def get_school_exam_error_analysis(
     exam_id: str,
+    subject: SchoolExamSubject | None = Query(default=None),
     owner: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -1928,9 +2228,16 @@ def get_school_exam_error_analysis(
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
+    analysis_subject = subject if (exam.subject == "all" and subject) else exam.subject
     same_subject_exams = db.execute(
         select(m.SchoolExam)
-        .where(m.SchoolExam.learner_id == owner, m.SchoolExam.subject == exam.subject)
+        .where(
+            m.SchoolExam.learner_id == owner,
+            or_(
+                m.SchoolExam.subject == analysis_subject,
+                m.SchoolExam.subject == exam.subject,
+            ),
+        )
         .order_by(m.SchoolExam.exam_date.desc(), m.SchoolExam.created_at.desc(), m.SchoolExam.id.desc())
     ).scalars().all()
     exam_ids = [e.id for e in same_subject_exams]
@@ -1945,8 +2252,14 @@ def get_school_exam_error_analysis(
         if exam_ids
         else []
     )
+    if exam.subject == "all" and subject:
+        all_items = [
+            it
+            for it in all_items
+            if _infer_school_item_subject(it.question_label, it.knowledge_id) == subject
+        ]
     all_kids = {it.knowledge_id for it in all_items}
-    has_taxonomy, nodes, name_map, alias_map = _resolve_school_knowledge_meta(db, exam.subject, all_kids)
+    has_taxonomy, nodes, name_map, alias_map = _resolve_school_knowledge_meta(db, analysis_subject, all_kids)
 
     items_by_exam: dict[str, list[dict]] = {eid: [] for eid in exam_ids}
     for it in all_items:
@@ -1969,9 +2282,9 @@ def get_school_exam_error_analysis(
 
     if has_taxonomy and nodes:
         valid_codes = {n["code"] for n in nodes}
-        raw_daily_evidence = get_evidence(db, owner, exam.subject, include_school_items=False)
+        raw_daily_evidence = get_evidence(db, owner, analysis_subject, include_school_items=False)
         daily_evidence = _get_mapped_evidence(
-            db, owner, exam.subject, valid_codes, include_school_items=False, raw_evidence=raw_daily_evidence
+            db, owner, analysis_subject, valid_codes, include_school_items=False, raw_evidence=raw_daily_evidence
         )
         practice_mastery = compute_knowledge_mastery(nodes, daily_evidence)
         # 兼容仅出现在基础合成测试/历史旧编码、未映射进 2022 候选集的日常作答考点
@@ -1986,15 +2299,35 @@ def get_school_exam_error_analysis(
     else:
         practice_mastery = []
 
+    exam_earned = exam.earned_points
+    exam_max = exam.max_points
+    exam_confirmed = exam.confirmed_by_user
+    if exam.subject == "all" and subject:
+        for rep in db.execute(
+            select(m.SchoolExamReport).where(m.SchoolExamReport.learner_id == owner)
+        ).scalars().all():
+            if any(isinstance(lnk, dict) and lnk.get("exam_id") == exam.id for lnk in (rep.linked_exam_ids or [])):
+                s_entry = next(
+                    (s for s in (rep.subjects or []) if isinstance(s, dict) and s.get("subject") == subject),
+                    None,
+                )
+                if s_entry is not None:
+                    if s_entry.get("score") is not None:
+                        exam_earned = float(s_entry["score"])
+                    if s_entry.get("max_score") is not None:
+                        exam_max = float(s_entry["max_score"])
+                    exam_confirmed = bool(s_entry.get("confirmed_by_user"))
+                break
+
     return analyze_school_exam_errors(
         exam_meta={
             "id": exam.id,
-            "subject": exam.subject,
+            "subject": analysis_subject,
             "title": exam.title,
             "exam_date": str(exam.exam_date),
-            "earned_points": exam.earned_points,
-            "max_points": exam.max_points,
-            "confirmed_by_user": exam.confirmed_by_user,
+            "earned_points": exam_earned,
+            "max_points": exam_max,
+            "confirmed_by_user": exam_confirmed,
         },
         exam_items=items_by_exam.get(exam.id, []),
         history_exams=history_payload,
@@ -2022,10 +2355,32 @@ def get_school_exam_detail(exam_id: str, owner: str = Depends(require_admin), db
             "external_exam_id": exam.external_exam_id, "source_kind": exam.source_kind,
             "class_highest": exam.class_highest, "grade_highest": exam.grade_highest,
             "items": _serialize_school_exam_items_with_names(db, exam.subject, items),
-            "attachments": [{"id": a.id, "filename": a.filename, "media_type": a.media_type, "sha256": a.sha256,
-                             "byte_size": a.byte_size, "created_at": a.created_at} for a in attachments]}
+            "attachments": [
+                {
+                    "id": a.id,
+                    "filename": a.filename,
+                    "media_type": a.media_type,
+                    "sha256": a.sha256,
+                    "byte_size": a.byte_size,
+                    "category": getattr(a, "category", "exam_paper"),
+                    "created_at": a.created_at,
+                }
+                for a in attachments
+            ]}
 
-def save_school_paper(db, exam_id, owner, filename, media_type, data, expected_sha256):
+
+def save_school_paper(
+    db,
+    exam_id,
+    owner,
+    filename,
+    media_type,
+    data,
+    expected_sha256,
+    *,
+    category: str = "exam_paper",
+    archive_dir_override: str | None = None,
+):
     exam = db.get(m.SchoolExam, exam_id)
     if exam is None or exam.learner_id != owner:
         raise HTTPException(404, detail="exam not found")
@@ -2033,17 +2388,37 @@ def save_school_paper(db, exam_id, owner, filename, media_type, data, expected_s
     digest = sha256(data).hexdigest()
     if expected_sha256 is not None and expected_sha256 != digest:
         raise HTTPException(422, detail="UPLOAD_HASH_MISMATCH")
+    archive_dir = (archive_dir_override or "").strip() or (exam.archive_dir or "").strip()
+    if not archive_dir:
+        archive_dir = build_school_exam_archive_dir_name(exam.exam_date, exam.title, exam.id)
+        exam.archive_dir = archive_dir
+    elif not exam.archive_dir:
+        exam.archive_dir = archive_dir
+    subdir = "answer-sheet" if category == "answer_sheet" else "exam-paper"
     key = None
+    rel_path = None
     try:
-        key = files.write_blob(data)
-        attachment = m.SchoolPaperAttachment(school_exam_id=exam.id, owner_id=owner, filename=filename,
-                                            media_type=media_type, sha256=digest, byte_size=len(data), storage_key=key)
+        key, rel_path = files.write_school_exam_file(archive_dir, subdir, filename, data)
+        attachment = m.SchoolPaperAttachment(
+            school_exam_id=exam.id,
+            owner_id=owner,
+            filename=filename,
+            media_type=media_type,
+            sha256=digest,
+            byte_size=len(data),
+            storage_key=key,
+            category=category,
+            relative_path=rel_path,
+        )
         db.add(attachment)
         db.commit()
-    except (OSError, SQLAlchemyError):
+    except (OSError, SQLAlchemyError, HomeIdentityError):
         db.rollback()
-        if key is not None:
-            files.blob_path(key).unlink(missing_ok=True)
+        if rel_path is not None:
+            try:
+                files.school_exam_file_path(rel_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         raise HTTPException(503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
     db.refresh(attachment)
     return {"id": attachment.id, "filename": attachment.filename, "media_type": attachment.media_type,

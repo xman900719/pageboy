@@ -166,6 +166,59 @@ def default_attachments_dir(
     return env_dir / "data" / "attachments"
 
 
+def default_school_exams_dir(
+    environment: str | None = None,
+    home_root: Path | str | None = None,
+) -> Path:
+    """返回当前环境校考文件统一存储根目录（位于 pageboy-home/<env>/school-exams/）。"""
+    env = normalize_environment(environment)
+    override = os.getenv("SHUTONG_SCHOOL_EXAMS_DIR", "").strip()
+    if override and environment is None and home_root is None:
+        return assert_no_cross_environment_path(override, expected_env=env, home_root=home_root)
+    env_dir = get_env_home(env, home_root=home_root)
+    return env_dir / "school-exams"
+
+
+def sanitize_archive_segment(raw: str, *, fallback: str = "exam", max_len: int = 80) -> str:
+    """将考试名称等用户文本清洗为安全的单层目录名片段（禁止路径穿越与控制字符）。"""
+    import re
+
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]+', "_", (raw or "").strip())
+    cleaned = re.sub(r"\s+", "_", cleaned).strip("._")
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:max_len].rstrip("._") or fallback
+
+
+def build_school_exam_archive_dir_name(exam_date: Any, title: str, exam_id: str) -> str:
+    """生成唯一且可读的校考档案目录名：<YYYY-MM>_<安全名称>_<8位ID前缀>。"""
+    date_prefix = str(exam_date)[:7] if exam_date else "unknown"
+    date_prefix = sanitize_archive_segment(date_prefix, fallback="unknown", max_len=10)
+    safe_title = sanitize_archive_segment(title, fallback="school-exam", max_len=64)
+    id_prefix = sanitize_archive_segment(str(exam_id).replace("-", "")[:8], fallback="archive", max_len=12)
+    return f"{date_prefix}_{safe_title}_{id_prefix}"
+
+
+def resolve_school_exam_subpath(
+    relative_path: str,
+    environment: str | None = None,
+    home_root: Path | str | None = None,
+) -> Path:
+    """安全解析 school-exams/ 下的相对路径，严禁路径穿越、符号链接及跨环境访问。"""
+    root = assert_no_cross_environment_path(
+        default_school_exams_dir(environment=environment, home_root=home_root),
+        expected_env=normalize_environment(environment) if environment is not None else None,
+        home_root=home_root,
+    )
+    rel = Path(relative_path)
+    if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+        raise HomeIdentityError(f"非法的校考存储相对路径: {relative_path!r}")
+    candidate = (root / rel).resolve()
+    if root != candidate and root not in candidate.parents:
+        raise HomeIdentityError(f"校考存储路径越界: {relative_path!r}")
+    return assert_no_cross_environment_path(candidate, home_root=home_root)
+
+
 def curriculum_standards_dir(
     environment: str | None = None,
     home_root: Path | str | None = None,

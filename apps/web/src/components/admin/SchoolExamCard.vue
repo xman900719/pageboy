@@ -31,7 +31,6 @@ import {
 } from '../../examSync'
 import HelpBubble from '../HelpBubble.vue'
 import { RichText } from '../../rich'
-import SchoolExamReportCenter from './SchoolExamReportCenter.vue'
 import SchoolExamSyncCenter from './SchoolExamSyncCenter.vue'
 import StageTabStrip from './StageTabStrip.vue'
 import StepFlowWorkspace from './StepFlowWorkspace.vue'
@@ -39,8 +38,8 @@ import type { StageGroup, StepDefinition, StepFlowContext } from './stepFlow'
 import type { NoticeTone } from '../Notice.vue'
 
 type Notify = (text: string, tone?: NoticeTone) => void
-export type ExamTabId = 'scores' | 'papers' | 'items' | 'analysis' | 'sync' | 'report'
-type ScoreStepId = 'pick' | 'detail' | 'upload'
+export type ExamTabId = 'scores' | 'papers' | 'items' | 'analysis'
+type ScoreStepId = 'pick' | 'upload' | 'sync'
 type PaperStepId = 'parse' | 'drafts'
 type ItemStepId = 'list' | 'add'
 type AnalysisStepId = 'overview' | 'knowledge' | 'history' | 'reflection'
@@ -137,19 +136,12 @@ const subjectKnowledgeOptions = computed(() => {
   })
 })
 
-// 新建校考表单状态
+// 新建校考表单状态（不分科目、面向全科）
 const examTitle = ref('')
 const examDate = ref(new Date().toISOString().slice(0, 7))
-const examEarned = ref<number | ''>('')
-const examMax = ref(100)
-const createConfirmed = ref(true)
 const savingExam = ref(false)
 
-// 待核对总分补充确认状态
-const confirmEarned = ref<number | ''>('')
-const confirmingExam = ref(false)
-
-// 私有原卷/答题卡上传状态
+// 私有原卷上传状态
 const paperFile = ref<File | null>(null)
 const paperInputRef = ref<HTMLInputElement | null>(null)
 const uploadingPaper = ref(false)
@@ -172,11 +164,15 @@ const returningSaving = ref(false)
 
 // M2 自动解析与待核对明细核对台状态
 const selectedParseAttachmentIds = ref<string[]>([])
+const knownParseAttachmentIds = ref<Set<string>>(new Set())
 const lastParseInitExamId = ref<string | null>(null)
 const parseMode = ref<'auto' | 'skeleton_only'>('auto')
 const maskStudentHeader = ref(true)
 const replaceUnconfirmedDrafts = ref(false)
 const parsingDrafts = ref(false)
+const parseProgress = ref(0)
+const parseStageText = ref('')
+let parseProgressTimer: ReturnType<typeof setInterval> | null = null
 const parseDraftError = ref('')
 const lastParseSummary = ref('')
 const discardingItemId = ref<string | null>(null)
@@ -207,6 +203,12 @@ const PARSEABLE_MEDIA_TYPES = new Set([
 const parseableAttachments = computed(
   () => selectedDetail.value?.attachments.filter(a => PARSEABLE_MEDIA_TYPES.has(a.media_type)) ?? []
 )
+
+const allParseAttachmentsSelected = computed(
+  () =>
+    parseableAttachments.value.length > 0 &&
+    parseableAttachments.value.every(a => selectedParseAttachmentIds.value.includes(a.id)),
+)
 const answerCardAttachments = computed(
   () => parseableAttachments.value.filter(a => /答题卡|答题纸|answer.?card/i.test(a.filename)),
 )
@@ -216,11 +218,61 @@ const unconfirmedDrafts = computed(() =>
     compareQuestionLabel(x.question_label, y.question_label),
   ),
 )
-const confirmedItems = computed(() =>
-  [...(selectedDetail.value?.items.filter(it => it.confirmed_by_user) ?? [])].sort((x, y) =>
-    compareQuestionLabel(x.question_label, y.question_label),
-  ),
-)
+const stageSubjectFilter = ref<SchoolSubject>(props.subject)
+
+const STAGE_SUBJECT_PREFIXES: Array<[string, SchoolSubject]> = [
+  ['语文·', 'chinese'],
+  ['数学·', 'math'],
+  ['英语·', 'english'],
+  ['物理·', 'physics'],
+  ['道德与法治·', 'ethics'],
+  ['道法·', 'ethics'],
+]
+
+function inferItemSubject(it: SchoolExamItem): SchoolSubject | null {
+  const lbl = String(it.question_label || '').trim()
+  for (const [prefix, code] of STAGE_SUBJECT_PREFIXES) {
+    if (lbl.startsWith(prefix)) return code
+  }
+  const kid = String(it.knowledge_id || '').trim().toLowerCase()
+  for (const code of ['chinese', 'math', 'english', 'physics', 'ethics'] as SchoolSubject[]) {
+    if (kid.startsWith(`${code}.`)) return code
+  }
+  return null
+}
+
+const stageSubjectTabs = computed(() => {
+  const detail = selectedDetail.value
+  if (!detail || detail.subject !== 'all') return []
+  const order: SchoolSubject[] = ['chinese', 'math', 'english', 'physics', 'ethics']
+  const counts = new Map<SchoolSubject, number>()
+  for (const it of detail.items) {
+    if (!it.confirmed_by_user) continue
+    const subj = inferItemSubject(it)
+    if (subj) counts.set(subj, (counts.get(subj) ?? 0) + 1)
+  }
+  if (!counts.has(props.subject)) counts.set(props.subject, 0)
+  return order
+    .filter(code => counts.has(code))
+    .map(code => ({
+      subject: code,
+      label: SCHOOL_SUBJECT_LABELS[code] || code,
+      count: counts.get(code) ?? 0,
+    }))
+})
+
+const confirmedItems = computed(() => {
+  const detail = selectedDetail.value
+  const list = detail?.items.filter(it => it.confirmed_by_user) ?? []
+  const filtered =
+    detail?.subject === 'all'
+      ? list.filter(it => {
+          const subj = inferItemSubject(it)
+          return subj ? subj === stageSubjectFilter.value : stageSubjectFilter.value === props.subject
+        })
+      : list
+  return [...filtered].sort((x, y) => compareQuestionLabel(x.question_label, y.question_label))
+})
 const lostConfirmedItems = computed(() =>
   confirmedItems.value.filter(it => it.earned_points < it.max_points),
 )
@@ -377,34 +429,31 @@ const examContext = computed<StepFlowContext | null>(() => {
 
 const scoreSteps = computed<StepDefinition[]>(() => {
   const hasExam = selectedDetail.value !== null
-  const attachCount = selectedDetail.value?.attachments.length ?? 0
+  const examPaperCount = selectedDetail.value?.attachments.filter(a => a.category !== 'answer_sheet').length ?? 0
   return [
     {
       id: 'pick',
       title: '1. 选定或新建校考档案',
-      subtitle: selectedDetail.value ? '已选定场次' : '先从台账选定或建新档',
+      subtitle: selectedDetail.value ? '已选定档案' : '先从台账选定或建新档',
       badge: `${exams.value?.length ?? 0} 场`,
       done: hasExam,
       prereqMet: true,
     },
     {
-      id: 'detail',
-      title: '2. 总分概览与材料入口',
-      subtitle: selectedDetail.value?.confirmed_by_user ? '总分已锁定' : '核对总分或进入报告/同步',
-      badge: selectedDetail.value?.confirmed_by_user ? '已锁定' : '待核对',
-      badgeTone: selectedDetail.value?.confirmed_by_user ? 'good' : 'wait',
-      done: Boolean(selectedDetail.value?.confirmed_by_user),
+      id: 'upload',
+      title: '2. 上传原卷',
+      subtitle: examPaperCount > 0 ? `已归档 ${examPaperCount} 份` : '存放于档案 exam-paper 目录',
+      badge: `${examPaperCount} 份`,
+      done: examPaperCount > 0,
       prereqMet: hasExam,
       lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
     },
     {
-      id: 'upload',
-      title: '3. 上传私有原卷与答题卡',
-      subtitle: attachCount > 0 ? `已归档 ${attachCount} 份` : '加密隔离归档',
-      badge: `${attachCount} 份`,
-      done: attachCount > 0,
-      prereqMet: hasExam,
-      lockReason: '请先在第 1 步选定或新建一场学校考试档案。',
+      id: 'sync',
+      title: '3. 全科校考同步',
+      subtitle: '同步全科成绩与答题卡至 answer-sheet 目录',
+      done: false,
+      prereqMet: true,
     },
   ]
 })
@@ -420,7 +469,7 @@ const paperSteps = computed<StepDefinition[]>(() => {
       subtitle: hasParseable ? `可选 ${parseableAttachments.value.length} 份附件` : '须先在第一阶段上传原卷',
       done: hasDraftsOrConfirmed,
       prereqMet: hasExam && hasParseable,
-      lockReason: '请先在「第一阶段 · 第 3 步」上传可解析的原卷或答题卡；若已从「报告导入」生成待核对明细，可直接点击第 2 步核对台。',
+      lockReason: '请先在「第一阶段 · 第 2 步 上传原卷」上传可解析的原卷；若已从「全科校考同步」生成待核对明细，可直接点击第 2 步核对台。',
     },
     {
       id: 'drafts',
@@ -430,12 +479,12 @@ const paperSteps = computed<StepDefinition[]>(() => {
           ? `待核对 ${unconfirmedDrafts.value.length} 题`
           : confirmedItems.value.length > 0
             ? '本页明细已全部入账'
-            : '待第 1 步或报告生成明细',
+            : '待第 1 步或全科同步生成明细',
       badge: `${unconfirmedDrafts.value.length} 题`,
       badgeTone: unconfirmedDrafts.value.length > 0 ? 'wait' : 'good',
       done: hasExam && unconfirmedDrafts.value.length === 0 && confirmedItems.value.length > 0,
       prereqMet: hasExam && hasDraftsOrConfirmed,
-      lockReason: '当前场次还没有待核对明细：请先在第 1 步提取原卷，或从第一阶段「报告导入与核对」生成逐题待核对明细。',
+      lockReason: '当前场次还没有待核对明细：请先在第 1 步提取原卷，或从第一阶段第 3 步「全科校考同步」生成逐题待核对明细。',
     },
   ]
 })
@@ -504,12 +553,23 @@ const analysisSteps = computed<StepDefinition[]>(() => {
   ]
 })
 
+async function selectStageSubject(subj: SchoolSubject) {
+  stageSubjectFilter.value = subj
+  if (selectedExamId.value) {
+    try {
+      errorAnalysis.value = await props.client.schoolExamErrorAnalysis(selectedExamId.value, subj)
+    } catch {
+      // ignore transient error
+    }
+  }
+}
+
 async function loadDetail(examId: string) {
   loadingDetail.value = true
   try {
     const [detail, analysis, ranks] = await Promise.all([
       props.client.schoolExamDetail(examId),
-      props.client.schoolExamErrorAnalysis(examId),
+      props.client.schoolExamErrorAnalysis(examId, stageSubjectFilter.value),
       typeof props.client.schoolExamRanks === 'function'
         ? props.client.schoolExamRanks(examId).catch(() => null)
         : Promise.resolve(null),
@@ -517,7 +577,6 @@ async function loadDetail(examId: string) {
     selectedDetail.value = detail
     errorAnalysis.value = analysis
     selectedRanks.value = ranks
-    confirmEarned.value = detail.earned_points
     syncDraftStateFromDetail(detail)
     syncStemEditsFromDetail(detail)
   } catch (e) {
@@ -536,6 +595,7 @@ function syncDraftStateFromDetail(detail: SchoolExamDetail) {
     .map(a => a.id)
   if (lastParseInitExamId.value !== detail.id) {
     selectedParseAttachmentIds.value = [...validAttachIds]
+    knownParseAttachmentIds.value = new Set(validAttachIds)
     lastParseInitExamId.value = detail.id
     parseDraftError.value = ''
     lastParseSummary.value = ''
@@ -544,7 +604,9 @@ function syncDraftStateFromDetail(detail: SchoolExamDetail) {
   } else {
     const existingSet = new Set(validAttachIds)
     const kept = selectedParseAttachmentIds.value.filter(id => existingSet.has(id))
-    selectedParseAttachmentIds.value = kept.length > 0 ? kept : [...validAttachIds]
+    const newlyAdded = validAttachIds.filter(id => !knownParseAttachmentIds.value.has(id))
+    selectedParseAttachmentIds.value = [...kept, ...newlyAdded]
+    knownParseAttachmentIds.value = existingSet
   }
 
   const nextEdits: typeof draftEdits.value = {}
@@ -630,7 +692,7 @@ watch(
   },
 )
 
-async function refreshExams(preferId?: string) {
+async function refreshExams(preferId?: string, advanceToUpload = false) {
   try {
     const list = await props.client.schoolExams(props.subject)
     exams.value = list
@@ -646,8 +708,8 @@ async function refreshExams(preferId?: string) {
     }
     if (targetId) {
       await loadDetail(targetId)
-      if (preferId && preferId === targetId && activeTab.value === 'scores' && selectedDetail.value?.id === preferId) {
-        scoreStep.value = 'detail'
+      if (advanceToUpload && preferId && preferId === targetId && activeTab.value === 'scores' && selectedDetail.value?.id === preferId) {
+        scoreStep.value = 'upload'
       }
     } else {
       selectedDetail.value = null
@@ -664,6 +726,7 @@ async function refreshExams(preferId?: string) {
 watch(
   [() => props.client, () => props.subject],
   () => {
+    stageSubjectFilter.value = props.subject
     scoreStep.value = 'pick'
     scorePickMode.value = 'list'
     paperStep.value = 'parse'
@@ -726,55 +789,29 @@ async function saveExam() {
     props.notify('请填写考试名称。', 'caution')
     return
   }
-  if (createConfirmed.value && examEarned.value === '') {
-    props.notify('请填写考试名称与得分。', 'caution')
-    return
-  }
-  const earned = examEarned.value === '' ? 0 : Number(examEarned.value)
   savingExam.value = true
   try {
     const created = await props.client.addSchoolExam({
-      subject: props.subject,
+      subject: 'all',
       title,
       examDate: examDate.value,
-      earnedPoints: earned,
-      maxPoints: Number(examMax.value),
-      confirmedByUser: createConfirmed.value,
+      earnedPoints: 100,
+      maxPoints: 100,
+      confirmedByUser: false,
     })
     props.notify(
-      createConfirmed.value
-        ? `学校考试已记录。${EXAM_NOTE}`
-        : '待核对学校考试档案已暂存，请上传原卷/答题卡并在后续补充确认总分。',
+      `全科校考档案已创建（已在 school-exams 下建立档案目录）。${EXAM_NOTE}`,
       'success'
     )
     examTitle.value = ''
-    examEarned.value = ''
     await refreshExams(created.id)
     scorePickMode.value = 'list'
     activeTab.value = 'scores'
-    scoreStep.value = 'detail'
+    scoreStep.value = 'upload'
   } catch (e) {
     props.notify(describeError(e), 'error')
   } finally {
     savingExam.value = false
-  }
-}
-
-async function confirmSelectedExam() {
-  if (!selectedDetail.value) return
-  if (confirmEarned.value === '') {
-    props.notify('请填写实得总分。', 'caution')
-    return
-  }
-  confirmingExam.value = true
-  try {
-    await props.client.confirmSchoolExam(selectedDetail.value.id, Number(confirmEarned.value))
-    props.notify(`校考总分已人工核对并锁定。${EXAM_NOTE}`, 'success')
-    await refreshExams(selectedDetail.value.id)
-  } catch (e) {
-    props.notify(describeError(e), 'error')
-  } finally {
-    confirmingExam.value = false
   }
 }
 
@@ -805,7 +842,7 @@ function clearPaperFile() {
 async function uploadPaper() {
   if (!selectedDetail.value) return
   if (!paperFile.value) {
-    uploadError.value = '请先选择试卷或答题卡文件。'
+    uploadError.value = '请先选择原卷文件。'
     return
   }
   const mime = pickPaperMime(paperFile.value)
@@ -814,7 +851,7 @@ async function uploadPaper() {
     return
   }
   if (paperFile.value.size > MAX_PAPER_BYTES) {
-    uploadError.value = '校卷附件超过 35 MiB 上限。'
+    uploadError.value = '原卷附件超过 35 MiB 上限。'
     return
   }
   if (paperFile.value.size === 0) {
@@ -827,7 +864,7 @@ async function uploadPaper() {
     const named = new File([paperFile.value], paperFile.value.name, { type: mime })
     const saved = await props.client.uploadSchoolPaper(selectedDetail.value.id, named)
     clearPaperFile()
-    props.notify(`私人校卷附件「${saved.filename}」已加密隔离归档。`, 'success')
+    props.notify(`原卷「${saved.filename}」已存入档案 exam-paper 目录。`, 'success')
     await loadDetail(selectedDetail.value.id)
   } catch (e) {
     uploadError.value = describeError(e)
@@ -900,6 +937,21 @@ function toggleParseAttachment(attachmentId: string) {
     : [...list, attachmentId]
 }
 
+function toggleSelectAllParseAttachments() {
+  if (allParseAttachmentsSelected.value) {
+    selectedParseAttachmentIds.value = []
+    return
+  }
+  selectedParseAttachmentIds.value = parseableAttachments.value.map(a => a.id)
+}
+
+function stopParseProgressTimer() {
+  if (parseProgressTimer !== null) {
+    clearInterval(parseProgressTimer)
+    parseProgressTimer = null
+  }
+}
+
 async function runParseDrafts() {
   if (!selectedDetail.value) return
   if (selectedParseAttachmentIds.value.length === 0) {
@@ -908,6 +960,30 @@ async function runParseDrafts() {
   }
   parsingDrafts.value = true
   parseDraftError.value = ''
+  parseProgress.value = 10
+  parseStageText.value =
+    parseMode.value === 'auto'
+      ? `正在准备 ${selectedParseAttachmentIds.value.length} 份附件并执行隐私脱敏遮罩…`
+      : `正在本地读取 ${selectedParseAttachmentIds.value.length} 份附件并提取题号骨架…`
+  stopParseProgressTimer()
+  parseProgressTimer = setInterval(() => {
+    if (parseProgress.value < 45) {
+      parseProgress.value += 6
+      if (parseProgress.value >= 35) {
+        parseStageText.value =
+          parseMode.value === 'auto'
+            ? '正在调用识别模型解析逐题得分与错因线索…'
+            : '正在解析文本结构与题号分值…'
+      }
+    } else if (parseProgress.value < 78) {
+      parseProgress.value += 3
+      if (parseProgress.value >= 70) {
+        parseStageText.value = '正在匹配候选知识点并生成待核对明细…'
+      }
+    } else if (parseProgress.value < 92) {
+      parseProgress.value += 1
+    }
+  }, 350)
   try {
     const res = await props.client.parseSchoolExamDrafts(selectedDetail.value.id, {
       attachmentIds: selectedParseAttachmentIds.value,
@@ -915,6 +991,8 @@ async function runParseDrafts() {
       maskStudentHeader: maskStudentHeader.value,
       replaceUnconfirmedDrafts: replaceUnconfirmedDrafts.value,
     })
+    parseProgress.value = 100
+    parseStageText.value = '提取完成，正在刷新待核对明细…'
     const modeLabel = res.parser_mode_used.startsWith('deepseek_vision')
       ? `智能多模态识别（送检 ${res.meta.pages_sent ?? 0} 页，脱敏 ${res.meta.masked_pages ?? 0} 页）`
       : '本地规则文字骨架提取'
@@ -932,6 +1010,7 @@ async function runParseDrafts() {
   } catch (e) {
     parseDraftError.value = describeError(e)
   } finally {
+    stopParseProgressTimer()
     parsingDrafts.value = false
   }
 }
@@ -1404,7 +1483,7 @@ async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'item
   if (examId) {
     await selectExam(examId)
     const targetSubject = selectedDetail.value?.subject
-    if (targetSubject && targetSubject !== props.subject) {
+    if (targetSubject && targetSubject !== 'all' && targetSubject !== props.subject) {
       const safeTab: 'scores' | 'papers' | 'items' = tab === 'analysis' ? 'items' : tab
       emit('select-subject', targetSubject, examId, safeTab)
       return
@@ -1414,15 +1493,7 @@ async function openExamFromSync(examId: string, tab: 'scores' | 'papers' | 'item
   if (tab === 'papers' && unconfirmedDrafts.value.length > 0) {
     paperStep.value = 'drafts'
   } else if (tab === 'scores' && selectedDetail.value) {
-    scoreStep.value = 'detail'
-  }
-}
-
-async function openPapersDraftsFromReport(examId?: string) {
-  await refreshExams(examId)
-  activeTab.value = 'papers'
-  if (unconfirmedDrafts.value.length > 0) {
-    paperStep.value = 'drafts'
+    scoreStep.value = 'upload'
   }
 }
 
@@ -1433,7 +1504,7 @@ function goAnalysisAddItems() {
 
 async function selectExamAndAdvance(examId: string) {
   await selectExam(examId)
-  scoreStep.value = 'detail'
+  scoreStep.value = 'upload'
 }
 
 function enterPapersStage() {
@@ -1530,7 +1601,7 @@ async function handleSyncPapersImported(examId: string) {
       <option v-for="opt in subjectKnowledgeOptions" :key="opt.code" :value="opt.label" />
     </datalist>
 
-    <!-- 第一阶段 · 前置立锚：总分台账与建档（单卡两步：1. 选定或新建校考档案 → 2. 总分概览与材料入口） -->
+    <!-- 第一阶段 · 前置立锚：校考建档、原卷上传与全科同步（1. 选定或新建校考档案 → 2. 上传原卷 → 3. 全科校考同步） -->
     <div
       v-if="activeTab === 'scores'"
       id="exam-panel-scores"
@@ -1541,7 +1612,7 @@ async function handleSyncPapersImported(examId: string) {
         :model-value="scoreStep"
         :steps="scoreSteps"
         :context="examContext"
-        steps-aria-label="总分建档步骤"
+        steps-aria-label="校考建档与同步步骤"
         @update:model-value="id => (scoreStep = id as ScoreStepId)"
       >
         <template #step-pick>
@@ -1554,15 +1625,15 @@ async function handleSyncPapersImported(examId: string) {
                 <h3>
                   {{
                     scorePickMode === 'create'
-                      ? `新建 / 暂存校考档案 · ${SCHOOL_SUBJECT_LABELS[subject]}`
-                      : `已录校考台账 · ${SCHOOL_SUBJECT_LABELS[subject]}`
+                      ? '新建 / 暂存校考档案 · 全科'
+                      : `已录校考台账 · ${SCHOOL_SUBJECT_LABELS[subject]}（含全科档案）`
                   }}
                 </h3>
                 <p class="card-sub">
                   {{
                     scorePickMode === 'create'
-                      ? '可先只暂存档案，成绩公布后再补锁总分'
-                      : '先选定一场学校考试或新建档案，再进入第 2 步查看总分与材料分流入口'
+                      ? '新建档案不分科目、面向全科，并在 school-exams 下新建档案目录'
+                      : '先选定一场学校考试或新建档案，再进入第 2 步上传原卷'
                   }}
                 </p>
               </div>
@@ -1584,7 +1655,7 @@ async function handleSyncPapersImported(examId: string) {
                   </button>
                 </div>
                 <HelpBubble v-if="scorePickMode === 'create'" compact title="校考建档口径" label="建档说明">
-                  <p>{{ EXAM_NOTE }} 若暂未出分，可取消勾选人工核对先建档上传原卷。</p>
+                  <p>{{ EXAM_NOTE }} 新建档案不分科目面向全科，自动在 school-exams 下建立专属档案目录。</p>
                 </HelpBubble>
               </div>
             </div>
@@ -1592,7 +1663,7 @@ async function handleSyncPapersImported(examId: string) {
             <template v-if="scorePickMode === 'list'">
               <p v-if="exams === null" class="muted">已录入考试加载中…</p>
               <div v-else-if="exams.length === 0" class="muted">
-                <p>当前科目还没有录入过学校考试记录，点击右上角「＋ 新建 / 暂存档案」登记首场校考。</p>
+                <p>当前还没有录入过学校考试记录，点击右上角「＋ 新建 / 暂存档案」登记首场校考。</p>
                 <button type="button" class="primary small" @click="scorePickMode = 'create'">
                   ＋ 新建首场校考档案
                 </button>
@@ -1610,7 +1681,10 @@ async function handleSyncPapersImported(examId: string) {
                       :aria-pressed="exam.id === selectedExamId"
                       @click="selectExam(exam.id)"
                     >
-                      <span class="exam-title">{{ exam.title }}</span>
+                      <span class="exam-title">
+                        {{ exam.title }}
+                        <span v-if="exam.subject === 'all'" class="chip subtle" style="margin-left: 6px;">全科</span>
+                      </span>
                       <span class="muted tiny">
                         {{ fmtExamMonth(exam.exam_date) }} · <b>{{ fmtPoints(exam.earned_points) }} / {{ fmtPoints(exam.max_points) }}</b>
                       </span>
@@ -1623,7 +1697,7 @@ async function handleSyncPapersImported(examId: string) {
                       class="ghost small"
                       @click="selectExamAndAdvance(exam.id)"
                     >
-                      进入核对 →
+                      提交考试信息
                     </button>
                     <div class="exam-delete">
                       <template v-if="confirmDeleteExamId === exam.id">
@@ -1655,8 +1729,8 @@ async function handleSyncPapersImported(examId: string) {
 
                 <div v-if="selectedDetail" class="card-footer-flow">
                   <span class="muted tiny">已选中「{{ selectedDetail.title }}」</span>
-                  <button type="button" class="primary small" @click="scoreStep = 'detail'">
-                    下一步：总分概览与材料入口 →
+                  <button type="button" class="primary small" @click="scoreStep = 'upload'">
+                    下一步：2. 上传原卷 →
                   </button>
                 </div>
               </template>
@@ -1672,26 +1746,6 @@ async function handleSyncPapersImported(examId: string) {
                   考试日期
                   <input type="month" v-model="examDate" />
                 </label>
-                <label>
-                  获得分数
-                  <input
-                    type="number"
-                    :min="0"
-                    step="0.5"
-                    v-model.number="examEarned"
-                    :placeholder="createConfirmed ? '' : '暂存可留空（默认 0）'"
-                  />
-                </label>
-                <label>
-                  考试满分
-                  <input type="number" :min="1" step="0.5" v-model.number="examMax" />
-                </label>
-              </div>
-              <div class="confirm-box">
-                <input id="exam-create-confirmed" type="checkbox" v-model="createConfirmed" />
-                <label for="exam-create-confirmed">
-                  我已人工核对总分（若仅先归档空白原卷与答题卡、稍后补分，可取消勾选）
-                </label>
               </div>
               <div class="card-footer-flow">
                 <button
@@ -1704,121 +1758,7 @@ async function handleSyncPapersImported(examId: string) {
                 </button>
                 <span v-else />
                 <button type="button" class="primary" @click="saveExam" :disabled="savingExam">
-                  {{ savingExam ? '保存中…' : (createConfirmed ? '记录已核对总分' : '暂存待核对档案') }}
-                </button>
-              </div>
-            </template>
-          </section>
-        </template>
-
-        <template #step-detail>
-          <section class="card exam-detail" aria-label="总分概览与核对锁定">
-            <p v-if="selectedExamId && loadingDetail && !selectedDetail" class="muted">正在加载校考详情…</p>
-            <template v-else-if="selectedDetail">
-              <div class="card-head">
-                <div>
-                  <h3>总分概览：{{ selectedDetail.title }}</h3>
-                  <p class="card-sub">总分仅作阶段台账记录，不折算考点得分</p>
-                </div>
-                <span :class="['chip', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
-                  {{ selectedDetail.confirmed_by_user ? '总分已核对锁定' : '总分待补充确认' }}
-                </span>
-              </div>
-
-              <div class="exam-kpi-row">
-                <div :class="['kpi-tile', selectedDetail.confirmed_by_user ? 'good' : 'wait']">
-                  <b>{{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }}</b>
-                  <span>实得 / 满分</span>
-                </div>
-                <div class="kpi-tile">
-                  <b>{{ fmtExamMonth(selectedDetail.exam_date) }}</b>
-                  <span>考试日期</span>
-                </div>
-                <div class="kpi-tile">
-                  <b>{{ selectedDetail.attachments.length }} 份</b>
-                  <span>私有原件附件</span>
-                </div>
-                <div
-                  v-if="selectedDetail.class_highest !== null && selectedDetail.class_highest !== undefined"
-                  class="kpi-tile"
-                >
-                  <b>{{ fmtPoints(selectedDetail.class_highest) }}</b>
-                  <span>班级最高分</span>
-                </div>
-                <div
-                  v-if="selectedDetail.grade_highest !== null && selectedDetail.grade_highest !== undefined"
-                  class="kpi-tile"
-                >
-                  <b>{{ fmtPoints(selectedDetail.grade_highest) }}</b>
-                  <span>年级最高分</span>
-                </div>
-              </div>
-
-              <div
-                v-if="selectedRanks && (selectedRanks.ranks.length > 0 || selectedRanks.report_total)"
-                class="muted tiny"
-                style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px;"
-              >
-                <span v-for="rk in selectedRanks.ranks" :key="rk.id">
-                  {{ rk.scope === 'class' ? '班排' : rk.scope === 'grade' ? '年排' : rk.scope }}：第 {{ rk.rank_value }} 名{{ rk.participant_count ? ` / ${rk.participant_count}人` : '' }}{{ rk.highest_score !== null && rk.highest_score !== undefined ? `（最高 ${fmtPoints(rk.highest_score)}）` : '' }}
-                </span>
-                <span v-if="selectedRanks.report_total">
-                  全科总分 {{ selectedRanks.report_total.report_total_score !== null ? fmtPoints(selectedRanks.report_total.report_total_score) : '—' }}/{{ selectedRanks.report_total.report_total_max !== null ? fmtPoints(selectedRanks.report_total.report_total_max) : '—' }}（班排 {{ selectedRanks.report_total.total_class_rank ?? '—' }} · 年排 {{ selectedRanks.report_total.total_grade_rank ?? '—' }} · 班最高 {{ selectedRanks.report_total.total_class_highest !== null ? fmtPoints(selectedRanks.report_total.total_class_highest) : '—' }} · 年最高 {{ selectedRanks.report_total.total_grade_highest !== null ? fmtPoints(selectedRanks.report_total.total_grade_highest) : '—' }}）
-                </span>
-              </div>
-
-              <div v-if="!selectedDetail.confirmed_by_user" class="exam-confirm-panel">
-                <p class="muted tiny" style="margin: 0 0 8px;">
-                  该场考试当前为待核对归档状态，核实成绩后可在此补充实得总分（确认后不可改写）。
-                </p>
-                <div class="confirm-inline-row">
-                  <label>
-                    补充实得总分
-                    <input
-                      type="number"
-                      :min="0"
-                      :max="selectedDetail.max_points"
-                      step="0.5"
-                      v-model.number="confirmEarned"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="primary"
-                    @click="confirmSelectedExam"
-                    :disabled="confirmingExam"
-                  >
-                    {{ confirmingExam ? '确认中…' : '确认并锁定总分' }}
-                  </button>
-                </div>
-              </div>
-              <p v-else class="muted tiny" style="margin: 8px 0 0;">
-                该场次总分已完成人工核对并锁定；可先通过报告/同步补全成绩，或直接进入第 3 步上传原卷与答题卡。
-              </p>
-
-              <div class="handoff-box" style="margin-top: 14px;">
-                <div>
-                  <b>外部材料补全入口（按手中材料任选一路）</b>
-                  <p class="muted tiny" style="margin: 4px 0 0;">
-                    已拿到分析报告去「报告导入与核对」；多科同批从平台抓取去「全科校考同步」。
-                  </p>
-                </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                  <button type="button" class="primary small" @click="activeTab = 'report'">
-                    1. 报告导入与核对
-                  </button>
-                  <button type="button" class="ghost small" @click="activeTab = 'sync'">
-                    2. 全科校考同步
-                  </button>
-                </div>
-              </div>
-
-              <div class="card-footer-flow">
-                <button type="button" class="ghost small" @click="scoreStep = 'pick'">
-                  ← 返回第 1 步切换或新建场次
-                </button>
-                <button type="button" class="primary small" @click="scoreStep = 'upload'">
-                  下一步：3. 上传私有原卷与答题卡 →
+                  {{ savingExam ? '保存中…' : '提交考试信息并建档' }}
                 </button>
               </div>
             </template>
@@ -1826,18 +1766,18 @@ async function handleSyncPapersImported(examId: string) {
         </template>
 
         <template #step-upload>
-          <section v-if="selectedDetail" class="card" aria-label="上传私有原卷与答题卡">
+          <section v-if="selectedDetail" class="card" aria-label="上传原卷">
             <div class="card-head">
               <div>
-                <h3>上传私有原卷与答题卡</h3>
-                <p class="card-sub">支持文档与清晰图片格式（单份不超过 35 MiB）</p>
+                <h3>上传原卷</h3>
+                <p class="card-sub">支持 PDF / DOCX / PNG / JPG 格式（单份不超过 35 MiB），保存至档案目录下 exam-paper/</p>
               </div>
               <HelpBubble compact title="原卷加密与隐私隔离" label="隔离说明">
-                <p>私人校卷与答题卡仅加密保存在私有存储空间，不提供公开下载入口，绝不进入公共题库。</p>
+                <p>私人校卷原卷保存在对应档案的 exam-paper 私有目录中，不提供公开下载入口，绝不进入公共题库。</p>
               </HelpBubble>
             </div>
             <label for="school-paper-input">
-              选择试卷或答题卡文件（不超过 35 MiB）
+              选择原卷文件（不超过 35 MiB）
             </label>
             <input
               id="school-paper-input"
@@ -1854,7 +1794,7 @@ async function handleSyncPapersImported(examId: string) {
                 @click="uploadPaper"
                 :disabled="uploadingPaper || !paperFile"
               >
-                {{ uploadingPaper ? '上传中…' : '上传原卷 / 答题卡' }}
+                {{ uploadingPaper ? '上传中…' : '上传原卷' }}
               </button>
               <span v-if="paperFile" class="chip good">
                 已选文件：<b>{{ paperFile.name }}</b>（{{ fmtBytes(paperFile.size) }}）
@@ -1870,19 +1810,19 @@ async function handleSyncPapersImported(examId: string) {
             </div>
             <p v-if="uploadError" class="form-error">{{ uploadError }}</p>
 
-            <div class="exam-detail" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);" aria-label="已归档原卷与答题卡列表">
+            <div class="exam-detail" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);" aria-label="已归档原卷列表">
               <div class="card-head">
-                <span class="field-label" style="margin: 0;">已归档原卷与答题卡（{{ selectedDetail.attachments.length }}）</span>
+                <span class="field-label" style="margin: 0;">已归档原卷与附件（{{ selectedDetail.attachments.length }}）</span>
                 <span class="chip good">原件校验已隔离</span>
               </div>
               <p v-if="selectedDetail.attachments.length === 0" class="muted tiny" style="margin-top: 6px;">
-                还没有挂载原卷或答题卡附件。
+                还没有上传原卷附件。
               </p>
-              <ul v-else class="attachment-list" tabindex="0" aria-label="已归档原卷与答题卡列表">
+              <ul v-else class="attachment-list" tabindex="0" aria-label="已归档原卷列表">
                 <li v-for="att in selectedDetail.attachments" :key="att.id" class="attachment-row">
                   <div class="attachment-main">
                     <b>{{ att.filename }}</b>
-                    <span class="chip good">私有已隔离</span>
+                    <span class="chip good">{{ att.category === 'answer_sheet' ? 'answer-sheet' : 'exam-paper' }}</span>
                     <span class="muted tiny">
                       {{ fmtBytes(att.byte_size) }} · {{ getMediaTypeLabel(att.media_type) }}
                     </span>
@@ -1895,8 +1835,35 @@ async function handleSyncPapersImported(examId: string) {
             </div>
 
             <div class="card-footer-flow">
-              <button type="button" class="ghost small" @click="scoreStep = 'detail'">
-                ← 上一步：总分概览与材料入口
+              <button type="button" class="ghost small" @click="scoreStep = 'pick'">
+                ← 上一步：选定或新建校考档案
+              </button>
+              <button type="button" class="primary small" @click="scoreStep = 'sync'">
+                下一步：3. 全科校考同步 →
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <template #step-sync>
+          <section class="card" aria-label="全科校考同步">
+            <div class="card-head">
+              <div>
+                <h3>全科校考同步</h3>
+                <p class="card-sub">从 k12100 或本地收件箱同步全科成绩与明细，答题卡自动存放于档案目录 answer-sheet/</p>
+              </div>
+            </div>
+            <SchoolExamSyncCenter
+              :client="client"
+              :subject="subject"
+              :notify="notify"
+              :selected-exam-id="selectedExamId"
+              @open-exam="openExamFromSync"
+              @papers-imported="handleSyncPapersImported"
+            />
+            <div class="card-footer-flow" style="margin-top: 12px;">
+              <button type="button" class="ghost small" @click="scoreStep = 'upload'">
+                ← 上一步：上传原卷
               </button>
               <button type="button" class="primary small" @click="enterPapersStage">
                 下一步：进入第二阶段 · 明细提取与核对 →
@@ -1957,7 +1924,7 @@ async function handleSyncPapersImported(examId: string) {
               </button>
               <template v-else-if="step.id === 'parse'">
                 <button type="button" class="primary small" @click="activeTab = 'scores'; scoreStep = 'upload'">
-                  ← 前往第一阶段第 3 步上传原卷
+                  ← 前往第一阶段第 2 步上传原卷
                 </button>
                 <button
                   v-if="unconfirmedDrafts.length > 0"
@@ -1974,10 +1941,10 @@ async function handleSyncPapersImported(examId: string) {
                   class="primary small"
                   @click="parseableAttachments.length > 0 ? (paperStep = 'parse') : (activeTab = 'scores', scoreStep = 'upload')"
                 >
-                  ← {{ parseableAttachments.length > 0 ? '前往第 1 步提取待核对明细' : '前往第一阶段第 3 步上传原卷' }}
+                  ← {{ parseableAttachments.length > 0 ? '前往第 1 步提取待核对明细' : '前往第一阶段第 2 步上传原卷' }}
                 </button>
-                <button type="button" class="ghost small" @click="activeTab = 'report'">
-                  去「报告导入与核对」生成待核对明细
+                <button type="button" class="ghost small" @click="activeTab = 'scores'; scoreStep = 'sync'">
+                  去「全科校考同步」同步考试与明细
                 </button>
               </template>
             </div>
@@ -1996,7 +1963,19 @@ async function handleSyncPapersImported(examId: string) {
               <span class="chip wait">未确认不进画像</span>
             </div>
 
-            <span class="field-label">勾选参与本次解析的附件（支持多份联合识别）</span>
+            <div class="parse-attach-toolbar">
+              <span class="field-label" style="margin: 0;">
+                勾选参与本次解析的附件（支持多份联合识别，已选 {{ selectedParseAttachmentIds.length }} / {{ parseableAttachments.length }}）
+              </span>
+              <label v-if="parseableAttachments.length > 0" class="parse-select-all">
+                <input
+                  type="checkbox"
+                  :checked="allParseAttachmentsSelected"
+                  @change="toggleSelectAllParseAttachments"
+                />
+                <span>{{ allParseAttachmentsSelected ? '取消全选' : '全选' }}</span>
+              </label>
+            </div>
             <div class="parse-attach-list">
               <label
                 v-for="att in parseableAttachments"
@@ -2039,7 +2018,7 @@ async function handleSyncPapersImported(examId: string) {
 
             <div class="attachment-actions">
               <p v-if="parseMode === 'auto' && !hasAnswerCard" class="muted tiny">
-                提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或去「报告导入与核对」生成逐题待核对明细。
+                提示：未检测到命名含「答题卡/答题纸」的附件；若仅上传了空白原卷，建议选择「仅本地提取题号与分值骨架」或先在「第一阶段第 3 步 · 全科校考同步」同步答题卡与逐题明细。
               </p>
               <button
                 type="button"
@@ -2051,11 +2030,27 @@ async function handleSyncPapersImported(examId: string) {
               </button>
               <span v-if="lastParseSummary" class="chip good">{{ lastParseSummary }}</span>
             </div>
+            <div v-if="parsingDrafts" class="exam-sync-progress" aria-live="polite" style="margin-top: 10px;">
+              <div class="exam-sync-progress-head">
+                <b>{{ parseStageText }}</b>
+                <span class="muted tiny">{{ parseProgress }}%</span>
+              </div>
+              <div
+                class="exam-sync-progress-bar"
+                role="progressbar"
+                :aria-valuenow="parseProgress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-label="待核对明细提取进度"
+              >
+                <span class="exam-sync-progress-fill" :style="{ width: `${parseProgress}%` }"></span>
+              </div>
+            </div>
             <p v-if="parseDraftError" class="form-error">{{ parseDraftError }}</p>
 
             <div class="card-footer-flow">
               <button type="button" class="ghost small" @click="activeTab = 'scores'; scoreStep = 'upload'">
-                ← 返回第一阶段第 3 步 · 上传原卷
+                ← 返回第一阶段第 2 步 · 上传原卷
               </button>
               <button
                 v-if="unconfirmedDrafts.length > 0 || confirmedItems.length > 0"
@@ -2361,7 +2356,7 @@ async function handleSyncPapersImported(examId: string) {
                 class="ghost small"
                 @click="parseableAttachments.length > 0 ? (paperStep = 'parse') : (activeTab = 'scores', scoreStep = 'upload')"
               >
-                ← {{ parseableAttachments.length > 0 ? '返回第 1 步 · 重新解析' : '前往第一阶段第 3 步 · 上传原卷' }}
+                ← {{ parseableAttachments.length > 0 ? '返回第 1 步 · 重新解析' : '前往第一阶段第 2 步 · 上传原卷' }}
               </button>
               <button type="button" class="primary small" @click="activeTab = 'items'">
                 前往第三阶段 · 已核对明细与补录 →
@@ -2418,12 +2413,26 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-list>
           <section v-if="selectedDetail" class="card" aria-label="逐题得分与考点明细">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="明细查漏科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>已核对逐题得分与考点明细（{{ confirmedItems.length }}）</h3>
                 <p class="card-sub">
                   {{
-                    subject === 'ethics'
+                    stageSubjectFilter === 'ethics'
                       ? '道法暂未建立公共课标知识图谱，可按自定义主题标注错因与复盘备注'
                       : '已完成人工确认的逐题明细已纳入学科能力证据与错误分析'
                   }}
@@ -2438,7 +2447,7 @@ async function handleSyncPapersImported(examId: string) {
                 >
                   待核对明细 ({{ unconfirmedDrafts.length }}) →
                 </button>
-                <span class="chip">{{ subject === 'ethics' ? '道法 · 校考复盘档案' : '细粒度证据' }}</span>
+                <span class="chip">{{ stageSubjectFilter === 'ethics' ? '道法 · 校考复盘档案' : '细粒度证据' }}</span>
               </div>
             </div>
             <p v-if="confirmedItems.length === 0" class="muted">
@@ -2599,6 +2608,20 @@ async function handleSyncPapersImported(examId: string) {
           </section>
 
           <section v-else class="card" aria-label="错误分析数据状态说明">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>本场错误分析 · {{ errorAnalysis.title }}</h3>
@@ -2646,6 +2669,20 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-overview>
           <section v-if="errorAnalysis" class="card" aria-label="本场失分概览与错因分布">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>本场失分概览与错因分布</h3>
@@ -2756,6 +2793,20 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-knowledge>
           <section v-if="errorAnalysis" class="card" aria-label="本场失分考点排行与交叉诊断">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>本场失分考点排行与交叉诊断</h3>
@@ -2843,11 +2894,25 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-history>
           <section v-if="errorAnalysis" class="card" aria-label="同科历次校考顽固失分点对比">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>同科历次校考顽固失分点对比</h3>
                 <p class="card-sub">
-                  自动统计「{{ SCHOOL_SUBJECT_LABELS[subject] }}」跨 ≥ 2 场已核对校考重复扣分的知识点
+                  自动统计「{{ SCHOOL_SUBJECT_LABELS[stageSubjectFilter] }}」跨 ≥ 2 场已核对校考重复扣分的知识点
                 </p>
               </div>
               <div class="card-head-tools">
@@ -2860,7 +2925,7 @@ async function handleSyncPapersImported(examId: string) {
               </div>
             </div>
             <p v-if="errorAnalysis.recurring_knowledge.length === 0" class="muted">
-              当前「{{ SCHOOL_SUBJECT_LABELS[subject] }}」暂无跨 2 场以上重复失分的考点；连续多次录入逐题明细后，系统将自动识别顽固薄弱环节。
+              当前「{{ SCHOOL_SUBJECT_LABELS[stageSubjectFilter] }}」暂无跨 2 场以上重复失分的考点；连续多次录入逐题明细后，系统将自动识别顽固薄弱环节。
             </p>
             <ul v-else class="attachment-list" tabindex="0" aria-label="同科历次顽固失分考点列表">
               <li
@@ -2898,6 +2963,20 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-reflection>
           <section v-if="errorAnalysis && selectedDetail" class="card" aria-label="失分题干与学生复盘">
+            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
+              <button
+                v-for="tab in stageSubjectTabs"
+                :key="tab.subject"
+                type="button"
+                role="tab"
+                :aria-selected="stageSubjectFilter === tab.subject"
+                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
+                @click="selectStageSubject(tab.subject)"
+              >
+                <span>{{ tab.label }}</span>
+                <span class="chip tiny subtle">{{ tab.count }}</span>
+              </button>
+            </div>
             <div class="card-head">
               <div>
                 <h3>失分题干与学生复盘</h3>
@@ -3179,51 +3258,6 @@ async function handleSyncPapersImported(examId: string) {
           </section>
         </template>
       </StepFlowWorkspace>
-    </div>
-
-    <!-- 第一阶段材料子入口：全科校考同步（发现 → 匹配 → 获取 → 核对四步工作流） -->
-    <div
-      v-else-if="activeTab === 'sync'"
-      id="exam-panel-sync"
-      role="tabpanel"
-      aria-labelledby="exam-tab-sync"
-    >
-      <div class="stage-return-bar">
-        <button type="button" class="ghost small" @click="activeTab = 'scores'">
-          ← 返回第一阶段 · 总分台账与建档
-        </button>
-        <span class="muted tiny">当前入口：第一阶段 &gt; 全科校考同步</span>
-      </div>
-      <SchoolExamSyncCenter
-        :client="client"
-        :subject="subject"
-        :notify="notify"
-        :selected-exam-id="selectedExamId"
-        @open-exam="openExamFromSync"
-        @papers-imported="handleSyncPapersImported"
-      />
-    </div>
-
-    <!-- 第一阶段材料子入口：校考报告导入与核对（发现 → 关联 → 解析 → 核对四步工作流） -->
-    <div
-      v-else
-      id="exam-panel-report"
-      role="tabpanel"
-      aria-labelledby="exam-tab-report"
-    >
-      <div class="stage-return-bar">
-        <button type="button" class="ghost small" @click="activeTab = 'scores'">
-          ← 返回第一阶段 · 总分台账与建档
-        </button>
-        <span class="muted tiny">当前入口：第一阶段 &gt; 报告导入与核对</span>
-      </div>
-      <SchoolExamReportCenter
-        :client="client"
-        :subject="subject"
-        :notify="notify"
-        @open-scores="activeTab = 'scores'"
-        @open-papers-drafts="openPapersDraftsFromReport"
-      />
     </div>
   </section>
 </template>

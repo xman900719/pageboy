@@ -4,6 +4,7 @@ from io import BytesIO
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -14,7 +15,13 @@ import zipfile
 from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
-from .home import assert_no_cross_environment_path, default_attachments_dir
+from .home import (
+    assert_no_cross_environment_path,
+    default_attachments_dir,
+    default_school_exams_dir,
+    resolve_school_exam_subpath,
+    sanitize_archive_segment,
+)
 
 DEFAULT_PRIVATE_DIR = default_attachments_dir()
 MAX_BYTES = 35 * 1024 * 1024
@@ -42,6 +49,35 @@ def private_root():
     raw = os.getenv("SHUTONG_PRIVATE_DIR")
     target = Path(raw) if raw else default_attachments_dir()
     return assert_no_cross_environment_path(target)
+
+
+def school_exams_root() -> Path:
+    return assert_no_cross_environment_path(default_school_exams_dir())
+
+
+def ensure_school_exam_archive_dirs(archive_dir: str) -> Path:
+    """在 school-exams/ 下幂等创建档案目录及 exam-paper / answer-sheet 子目录（0700）。"""
+    root = school_exams_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    archive_path = resolve_school_exam_subpath(archive_dir)
+    for target in (archive_path, archive_path / "exam-paper", archive_path / "answer-sheet"):
+        target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            os.chmod(target, 0o700)
+        except OSError:
+            pass
+    return archive_path
+
+
+def school_exam_file_path(relative_path: str) -> Path:
+    return resolve_school_exam_subpath(relative_path)
+
+
+def attachment_file_path(attachment) -> Path:
+    rel = getattr(attachment, "relative_path", None)
+    if isinstance(rel, str) and rel.strip():
+        return school_exam_file_path(rel.strip())
+    return blob_path(attachment.storage_key)
 
 
 def blob_path(key):
@@ -109,6 +145,111 @@ def validate_file(data, media_type):
             raise HTTPException(422, detail="INVALID_IMAGE")
 
 
+def _safe_school_exam_filename(filename: str) -> str:
+    raw = Path((filename or "").strip()).name
+    if not raw:
+        return "document.bin"
+    if "." in raw:
+        stem, ext = raw.rsplit(".", 1)
+        safe_stem = sanitize_archive_segment(stem, fallback="file", max_len=96)
+        safe_ext = re.sub(r"[^A-Za-z0-9]", "", ext)[:12]
+        return f"{safe_stem}.{safe_ext}" if safe_ext else safe_stem
+    return sanitize_archive_segment(raw, fallback="file", max_len=96)
+
+
+def write_school_exam_file(archive_dir: str, subdir: str, filename: str, data: bytes) -> tuple[str, str]:
+    """将校考文件写入 school-exams/<archive_dir>/<subdir>/（0600 权限），返回 (storage_key, relative_path)。"""
+    if subdir not in {"exam-paper", "answer-sheet"}:
+        raise ValueError(f"unsupported school exam subdir: {subdir!r}")
+    ensure_school_exam_archive_dirs(archive_dir)
+    key = uuid4().hex
+    safe_name = _safe_school_exam_filename(filename)
+    rel = f"{archive_dir}/{subdir}/{safe_name}"
+    target = school_exam_file_path(rel)
+    if target.exists():
+        if "." in safe_name:
+            stem, ext = safe_name.rsplit(".", 1)
+            safe_name = f"{stem}_{key[:6]}.{ext}"
+        else:
+            safe_name = f"{safe_name}_{key[:6]}"
+        rel = f"{archive_dir}/{subdir}/{safe_name}"
+        target = school_exam_file_path(rel)
+    created = False
+    try:
+        with open(target, "xb", opener=lambda path, flags: os.open(path, flags, 0o600)) as file:
+            created = True
+            file.write(data)
+    except OSError:
+        if created:
+            target.unlink(missing_ok=True)
+        raise
+    return key, rel
+
+
+def write_school_exam_scoped_blob(subdir: str, filename: str, data: bytes) -> tuple[str, str]:
+    """将报告或扫描待归档原卷写入 school-exams/<subdir>/，避免混入 data/attachments/。"""
+    if subdir not in {"reports", "papers"}:
+        raise ValueError(f"unsupported scoped subdir: {subdir!r}")
+    root = school_exams_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target_dir = root / subdir
+    target_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    key = uuid4().hex
+    safe_name = _safe_school_exam_filename(filename)
+    rel = f"{subdir}/{key[:8]}_{safe_name}"
+    target = school_exam_file_path(rel)
+    created = False
+    try:
+        with open(target, "xb", opener=lambda path, flags: os.open(path, flags, 0o600)) as file:
+            created = True
+            file.write(data)
+    except OSError:
+        if created:
+            target.unlink(missing_ok=True)
+        raise
+    return key, rel
+
+
+def unlink_attachment_blob(attachment) -> None:
+    attachment_file_path(attachment).unlink(missing_ok=True)
+
+
+def cleanup_empty_school_exam_archive_dir(archive_dir: str | None) -> None:
+    if not archive_dir or not archive_dir.strip():
+        return
+    try:
+        archive_path = resolve_school_exam_subpath(archive_dir.strip())
+    except Exception:
+        return
+    if not archive_path.is_dir():
+        return
+    for sub in ("exam-paper", "answer-sheet"):
+        sub_path = archive_path / sub
+        if sub_path.is_dir():
+            try:
+                if not any(sub_path.iterdir()):
+                    sub_path.rmdir()
+            except OSError:
+                pass
+    try:
+        if not any(archive_path.iterdir()):
+            archive_path.rmdir()
+    except OSError:
+        pass
+
+
+def remove_school_exam_archive_dir(archive_dir: str | None) -> None:
+    """当没有任何校考记录再引用该 archive_dir 时，彻底清理 school-exams/<archive_dir>/ 及其内部残留文件。"""
+    if not archive_dir or not archive_dir.strip():
+        return
+    try:
+        archive_path = resolve_school_exam_subpath(archive_dir.strip())
+    except Exception:
+        return
+    if archive_path.is_dir() and not archive_path.is_symlink():
+        shutil.rmtree(archive_path, ignore_errors=True)
+
+
 def write_blob(data):
     root = private_root()
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -126,9 +267,15 @@ def write_blob(data):
     return key
 
 
+_ORIGINAL_WRITE_BLOB = write_blob
+
+
 def load_blob(attachment):
+    path = attachment_file_path(attachment)
+    if path.is_symlink():
+        raise HTTPException(409, detail="INVALID_STORAGE_KEY")
     try:
-        with blob_path(attachment.storage_key).open("rb") as file:
+        with path.open("rb") as file:
             data = file.read(MAX_BYTES + 1)
     except FileNotFoundError:
         raise HTTPException(409, detail="ATTACHMENT_FILE_MISSING")

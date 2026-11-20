@@ -70,7 +70,9 @@ def test_direct_import_is_idempotent_and_isolates_attachments(
     synthetic_exam_dir, tmp_path, monkeypatch
 ):
     priv = tmp_path / "private"
+    school_dir = tmp_path / "school-exams"
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(priv))
+    monkeypatch.setenv("SHUTONG_SCHOOL_EXAMS_DIR", str(school_dir))
     db_path = tmp_path / "importer_test.sqlite3"
     db_url = f"sqlite+pysqlite:///{db_path}"
 
@@ -90,7 +92,7 @@ def test_direct_import_is_idempotent_and_isolates_attachments(
         "attachments_uploaded": 8,
         "attachments_skipped": 0,
     }
-    assert len(list(priv.iterdir())) == 8
+    assert not priv.exists() or len(list(priv.iterdir())) == 0
 
     # 第二次执行必须完全幂等：复用 4 场考试、跳过全部 8 份附件
     second = importer.import_via_direct(plans, db_url=db_url)
@@ -100,9 +102,10 @@ def test_direct_import_is_idempotent_and_isolates_attachments(
         "attachments_uploaded": 0,
         "attachments_skipped": 8,
     }
-    assert len(list(priv.iterdir())) == 8
 
-    # 校验不进题库源表且私有文件权限为 0600
+    # 校验不进题库源表且私有文件保存在 school-exams/<archive_dir>/exam-paper 且权限为 0600
+    from shutong import private_files as files
+
     Session = importer.sessionmaker(bind=engine)
     with Session() as db:
         assert db.scalars(select(m.SourceDocument)).all() == []
@@ -111,13 +114,17 @@ def test_direct_import_is_idempotent_and_isolates_attachments(
         atts = db.scalars(select(m.SchoolPaperAttachment)).all()
         assert len(atts) == 8
         for att in atts:
-            assert (priv / att.storage_key).stat().st_mode & 0o777 == 0o600
-            assert att.sha256 == sha256((priv / att.storage_key).read_bytes()).hexdigest()
+            stored_path = files.attachment_file_path(att)
+            assert stored_path.is_file()
+            assert stored_path.stat().st_mode & 0o777 == 0o600
+            assert att.sha256 == sha256(stored_path.read_bytes()).hexdigest()
 
 
 def test_dry_run_makes_no_changes(synthetic_exam_dir, tmp_path, monkeypatch):
     priv = tmp_path / "private_dry"
+    school_dir = tmp_path / "school_dry"
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(priv))
+    monkeypatch.setenv("SHUTONG_SCHOOL_EXAMS_DIR", str(school_dir))
     db_path = tmp_path / "dry.sqlite3"
     db_url = f"sqlite+pysqlite:///{db_path}"
     rc = importer.main(
@@ -144,7 +151,9 @@ def test_api_mode_validates_and_uploads_idempotently(
 ):
     """通过 TestClient 拦截 HTTP 请求，验证 import_via_api 的请求序列与幂等性。"""
     priv = tmp_path / "private_api"
+    school_dir = tmp_path / "school_api"
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(priv))
+    monkeypatch.setenv("SHUTONG_SCHOOL_EXAMS_DIR", str(school_dir))
 
     class _FakeResp:
         def __init__(self, status_code: int, content: bytes):
