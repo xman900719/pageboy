@@ -1675,9 +1675,24 @@ def hydrate_incomplete_local_reports(
     cards_synced = 0
     drafts_created = 0
     for report in reports:
+        q_max_by_subj: dict[str, float] = {}
+        for q in report.questions or []:
+            if isinstance(q, dict) and q.get("subject"):
+                s_code = str(q["subject"])
+                q_max_by_subj[s_code] = q_max_by_subj.get(s_code, 0.0) + float(q.get("max_score") or 0.0)
+        question_sum_mismatch = any(
+            isinstance(s, dict)
+            and s.get("subject")
+            and s.get("max_score") is not None
+            and float(s["max_score"]) > 0
+            and abs(q_max_by_subj.get(str(s["subject"]), 0.0) - float(s["max_score"])) > 0.01
+            for s in (report.subjects or [])
+        )
         needs_reparse = (
             report.total_class_highest is None
             or report.total_grade_highest is None
+            or not report.answer_card_pages
+            or question_sum_mismatch
             or any(
                 isinstance(s, dict) and (s.get("grade_highest") is None or s.get("class_highest") is None)
                 for s in (report.subjects or [])

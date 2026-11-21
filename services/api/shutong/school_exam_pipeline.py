@@ -1,7 +1,7 @@
 """本地校考试卷发现、卷头识别、严格匹配、私有归档与本人排名快照服务。
 
 安全边界：
-1. 只扫描 `$PAGEBOY_HOME/<env>/school-exams/inbox`（或 CLI 已显式授权的本地目录），
+1. 只扫描 `$PAGEBOY_HOME/<env>/data/school-exams/inbox`（或 CLI 已显式授权的本地目录），
    拒绝符号链接逃逸，导入文件只写入当前环境私有存储；
 2. dry-run 不建表、不写文件、不写数据库、不发外部请求；
 3. 自动匹配仅接受唯一 EXACT_MATCH；其他结果保留候选与字段差异供人工处理；
@@ -95,7 +95,7 @@ class SourceStatus:
         return {
             "environment": self.environment,
             "directory": str(self.inbox_path),
-            "directory_display": self.directory_display or f"$PAGEBOY_HOME/{self.environment}/school-exams/inbox",
+            "directory_display": self.directory_display or f"$PAGEBOY_HOME/{self.environment}/data/school-exams/inbox",
             "real_source_configured": self.real_source_configured,
             "source_kind": "local_inbox",
             "ready": self.ready,
@@ -160,9 +160,9 @@ def _resolve_scan_target(
         exam = db.get(m.SchoolExam, exam_id)
         if exam is not None and exam.learner_id == owner and exam.archive_dir:
             target = files.school_exam_file_path(f"{exam.archive_dir}/exam-paper")
-            display = f"$PAGEBOY_HOME/{env}/school-exams/{exam.archive_dir}/exam-paper"
+            display = f"$PAGEBOY_HOME/{env}/data/school-exams/{exam.archive_dir}/exam-paper"
             return target, display, f"{exam.archive_dir}/exam-paper"
-    return school_exam_inbox(env), f"$PAGEBOY_HOME/{env}/school-exams/inbox", "inbox"
+    return school_exam_inbox(env), f"$PAGEBOY_HOME/{env}/data/school-exams/inbox", "inbox"
 
 
 def inspect_source_status(
@@ -734,13 +734,67 @@ _SCHOOL_SUBJECT_CN = {
     "physics": "物理",
     "ethics": "道德与法治",
 }
+_ITEM_SUBJECT_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("语文·", "chinese"),
+    ("数学·", "math"),
+    ("英语·", "english"),
+    ("物理·", "physics"),
+    ("道德与法治·", "ethics"),
+    ("道法·", "ethics"),
+    ("历史·", "history"),
+    ("地理·", "geography"),
+    ("生物·", "biology"),
+    ("化学·", "chemistry"),
+)
+_KNOWN_ITEM_SUBJECT_CODES = (
+    "chinese",
+    "math",
+    "english",
+    "physics",
+    "ethics",
+    "history",
+    "geography",
+    "biology",
+    "chemistry",
+)
+
+
+def infer_school_item_subject(question_label: str, knowledge_id: str | None = None) -> str | None:
+    """根据题号前缀或知识点编码（含 *_cand. 新版课标编码）推断小题所属学科。"""
+    label = str(question_label or "").strip()
+    for prefix, code in _ITEM_SUBJECT_PREFIXES:
+        if label.startswith(prefix):
+            return code
+    kid = str(knowledge_id or "").strip().lower()
+    for code in _KNOWN_ITEM_SUBJECT_CODES:
+        if kid.startswith(f"{code}.") or kid.startswith(f"{code}_cand."):
+            return code
+    return None
+
+
+def infer_attachment_subject(filename: str, fallback: str = "math") -> str:
+    """根据附件文件名（含答题卡命名规范）推断学科代码。"""
+    lower = str(filename or "").lower()
+    if "语文" in lower or "chinese" in lower:
+        return "chinese"
+    if "数学" in lower or "math" in lower:
+        return "math"
+    if "英语" in lower or "english" in lower:
+        return "english"
+    if "物理" in lower or "physics" in lower:
+        return "physics"
+    if "道德与法治" in lower or "道法" in lower or "ethics" in lower or "daofa" in lower:
+        return "ethics"
+    return fallback if fallback != "all" else "math"
 
 
 def _evaluate_report_completeness(
     report: m.SchoolExamReport,
     by_subj: dict[str, m.SchoolExam],
     item_counts: dict[str, dict[str, int]],
+    item_counts_by_subj: dict[tuple[str, str], dict[str, int]],
     attachment_counts: dict[str, int],
+    attachment_counts_by_subj: dict[tuple[str, str], int],
     rank_keys_by_exam: dict[str, set[tuple[str, str]]],
 ) -> dict[str, Any]:
     missing: list[str] = []
@@ -762,10 +816,19 @@ def _evaluate_report_completeness(
             missing.append(f"{cn}建档")
             continue
         if subj in question_subjs:
-            cnt = item_counts.get(ex.id, {"draft": 0, "confirmed": 0})
+            cnt = (
+                item_counts_by_subj.get((ex.id, subj), {"draft": 0, "confirmed": 0})
+                if ex.subject == "all"
+                else item_counts.get(ex.id, {"draft": 0, "confirmed": 0})
+            )
             if cnt["draft"] + cnt["confirmed"] == 0:
                 missing.append(f"{cn}逐题")
-        if subj in card_subjs and attachment_counts.get(ex.id, 0) == 0:
+        att_cnt = (
+            attachment_counts_by_subj.get((ex.id, subj), 0)
+            if ex.subject == "all"
+            else attachment_counts.get(ex.id, 0)
+        )
+        if subj in card_subjs and att_cnt == 0:
             missing.append(f"{cn}答题卡")
         exam_ranks = rank_keys_by_exam.get(ex.id, set())
         if item.get("class_rank") is not None and (subj, "class") not in exam_ranks:
@@ -890,29 +953,38 @@ def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]
 
     fetched_ids = list(exams_by_id.keys())
     item_counts: dict[str, dict[str, int]] = {}
+    item_counts_by_subj: dict[tuple[str, str], dict[str, int]] = {}
     attachment_counts: dict[str, int] = {}
+    attachment_counts_by_subj: dict[tuple[str, str], int] = {}
     rank_keys_by_exam: dict[str, set[tuple[str, str]]] = {}
     if fetched_ids:
-        for exam_id, confirmed, cnt in db.execute(
+        for exam_id, q_label, kid, confirmed in db.execute(
             select(
                 m.SchoolExamItem.school_exam_id,
+                m.SchoolExamItem.question_label,
+                m.SchoolExamItem.knowledge_id,
                 m.SchoolExamItem.confirmed_by_user,
-                func.count(m.SchoolExamItem.id),
-            )
-            .where(m.SchoolExamItem.school_exam_id.in_(fetched_ids))
-            .group_by(m.SchoolExamItem.school_exam_id, m.SchoolExamItem.confirmed_by_user)
+            ).where(m.SchoolExamItem.school_exam_id.in_(fetched_ids))
         ).all():
             bucket = item_counts.setdefault(exam_id, {"draft": 0, "confirmed": 0})
-            bucket["confirmed" if confirmed else "draft"] += int(cnt or 0)
-        for exam_id, cnt in db.execute(
+            state_key = "confirmed" if confirmed else "draft"
+            bucket[state_key] += 1
+            inferred_subj = infer_school_item_subject(q_label, kid)
+            if inferred_subj:
+                subj_bucket = item_counts_by_subj.setdefault((exam_id, inferred_subj), {"draft": 0, "confirmed": 0})
+                subj_bucket[state_key] += 1
+        for exam_id, filename in db.execute(
             select(
                 m.SchoolPaperAttachment.school_exam_id,
-                func.count(m.SchoolPaperAttachment.id),
-            )
-            .where(m.SchoolPaperAttachment.school_exam_id.in_(fetched_ids))
-            .group_by(m.SchoolPaperAttachment.school_exam_id)
+                m.SchoolPaperAttachment.filename,
+            ).where(m.SchoolPaperAttachment.school_exam_id.in_(fetched_ids))
         ).all():
-            attachment_counts[exam_id] = int(cnt or 0)
+            attachment_counts[exam_id] = attachment_counts.get(exam_id, 0) + 1
+            att_subj = infer_attachment_subject(filename, fallback="all")
+            if att_subj in _SCHOOL_SUBJECT_CN:
+                attachment_counts_by_subj[(exam_id, att_subj)] = (
+                    attachment_counts_by_subj.get((exam_id, att_subj), 0) + 1
+                )
         for exam_id, s_scope, r_scope in db.execute(
             select(
                 m.SchoolExamRankSnapshot.school_exam_id,
@@ -963,6 +1035,16 @@ def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]
             subj_earned = s_entry.get("score") if is_all_archive and s_entry.get("score") is not None else ex.earned_points
             subj_max = s_entry.get("max_score") if is_all_archive and s_entry.get("max_score") is not None else ex.max_points
             subj_confirmed = bool(s_entry.get("confirmed_by_user")) if is_all_archive else bool(ex.confirmed_by_user)
+            subj_item_counts = (
+                item_counts_by_subj.get((ex.id, subj_code), {"draft": 0, "confirmed": 0})
+                if is_all_archive
+                else item_counts.get(ex.id, {"draft": 0, "confirmed": 0})
+            )
+            subj_attachment_count = (
+                attachment_counts_by_subj.get((ex.id, subj_code), 0)
+                if is_all_archive
+                else attachment_counts.get(ex.id, 0)
+            )
             exams_out.append(
                 {
                     "exam_id": ex.id,
@@ -973,9 +1055,9 @@ def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]
                     "earned_points": subj_earned,
                     "max_points": subj_max,
                     "confirmed_by_user": subj_confirmed,
-                    "draft_count": item_counts.get(ex.id, {}).get("draft", 0),
-                    "confirmed_item_count": item_counts.get(ex.id, {}).get("confirmed", 0),
-                    "attachment_count": attachment_counts.get(ex.id, 0),
+                    "draft_count": subj_item_counts["draft"],
+                    "confirmed_item_count": subj_item_counts["confirmed"],
+                    "attachment_count": subj_attachment_count,
                     "class_rank": s_entry.get("class_rank"),
                     "grade_rank": s_entry.get("grade_rank"),
                     "participants": s_entry.get("participants"),
@@ -1015,7 +1097,9 @@ def _serialize_synced_reports(db: Session, *, owner: str) -> list[dict[str, Any]
             report,
             by_subj,
             item_counts,
+            item_counts_by_subj,
             attachment_counts,
+            attachment_counts_by_subj,
             rank_keys_by_exam,
         )
         out.append(
@@ -1474,12 +1558,16 @@ def persist_rank_entries(
 
 
 def _serialize_rank_rows(rows: list[m.SchoolExamRankSnapshot]) -> tuple[list[dict[str, Any]], set[str]]:
-    latest: dict[str, m.SchoolExamRankSnapshot] = {}
-    history_counts: dict[str, int] = {}
+    latest: dict[tuple[str, str], m.SchoolExamRankSnapshot] = {}
+    history_counts: dict[tuple[str, str], int] = {}
+    present_scopes: set[str] = set()
     for row in rows:
-        history_counts[row.scope] = history_counts.get(row.scope, 0) + 1
-        latest.setdefault(row.scope, row)
-    order = {"class": 1, "grade": 2, "school": 3, "region": 4}
+        key = (row.subject_scope or "", row.scope)
+        history_counts[key] = history_counts.get(key, 0) + 1
+        latest.setdefault(key, row)
+        present_scopes.add(row.scope)
+    subject_order = {"chinese": 1, "math": 2, "english": 3, "physics": 4, "ethics": 5, "total": 9}
+    scope_order = {"class": 1, "grade": 2, "school": 3, "region": 4}
     serialized = [
         {
             "id": row.id,
@@ -1495,11 +1583,17 @@ def _serialize_rank_rows(rows: list[m.SchoolExamRankSnapshot]) -> tuple[list[dic
             "ownership_basis": row.ownership_basis,
             "review_status": row.review_status,
             "captured_at": row.captured_at,
-            "history_count": history_counts.get(row.scope, 0),
+            "history_count": history_counts.get((row.subject_scope or "", row.scope), 0),
         }
-        for row in sorted(latest.values(), key=lambda item: order.get(item.scope, 9))
+        for row in sorted(
+            latest.values(),
+            key=lambda item: (
+                subject_order.get(item.subject_scope or "", 8),
+                scope_order.get(item.scope, 9),
+            ),
+        )
     ]
-    return serialized, set(latest.keys())
+    return serialized, present_scopes
 
 
 def rank_payload(db: Session, *, exam: m.SchoolExam, owner: str) -> dict[str, Any]:

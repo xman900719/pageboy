@@ -10,7 +10,6 @@ import {
   type K12100SyncJob,
   type K12100SyncReadiness,
   type SchoolExamDetail,
-  type SchoolExamPaper,
   type SchoolExamRanksPayload,
   type SchoolExamScanRun,
   type SchoolExamSyncCenter,
@@ -30,7 +29,7 @@ import {
 } from '../../examSync'
 import type { NoticeTone } from '../Notice.vue'
 import StepFlowWorkspace from './StepFlowWorkspace.vue'
-import type { StepDefinition, StepFlowContext } from './stepFlow'
+import type { StepDefinition } from './stepFlow'
 
 type Notify = (text: string, tone?: NoticeTone) => void
 type OpenTab = 'scores' | 'papers' | 'items' | 'analysis'
@@ -45,6 +44,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'open-exam', examId: string, tab: OpenTab): void
   (e: 'papers-imported', examId: string): void
+  (e: 'step-change', step: SyncStep): void
 }>()
 
 const PAPER_STATUS_META: Record<string, { label: string; tone: string }> = {
@@ -77,7 +77,6 @@ const center = ref<SchoolExamSyncCenter | null>(null)
 const loading = ref(false)
 const loadError = ref('')
 const activeStep = ref<SyncStep>(1)
-const selectedPaperId = ref<string | null>(null)
 const scanning = ref(false)
 const actionNotice = ref('')
 const actionTone = ref<'info' | 'caution' | 'error'>('info')
@@ -96,6 +95,7 @@ const SUBJECT_LABELS: Record<string, string> = {
   math: '数学',
   english: '英语',
   physics: '物理',
+  ethics: '道德与法治',
   daofa: '道德与法治',
   history: '历史',
   geography: '地理',
@@ -113,6 +113,7 @@ const confirmingTotal = ref(false)
 const confirmingRankId = ref<string | null>(null)
 const reviewError = ref('')
 const activeReviewSubject = ref<string>('')
+const rankTab = ref<'subject' | 'total'>('subject')
 
 const advancedOpen = ref(false)
 const showBrowser = ref(true)
@@ -127,15 +128,12 @@ function fmtGradeLabel(grade: string | null | undefined): string {
 const bundleError = ref('')
 
 const papers = computed(() => center.value?.papers ?? [])
-const selectedPaper = computed(
-  () => papers.value.find(paper => paper.id === selectedPaperId.value) ?? null,
-)
 const isJobActive = computed(
   () => job.value?.state === 'queued' || job.value?.state === 'collecting' || job.value?.state === 'backfilling',
 )
-const currentExamId = computed(() => focusedExamId.value ?? selectedPaper.value?.school_exam_id ?? props.selectedExamId ?? null)
+const currentExamId = computed(() => focusedExamId.value ?? props.selectedExamId ?? null)
 const currentExamTitle = computed(
-  () => reviewDetail.value?.title ?? selectedPaper.value?.exam?.title ?? '尚未关联考试档案',
+  () => reviewDetail.value?.title ?? '尚未关联考试档案',
 )
 const currentResultRow = computed(() => {
   const result = lastResult.value
@@ -146,7 +144,13 @@ const reportSummary = computed(() => summarizeReportJob(lastReportResult.value))
 const syncedReports = computed<K12100SyncedReportSummary[]>(() => center.value?.synced_reports ?? [])
 const syncReadiness = computed<K12100SyncReadiness | null>(() => center.value?.sync_readiness ?? null)
 const hydratingLocal = ref(false)
-const reviewCoverage = computed(() => deriveReviewCoverage(reviewDetail.value, reviewRanks.value))
+const reviewCoverage = computed(() => {
+  const scope =
+    reviewDetail.value?.subject === 'all' && activeReviewTab.value && activeReviewTab.value.subject !== 'all'
+      ? (activeReviewTab.value.subject as SchoolSubject)
+      : undefined
+  return deriveReviewCoverage(reviewDetail.value, reviewRanks.value, scope)
+})
 
 const jobProgress = computed(() => {
   const j = job.value
@@ -229,8 +233,8 @@ const filteredMissingRankScopes = computed(() =>
   reviewCoverage.value.missingRankScopes.filter(scope => scope !== 'school' && scope !== 'region'),
 )
 
-const filteredReportMissingScopes = computed(() =>
-  (reviewRanks.value?.missing_scopes ?? []).filter(scope => scope !== 'school' && scope !== 'region'),
+const hasTotalRankSummary = computed(
+  () => (reviewRanks.value?.total_ranks?.length ?? 0) > 0 || Boolean(reviewRanks.value?.report_total),
 )
 
 const activeStepStr = computed({
@@ -243,26 +247,14 @@ const activeStepStr = computed({
   },
 })
 
-const syncContext = computed<StepFlowContext | null>(() => {
-  if (!selectedPaper.value) return null
-  const meta = getPaperStatusMeta(selectedPaper.value.status)
-  return {
-    eyebrow: '当前试卷',
-    title: selectedPaper.value.filename,
-    statusText: `${formatPaperSubject(selectedPaper.value)} · ${meta.label}`,
-    statusTone: meta.tone === 'good' ? 'good' : meta.tone === 'mid' ? 'mid' : 'wait',
-  }
-})
-
 const syncSteps = computed<StepDefinition[]>(() => {
-  const paper = selectedPaper.value
   return [
     {
       id: '1',
       title: '发现试卷',
       subtitle: '扫描原卷目录并查看列表',
       badge: center.value ? `${papers.value.length} 份` : '待加载',
-      done: paper !== null,
+      done: papers.value.length > 0,
       prereqMet: true,
     },
     {
@@ -326,31 +318,16 @@ function getJobStateLabel(state: string | null | undefined): string {
   }[state ?? ''] ?? '未开始'
 }
 
-async function loadCenter(preferPaperId?: string) {
+async function loadCenter() {
   loading.value = true
   loadError.value = ''
   try {
-    const data = await props.client.schoolExamSyncCenter(props.selectedExamId || undefined)
-    center.value = data
-    const preferred = preferPaperId && data.papers.some(paper => paper.id === preferPaperId)
-      ? preferPaperId
-      : selectedPaperId.value && data.papers.some(paper => paper.id === selectedPaperId.value)
-        ? selectedPaperId.value
-        : (data.papers[0]?.id ?? null)
-    selectedPaperId.value = preferred
+    center.value = await props.client.schoolExamSyncCenter(props.selectedExamId || undefined)
   } catch (error) {
     center.value = null
     loadError.value = describeError(error)
   } finally {
     loading.value = false
-  }
-}
-
-function selectPaper(paper: SchoolExamPaper) {
-  selectedPaperId.value = paper.id
-  if (paper.status === 'imported') {
-    activeStep.value = 4
-    void loadReview(paper.school_exam_id ?? currentExamId.value)
   }
 }
 
@@ -421,7 +398,7 @@ function startPolling(jobId: string) {
           const summary = summarizeReportJob(latest.report_result)
           const firstExam = latest.report_result.subject_actions.find(row => row.exam_id)?.exam_id ?? ''
           if (firstExam && !focusedExamId.value) focusedExamId.value = firstExam
-          await loadCenter(selectedPaperId.value ?? undefined)
+          await loadCenter()
           if (firstExam) emit('papers-imported', firstExam)
           if (currentExamId.value) await loadReview(currentExamId.value)
           const message = latest.stage_message || (summary.hasIssues ? '报告同步完成，请查看冲突或待补项。' : '报告同步完成。')
@@ -442,7 +419,7 @@ function startPolling(jobId: string) {
         if (latest.report_result) {
           lastReportResult.value = latest.report_result
         }
-        await loadCenter(selectedPaperId.value ?? undefined)
+        await loadCenter()
         emit('papers-imported', '')
         collectionError.value = latest.error_message || latest.stage_message || '同步已停止。'
         props.notify(collectionError.value, 'error')
@@ -508,6 +485,7 @@ async function loadReview(examId: string | null) {
     ])
     reviewDetail.value = detail
     reviewRanks.value = ranks
+    rankTab.value = 'subject'
     const tabs = reviewSubjectTabs.value
     if (tabs.length > 0 && !tabs.some(t => t.subject === activeReviewSubject.value)) {
       activeReviewSubject.value = tabs[0].subject
@@ -547,7 +525,7 @@ async function confirmTotal() {
     focusedExamId.value = detail.id
     await Promise.all([
       loadReview(detail.id),
-      loadCenter(selectedPaperId.value ?? undefined),
+      loadCenter(),
     ])
     emit('papers-imported', detail.id)
   } catch (error) {
@@ -562,7 +540,7 @@ async function hydrateLocalReports() {
   collectionError.value = ''
   try {
     const res = await props.client.hydrateK12100LocalReports()
-    await loadCenter(selectedPaperId.value ?? undefined)
+    await loadCenter()
     if (reviewDetail.value?.id) {
       await loadReview(reviewDetail.value.id)
     }
@@ -665,9 +643,17 @@ watch(
 watch(
   () => props.selectedExamId,
   examId => {
-    void loadCenter(selectedPaperId.value ?? undefined)
+    void loadCenter()
     if (examId && !focusedExamId.value) void loadReview(examId)
   },
+)
+
+watch(
+  activeStep,
+  step => {
+    emit('step-change', step)
+  },
+  { immediate: true },
 )
 
 onBeforeUnmount(() => {
@@ -684,13 +670,13 @@ onBeforeUnmount(() => {
       </div>
       <div class="exam-sync-dir" :title="center?.source.directory || ''">
         <span class="muted tiny">{{ selectedExamId ? '档案原卷目录' : '私有收件箱' }}</span>
-        <code>{{ center?.source.directory_display || '$PAGEBOY_HOME/development/school-exams/inbox' }}</code>
+        <code>{{ center?.source.directory_display || '$PAGEBOY_HOME/development/data/school-exams/inbox' }}</code>
       </div>
       <div class="exam-sync-top-actions">
         <span :class="['chip', isJobActive ? 'wait' : job?.state === 'failed' ? 'bad' : 'subtle']">
           {{ isJobActive ? `采集中 · ${getJobStateLabel(job?.state)}` : job ? `采集${getJobStateLabel(job.state)}` : '未启动采集' }}
         </span>
-        <button type="button" class="ghost small" :disabled="loading" @click="loadCenter(selectedPaperId ?? undefined)">
+        <button type="button" class="ghost small" :disabled="loading" @click="loadCenter()">
           {{ loading ? '刷新中…' : '刷新同步中心' }}
         </button>
       </div>
@@ -702,7 +688,6 @@ onBeforeUnmount(() => {
     <StepFlowWorkspace
       v-model="activeStepStr"
       :steps="syncSteps"
-      :context="syncContext"
       steps-aria-label="校考同步四步工作流"
     >
       <!-- 第一步：发现试卷（合并为单一卡片） -->
@@ -761,13 +746,7 @@ onBeforeUnmount(() => {
           </div>
           <ul v-else class="exam-paper-list" tabindex="0" aria-label="已发现校考试卷列表">
             <li v-for="paper in papers" :key="paper.id">
-              <button
-                type="button"
-                class="exam-paper-row"
-                :class="{ selected: selectedPaperId === paper.id }"
-                :aria-pressed="selectedPaperId === paper.id"
-                @click="selectPaper(paper)"
-              >
+              <div class="exam-paper-row">
                 <span class="exam-paper-icon" aria-hidden="true">{{ paper.media_type.includes('pdf') ? 'PDF' : paper.media_type.includes('word') ? 'DOC' : 'IMG' }}</span>
                 <span class="exam-paper-main">
                   <b>{{ paper.filename }}</b>
@@ -782,9 +761,15 @@ onBeforeUnmount(() => {
                   <span :class="['chip', getMatchMeta(paper.match_state).tone]">{{ getMatchMeta(paper.match_state).label }}</span>
                   <span :class="['chip', getPaperStatusMeta(paper.status).tone]">{{ getPaperStatusMeta(paper.status).label }}</span>
                 </span>
-              </button>
+              </div>
             </li>
           </ul>
+          <div class="card-footer-flow" style="margin-top: 12px;">
+            <span />
+            <button type="button" class="primary small" @click="goStep(3)">
+              下一步：k12100 报告同步 →
+            </button>
+          </div>
         </article>
       </template>
 
@@ -1068,7 +1053,7 @@ onBeforeUnmount(() => {
           <div v-if="currentResultRow" class="exam-sync-result">
             <h4>{{ currentResultRow.match_state ? getMatchMeta(currentResultRow.match_state).label : '离线采集包结果' }}</h4>
             <dl class="exam-sync-facts">
-              <div><dt>科目</dt><dd>{{ currentResultRow.subject_label || formatPaperSubject(selectedPaper) }}</dd></div>
+              <div><dt>科目</dt><dd>{{ currentResultRow.subject_label || '全科' }}</dd></div>
               <div><dt>总分</dt><dd>{{ fmtPoints(currentResultRow.earned_points) }} / {{ fmtPoints(currentResultRow.max_points) }} · {{ currentResultRow.confirmed_by_user ? '已核对' : '待核对' }}</dd></div>
               <div><dt>答题卡</dt><dd>新上传 {{ currentResultRow.attachments_uploaded }} 份</dd></div>
               <div><dt>待核对明细</dt><dd>{{ currentResultRow.drafts_created }} 题待人工确认</dd></div>
@@ -1116,11 +1101,18 @@ active_job={{ isJobActive }}</pre>
             </details>
           </div>
 
-          <div v-if="lastReportResult || lastResult || currentExamId" class="card-footer-flow">
-            <button type="button" class="ghost small" @click="goStep(selectedPaper ? 2 : 1)">
-              {{ selectedPaper ? '← 去匹配试卷' : '← 去发现试卷' }}
+          <div class="card-footer-flow" style="margin-top: 12px;">
+            <button type="button" class="ghost small" @click="goStep(1)">
+              ← 上一步：发现试卷
             </button>
-            <button v-if="currentExamId" type="button" class="primary small" @click="goStep(4)">进入核对入档 →</button>
+            <button
+              v-if="currentExamId || syncedReports[0]?.exams[0]?.exam_id"
+              type="button"
+              class="primary small"
+              @click="currentExamId ? goStep(4) : inspectReportExam(syncedReports[0].exams[0].exam_id)"
+            >
+              下一步：核对入档 →
+            </button>
           </div>
         </article>
       </template>
@@ -1202,74 +1194,144 @@ active_job={{ isJobActive }}</pre>
           </div>
 
           <div style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line);">
-            <div class="card-head">
+            <div class="card-head" style="gap: 8px; flex-wrap: wrap;">
               <div>
-                <h4 style="margin: 0;">本人排名快照（{{ activeSubjectRanks.length }} 个范围）</h4>
+                <h4 style="margin: 0;">
+                  {{
+                    rankTab === 'total' && hasTotalRankSummary
+                      ? '同场全科总分排名与最高分'
+                      : `本人排名快照（${activeSubjectRanks.length} 个范围）`
+                  }}
+                </h4>
                 <p class="card-sub">平台实际提供的本人排名；独立保存，不进入知识点能力画像。</p>
               </div>
+              <div
+                v-if="hasTotalRankSummary"
+                class="subject-row"
+                role="tablist"
+                aria-label="排名维度"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="rankTab === 'subject'"
+                  :class="rankTab === 'subject' ? 'subject-chip selected' : 'subject-chip'"
+                  @click="rankTab = 'subject'"
+                >
+                  本学科排名
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="rankTab === 'total'"
+                  :class="rankTab === 'total' ? 'subject-chip selected' : 'subject-chip'"
+                  @click="rankTab = 'total'"
+                >
+                  同场全科总分排名与最高分
+                </button>
+              </div>
             </div>
-            <div v-if="reviewRanks && activeSubjectRanks.length === 0" class="exam-sync-empty">
-              <b>平台未提供可用排名</b>
-              <p>
-                {{
-                  filteredReportMissingScopes.length
-                    ? `系统不会用 0 或推算值补齐。缺失范围：${filteredReportMissingScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、')}。`
-                    : '系统不会用 0 或推算值补齐。'
-                }}
-              </p>
-            </div>
-            <ul v-else class="exam-sync-ranks" tabindex="0" aria-label="本人排名列表">
-              <li v-for="rank in activeSubjectRanks" :key="rank.id">
-                <div class="exam-sync-rank-main">
-                  <b>{{ RANK_SCOPE_LABELS[rank.scope] || rank.scope }}</b>
-                  <span>{{ formatRankValue(rank) }}</span>
-                  <span v-if="rank.highest_score !== null && rank.highest_score !== undefined" class="chip subtle">
-                    最高 {{ fmtPoints(rank.highest_score) }} 分
-                  </span>
-                  <span v-if="rank.percentile !== null" class="chip subtle">百分位 {{ Math.round(rank.percentile * 100) }}%</span>
-                  <span :class="['chip', rank.ownership_status === 'verified' ? 'good' : 'bad']">
-                    {{ rank.ownership_status === 'verified' ? '本人归属已验证' : '归属未验证' }}
-                  </span>
-                </div>
-                <div class="exam-sync-rank-meta">
-                  来源 {{ rank.source_name }} · 字段 <code>{{ rank.source_field }}</code> · 采集 {{ shortTime(rank.captured_at) }}
-                  <span v-if="rank.history_count > 1" class="chip subtle">历史 {{ rank.history_count }} 条</span>
-                </div>
-                <div class="exam-sync-rank-actions">
-                  <span :class="['chip', rank.review_status === 'confirmed' ? 'good' : 'wait']">
-                    {{ rank.review_status === 'confirmed' ? '已人工确认' : '待确认来源' }}
-                  </span>
-                  <button
-                    v-if="rank.review_status !== 'confirmed' && rank.ownership_status === 'verified'"
-                    type="button"
-                    class="ghost small"
-                    :disabled="confirmingRankId === rank.id"
-                    @click="confirmRank(rank.id)"
-                  >
-                    {{ confirmingRankId === rank.id ? '确认中…' : '确认排名来源' }}
-                  </button>
-                </div>
-              </li>
-            </ul>
-            <div
-              v-if="(reviewRanks?.total_ranks?.length ?? 0) > 0 || reviewRanks?.report_total"
-              class="exam-sync-missing"
-              style="margin-top: 8px;"
-            >
-              <b>同场全科总分排名与最高分</b>
-              <span v-if="reviewRanks?.report_total">
-                总分 {{ reviewRanks.report_total.report_total_score !== null ? fmtPoints(reviewRanks.report_total.report_total_score) : '—' }} / {{ reviewRanks.report_total.report_total_max !== null ? fmtPoints(reviewRanks.report_total.report_total_max) : '—' }}
-                · 班排 {{ reviewRanks.report_total.total_class_rank ?? '—' }}
-                · 年排 {{ reviewRanks.report_total.total_grade_rank ?? '—' }}{{ reviewRanks.report_total.total_participants ? ` / ${reviewRanks.report_total.total_participants}人` : '' }}
-                · 班最高 {{ reviewRanks.report_total.total_class_highest !== null ? fmtPoints(reviewRanks.report_total.total_class_highest) : '—' }}
-                · 年最高 {{ reviewRanks.report_total.total_grade_highest !== null ? fmtPoints(reviewRanks.report_total.total_grade_highest) : '—' }}
-              </span>
-            </div>
+            <template v-if="rankTab === 'total' && hasTotalRankSummary">
+              <div v-if="reviewRanks?.report_total" class="exam-sync-missing" style="margin-bottom: 8px;">
+                <b>全科总分汇总</b>
+                <span>
+                  总分 {{ reviewRanks.report_total.report_total_score !== null ? fmtPoints(reviewRanks.report_total.report_total_score) : '—' }} / {{ reviewRanks.report_total.report_total_max !== null ? fmtPoints(reviewRanks.report_total.report_total_max) : '—' }}
+                  · 班排 {{ reviewRanks.report_total.total_class_rank ?? '—' }}
+                  · 年排 {{ reviewRanks.report_total.total_grade_rank ?? '—' }}{{ reviewRanks.report_total.total_participants ? ` / ${reviewRanks.report_total.total_participants}人` : '' }}
+                  · 班最高 {{ reviewRanks.report_total.total_class_highest !== null ? fmtPoints(reviewRanks.report_total.total_class_highest) : '—' }}
+                  · 年最高 {{ reviewRanks.report_total.total_grade_highest !== null ? fmtPoints(reviewRanks.report_total.total_grade_highest) : '—' }}
+                </span>
+              </div>
+              <ul v-if="(reviewRanks?.total_ranks?.length ?? 0) > 0" class="exam-sync-ranks" tabindex="0" aria-label="全科总分排名列表">
+                <li v-for="rank in reviewRanks?.total_ranks ?? []" :key="rank.id">
+                  <div class="exam-sync-rank-main">
+                    <b>{{ RANK_SCOPE_LABELS[rank.scope] || rank.scope }}</b>
+                    <span>{{ formatRankValue(rank) }}</span>
+                    <span v-if="rank.highest_score !== null && rank.highest_score !== undefined" class="chip subtle">
+                      最高 {{ fmtPoints(rank.highest_score) }} 分
+                    </span>
+                    <span v-if="rank.percentile !== null" class="chip subtle">百分位 {{ Math.round(rank.percentile * 100) }}%</span>
+                    <span :class="['chip', rank.ownership_status === 'verified' ? 'good' : 'bad']">
+                      {{ rank.ownership_status === 'verified' ? '本人归属已验证' : '归属未验证' }}
+                    </span>
+                  </div>
+                  <div class="exam-sync-rank-meta">
+                    来源 {{ rank.source_name }} · 字段 <code>{{ rank.source_field }}</code> · 采集 {{ shortTime(rank.captured_at) }}
+                    <span v-if="rank.history_count > 1" class="chip subtle">历史 {{ rank.history_count }} 条</span>
+                  </div>
+                  <div class="exam-sync-rank-actions">
+                    <span :class="['chip', rank.review_status === 'confirmed' ? 'good' : 'wait']">
+                      {{ rank.review_status === 'confirmed' ? '已人工确认' : '待确认来源' }}
+                    </span>
+                    <button
+                      v-if="rank.review_status !== 'confirmed' && rank.ownership_status === 'verified'"
+                      type="button"
+                      class="ghost small"
+                      :disabled="confirmingRankId === rank.id"
+                      @click="confirmRank(rank.id)"
+                    >
+                      {{ confirmingRankId === rank.id ? '确认中…' : '确认排名来源' }}
+                    </button>
+                  </div>
+                </li>
+              </ul>
+            </template>
+            <template v-else>
+              <div v-if="reviewRanks && activeSubjectRanks.length === 0" class="exam-sync-empty">
+                <b>平台未提供可用排名</b>
+                <p>
+                  {{
+                    filteredMissingRankScopes.length
+                      ? `系统不会用 0 或推算值补齐。缺失范围：${filteredMissingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、')}。`
+                      : '系统不会用 0 或推算值补齐。'
+                  }}
+                </p>
+              </div>
+              <ul v-else class="exam-sync-ranks" tabindex="0" aria-label="本人排名列表">
+                <li v-for="rank in activeSubjectRanks" :key="rank.id">
+                  <div class="exam-sync-rank-main">
+                    <b>
+                      {{
+                        activeReviewTab?.subject === 'all' && rank.subject_scope
+                          ? `${SUBJECT_LABELS[rank.subject_scope] || rank.subject_scope} · ${RANK_SCOPE_LABELS[rank.scope] || rank.scope}`
+                          : (RANK_SCOPE_LABELS[rank.scope] || rank.scope)
+                      }}
+                    </b>
+                    <span>{{ formatRankValue(rank) }}</span>
+                    <span v-if="rank.highest_score !== null && rank.highest_score !== undefined" class="chip subtle">
+                      最高 {{ fmtPoints(rank.highest_score) }} 分
+                    </span>
+                    <span v-if="rank.percentile !== null" class="chip subtle">百分位 {{ Math.round(rank.percentile * 100) }}%</span>
+                    <span :class="['chip', rank.ownership_status === 'verified' ? 'good' : 'bad']">
+                      {{ rank.ownership_status === 'verified' ? '本人归属已验证' : '归属未验证' }}
+                    </span>
+                  </div>
+                  <div class="exam-sync-rank-meta">
+                    来源 {{ rank.source_name }} · 字段 <code>{{ rank.source_field }}</code> · 采集 {{ shortTime(rank.captured_at) }}
+                    <span v-if="rank.history_count > 1" class="chip subtle">历史 {{ rank.history_count }} 条</span>
+                  </div>
+                  <div class="exam-sync-rank-actions">
+                    <span :class="['chip', rank.review_status === 'confirmed' ? 'good' : 'wait']">
+                      {{ rank.review_status === 'confirmed' ? '已人工确认' : '待确认来源' }}
+                    </span>
+                    <button
+                      v-if="rank.review_status !== 'confirmed' && rank.ownership_status === 'verified'"
+                      type="button"
+                      class="ghost small"
+                      :disabled="confirmingRankId === rank.id"
+                      @click="confirmRank(rank.id)"
+                    >
+                      {{ confirmingRankId === rank.id ? '确认中…' : '确认排名来源' }}
+                    </button>
+                  </div>
+                </li>
+              </ul>
+              <div class="exam-sync-missing" style="margin-top: 8px;">
+                <b>缺失信息</b>
+                <span>{{ filteredMissingRankScopes.length ? filteredMissingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '班级、年级排名均已提供' }}</span>
+              </div>
+            </template>
             <p class="muted tiny">{{ reviewRanks?.disclaimer || '本人排名不得用于推断中考成绩。' }}</p>
-            <div class="exam-sync-missing">
-              <b>缺失信息</b>
-              <span>{{ filteredMissingRankScopes.length ? filteredMissingRankScopes.map(scope => RANK_SCOPE_LABELS[scope] || scope).join('、') : '班级、年级排名均已提供' }}</span>
-            </div>
           </div>
 
           <p v-if="reviewError" class="exam-sync-banner bad" role="alert">{{ reviewError }}</p>

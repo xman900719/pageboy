@@ -56,7 +56,7 @@ def school_exams_root() -> Path:
 
 
 def ensure_school_exam_archive_dirs(archive_dir: str) -> Path:
-    """在 school-exams/ 下幂等创建档案目录及 exam-paper / answer-sheet 子目录（0700）。"""
+    """在 data/school-exams/ 下幂等创建档案目录及 exam-paper / answer-sheet 子目录（0700）。"""
     root = school_exams_root()
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     archive_path = resolve_school_exam_subpath(archive_dir)
@@ -158,7 +158,7 @@ def _safe_school_exam_filename(filename: str) -> str:
 
 
 def write_school_exam_file(archive_dir: str, subdir: str, filename: str, data: bytes) -> tuple[str, str]:
-    """将校考文件写入 school-exams/<archive_dir>/<subdir>/（0600 权限），返回 (storage_key, relative_path)。"""
+    """将校考文件写入 data/school-exams/<archive_dir>/<subdir>/（0600 权限），返回 (storage_key, relative_path)。"""
     if subdir not in {"exam-paper", "answer-sheet"}:
         raise ValueError(f"unsupported school exam subdir: {subdir!r}")
     ensure_school_exam_archive_dirs(archive_dir)
@@ -187,7 +187,7 @@ def write_school_exam_file(archive_dir: str, subdir: str, filename: str, data: b
 
 
 def write_school_exam_scoped_blob(subdir: str, filename: str, data: bytes) -> tuple[str, str]:
-    """将报告或扫描待归档原卷写入 school-exams/<subdir>/，避免混入 data/attachments/。"""
+    """将报告或扫描待归档原卷写入 data/school-exams/<subdir>/，避免混入 data/attachments/。"""
     if subdir not in {"reports", "papers"}:
         raise ValueError(f"unsupported scoped subdir: {subdir!r}")
     root = school_exams_root()
@@ -239,7 +239,7 @@ def cleanup_empty_school_exam_archive_dir(archive_dir: str | None) -> None:
 
 
 def remove_school_exam_archive_dir(archive_dir: str | None) -> None:
-    """当没有任何校考记录再引用该 archive_dir 时，彻底清理 school-exams/<archive_dir>/ 及其内部残留文件。"""
+    """当没有任何校考记录再引用该 archive_dir 时，彻底清理 data/school-exams/<archive_dir>/ 及其内部残留文件。"""
     if not archive_dir or not archive_dir.strip():
         return
     try:

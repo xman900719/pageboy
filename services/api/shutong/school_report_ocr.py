@@ -36,8 +36,9 @@ def _run(arguments: list[str], *, timeout: int) -> str:
 def _line_words(tsv_path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with tsv_path.open("r", encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, delimiter="\t"):
-            if row.get("level") != "5" or not row.get("text", "").strip():
+        # Tesseract TSV 文本可能包含未闭合引号（如将题号 11 误识为 "1），必须禁用引号解析以免吞并后续多行。
+        for row in csv.DictReader(handle, delimiter="\t", quoting=csv.QUOTE_NONE):
+            if row.get("level") != "5" or not (row.get("text") or "").strip():
                 continue
             rows.append(
                 {
@@ -153,9 +154,11 @@ def table_rows(page: dict[str, Any], header_keys: tuple[str, ...]) -> list[dict[
             words = [word["text"] for word in line["words"] if left - 20 <= word["left"] < next_left - 20]
             cells[key] = "".join(words) if words else None
         first = cells.get(boundaries[0][0])
-        if not first or not re.fullmatch(
-            r"(?:\d{1,3}(?:[（(][0-9一二三四五六七八九十]+[）)])?|默写|听力题)", str(first).strip()
+        cleaned_first = str(first or "").strip().strip("\"'“”‘’。·.")
+        if not cleaned_first or not re.fullmatch(
+            r"(?:\d{1,3}(?:[（(][0-9一二三四五六七八九十]+[）)])?|默写|听力题)", cleaned_first
         ):
             continue
+        cells[boundaries[0][0]] = cleaned_first
         rows.append(cells)
     return rows

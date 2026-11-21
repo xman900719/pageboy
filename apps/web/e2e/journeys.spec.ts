@@ -535,6 +535,7 @@ test('J4c 校考待核对明细：纯文字卷提取、题号自然排序、分�
   await expect(page.getByRole('status')).toContainText('已存入档案 exam-paper 目录')
 
   await scoresPanel.getByRole('button', { name: /下一步：3\. 全科校考同步/ }).click()
+  await scoresPanel.getByRole('button', { name: /^核对入档/ }).click()
   await scoresPanel.getByRole('button', { name: /下一步：进入第二阶段 · 明细提取与核对/ }).click()
   const papersPanel = examRegion.locator('#exam-panel-papers')
   await papersPanel.getByLabel('待核对明细提取方式').selectOption('skeleton_only')
@@ -1602,7 +1603,7 @@ test('J10b 校考采集失败：429 风控立即停止且不以“完成”掩�
   await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
-  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await sync.getByRole('button', { name: /^k12100 报告同步/ }).click()
   await expect(sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' })).toBeEnabled()
   await sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' }).click()
   await expect(sync).toContainText('检测到 HTTP 429，已立即熔断止损', { timeout: 8000 })
@@ -1831,7 +1832,7 @@ test('J10d k12100 总分报告一键同步：无前置匹配直达、跳过已�
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   // 无需先在第 1/2 步选试卷，第 3 步应可直接点击
-  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await sync.getByRole('button', { name: /^k12100 报告同步/ }).click()
   await sync.getByRole('button', { name: '从 k12100 下载总分报告并同步' }).click()
   await expect(sync).toContainText('本次报告同步结果', { timeout: 8000 })
   await expect(sync).toContainText('已同步跳过')
@@ -2175,7 +2176,7 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
   await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
-  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await sync.getByRole('button', { name: /^k12100 报告同步/ }).click()
 
   // 前期同步数据在任务曾经失败时仍从数据库持久展示，并展示同步前完整性预检与全科/各科排名+最高分
   await expect(sync).toContainText('已全部完整同步')
@@ -2198,7 +2199,7 @@ test('J10e k12100 中断后二次跳过重跑：前期同步内容持续显示�
   await sync.getByLabel('我已对照成绩单人工核对').check()
   await sync.getByRole('button', { name: '确认并锁定总分' }).click()
   await expect(sync).toContainText('总分已人工锁定', { timeout: 8000 })
-  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await sync.getByRole('button', { name: /^k12100 报告同步/ }).click()
   await expect(persistedPanel.locator('.exam-sync-persisted-subject').nth(0)).toContainText('已核对')
   await expect(persistedPanel.locator('.exam-sync-persisted-subject').nth(1)).toContainText('待核对')
 
@@ -2404,8 +2405,8 @@ test('J10c 离线采集包回退：本机不可用、默认待核对与锁定总
   await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
-  await sync.getByRole('button', { name: /虚构测试数据_离线回退.docx/ }).click()
-  await sync.getByRole('button', { name: /k12100 报告同步/ }).click()
+  await expect(sync).toContainText('虚构测试数据_离线回退.docx')
+  await sync.getByRole('button', { name: /^k12100 报告同步/ }).click()
   await expect(sync).toContainText('本机直连不可用')
   await sync.getByRole('button', { name: '高级设置与离线包' }).click()
   await sync.locator('input[type="file"]').setInputFiles({
@@ -2568,4 +2569,91 @@ test('J11 知识点双游戏闯关体验与管理端启停/护盾/进度重置�
   await ctrlRestore.getByRole('button', { name: /重置本学科游戏进度/ }).click()
   expect((await resetPromise).status()).toBe(200)
   await expect(ctrlRestore).toContainText('第 1 版')
+})
+
+/* ---------- J12 学校考试第三、四阶段右上角科目联动且移除详情页内部科目 Tab ---------- */
+
+test('J12 学校考试第三/四阶段右上角科目切换直接联动内容且无详情页内科目Tab', async ({ page }) => {
+  await enterAdminSpace(page)
+  const createRes = await page.request.post('/api/school-exams', {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    data: {
+      subject: 'all',
+      title: '全科联动验收考（虚构测试数据）',
+      exam_date: '2026-10-15',
+      earned_points: 150,
+      max_points: 200,
+      confirmed_by_user: false,
+    },
+  })
+  expect(createRes.status()).toBe(201)
+  const examId = (await createRes.json()).id as string
+
+  const addItemsRes = await page.request.post(`/api/school-exams/${examId}/items`, {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    data: {
+      items: [
+        {
+          question_label: '数学·第1题',
+          knowledge_id: 'math_cand.num.rational',
+          earned_points: 1,
+          max_points: 2,
+          scoring_origin: 'manual_entry',
+          error_category: 'calculation',
+        },
+        {
+          question_label: '语文·第1题',
+          knowledge_id: 'chinese_cand.base.contextual_expression',
+          earned_points: 0,
+          max_points: 2,
+          scoring_origin: 'manual_entry',
+          error_category: 'reading',
+        },
+        {
+          question_label: '语文·第2题',
+          knowledge_id: 'chinese_cand.poetry.appreciation',
+          earned_points: 2,
+          max_points: 2,
+          scoring_origin: 'manual_entry',
+        },
+      ],
+    },
+  })
+  expect(addItemsRes.status()).toBe(201)
+
+  await adminNavTab(page, /学校考试/).click()
+  const examRegion = page.getByRole('region', { name: '学校考试总分' })
+  await examRegion.locator('.exam-pick', { hasText: '全科联动验收考' }).click()
+
+  // 进入第三阶段「已核对明细与补录」
+  await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
+  await expect(examRegion.locator('.exam-sync-subject-tabs')).toHaveCount(0)
+  await expect(examRegion).toContainText('已核对逐题得分与考点明细（1）')
+  await expect(examRegion).toContainText('第1题')
+  await expect(examRegion).not.toContainText('语文·第2题')
+
+  // 点击界面右上方「语文」，保持在第三阶段并显示语文的 2 道明细
+  const topSubjects = page.getByRole('group', { name: '科目' })
+  await topSubjects.getByRole('button', { name: '语文' }).click()
+  await expect(examRegion.getByRole('tab', { name: /已核对明细与补录/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(examRegion.locator('.exam-sync-subject-tabs')).toHaveCount(0)
+  await expect(examRegion).toContainText('已核对逐题得分与考点明细（2）')
+  await expect(examRegion).toContainText('第2题')
+
+  // 进入第四阶段「错误分析与复盘」
+  await examRegion.getByRole('tab', { name: /错误分析与复盘/ }).click()
+  await expect(examRegion.locator('.exam-sync-subject-tabs')).toHaveCount(0)
+  await expect(examRegion).toContainText('1 / 2 题')
+
+  // 点击界面右上方「数学」，保持在第四阶段并切换为数学分析（1 / 1 题）
+  await topSubjects.getByRole('button', { name: '数学' }).click()
+  await expect(examRegion.getByRole('tab', { name: /错误分析与复盘/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(examRegion.locator('.exam-sync-subject-tabs')).toHaveCount(0)
+  await expect(examRegion).toContainText('1 / 1 题')
+
+  // 清理测试档案
+  const delRes = await page.request.delete(`/api/school-exams/${examId}?confirm=true`, {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+  })
+  expect(delRes.status()).toBe(200)
 })

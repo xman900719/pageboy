@@ -170,13 +170,13 @@ def default_school_exams_dir(
     environment: str | None = None,
     home_root: Path | str | None = None,
 ) -> Path:
-    """返回当前环境校考文件统一存储根目录（位于 pageboy-home/<env>/school-exams/）。"""
+    """返回当前环境校考文件统一存储根目录（位于 pageboy-home/<env>/data/school-exams/）。"""
     env = normalize_environment(environment)
     override = os.getenv("SHUTONG_SCHOOL_EXAMS_DIR", "").strip()
     if override and environment is None and home_root is None:
         return assert_no_cross_environment_path(override, expected_env=env, home_root=home_root)
     env_dir = get_env_home(env, home_root=home_root)
-    return env_dir / "school-exams"
+    return env_dir / "data" / "school-exams"
 
 
 def sanitize_archive_segment(raw: str, *, fallback: str = "exam", max_len: int = 80) -> str:
@@ -204,7 +204,7 @@ def resolve_school_exam_subpath(
     environment: str | None = None,
     home_root: Path | str | None = None,
 ) -> Path:
-    """安全解析 school-exams/ 下的相对路径，严禁路径穿越、符号链接及跨环境访问。"""
+    """安全解析 data/school-exams/ 下的相对路径，严禁路径穿越、符号链接及跨环境访问。"""
     root = assert_no_cross_environment_path(
         default_school_exams_dir(environment=environment, home_root=home_root),
         expected_env=normalize_environment(environment) if environment is not None else None,

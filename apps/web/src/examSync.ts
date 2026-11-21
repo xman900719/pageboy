@@ -2,8 +2,10 @@ import type {
   K12100ReportJobResult,
   K12100ReportSubjectAction,
   SchoolExamDetail,
+  SchoolExamItem,
   SchoolExamPaper,
   SchoolExamRanksPayload,
+  SchoolPaperAttachment,
   SchoolSubject,
   StudentSchoolReflectionItem,
 } from './api'
@@ -98,10 +100,58 @@ export interface ReviewCoverage {
   missingRankScopes: string[]
 }
 
+const ITEM_SUBJECT_PREFIXES: Array<[string, SchoolSubject]> = [
+  ['语文·', 'chinese'],
+  ['数学·', 'math'],
+  ['英语·', 'english'],
+  ['物理·', 'physics'],
+  ['道德与法治·', 'ethics'],
+  ['道法·', 'ethics'],
+]
+
+const ITEM_SUBJECT_CODES: SchoolSubject[] = ['chinese', 'math', 'english', 'physics', 'ethics']
+
+/** 根据题号前缀或知识点编码（含 *_cand. 新版课标编码）推断校考小题所属学科。 */
+export function inferSchoolExamItemSubject(
+  item: Pick<SchoolExamItem, 'question_label' | 'knowledge_id'>,
+): SchoolSubject | null {
+  const lbl = String(item.question_label || '').trim()
+  for (const [prefix, code] of ITEM_SUBJECT_PREFIXES) {
+    if (lbl.startsWith(prefix)) return code
+  }
+  const kid = String(item.knowledge_id || '').trim().toLowerCase()
+  for (const code of ITEM_SUBJECT_CODES) {
+    if (kid.startsWith(`${code}.`) || kid.startsWith(`${code}_cand.`)) return code
+  }
+  if (kid.startsWith('daofa.') || kid.startsWith('daofa_cand.')) return 'ethics'
+  return null
+}
+
+/** 根据附件文件名推断所属学科（与后端 infer_attachment_subject 口径一致）。 */
+export function inferSchoolAttachmentSubject(
+  attachment: Pick<SchoolPaperAttachment, 'filename'>,
+): SchoolSubject | null {
+  const lower = String(attachment.filename || '').toLowerCase()
+  if (lower.includes('语文') || lower.includes('chinese')) return 'chinese'
+  if (lower.includes('数学') || lower.includes('math')) return 'math'
+  if (lower.includes('英语') || lower.includes('english')) return 'english'
+  if (lower.includes('物理') || lower.includes('physics')) return 'physics'
+  if (
+    lower.includes('道德与法治') ||
+    lower.includes('道法') ||
+    lower.includes('ethics') ||
+    lower.includes('daofa')
+  ) {
+    return 'ethics'
+  }
+  return null
+}
+
 /** 派生第四步核对覆盖；缺失值不会被补成 0 分或已确认。 */
 export function deriveReviewCoverage(
   detail: SchoolExamDetail | null,
   ranks: SchoolExamRanksPayload | null,
+  subjectScope?: SchoolSubject,
 ): ReviewCoverage {
   if (!detail) {
     return {
@@ -115,15 +165,29 @@ export function deriveReviewCoverage(
       missingRankScopes: ranks?.missing_scopes ?? ['class', 'grade', 'school', 'region'],
     }
   }
+  const filterBySubject = detail.subject === 'all' && Boolean(subjectScope)
+  const scopedItems = filterBySubject
+    ? detail.items.filter(item => inferSchoolExamItemSubject(item) === subjectScope)
+    : detail.items
+  const scopedAttachments = filterBySubject
+    ? detail.attachments.filter(att => inferSchoolAttachmentSubject(att) === subjectScope)
+    : detail.attachments
+  const scopedRanks = filterBySubject && ranks
+    ? ranks.ranks.filter(rank => rank.subject_scope === subjectScope)
+    : (ranks?.ranks ?? [])
+  const presentScopes = new Set(scopedRanks.map(rank => rank.scope))
+  const missingRankScopes = filterBySubject
+    ? (['class', 'grade', 'school', 'region'] as const).filter(scope => !presentScopes.has(scope))
+    : (ranks?.missing_scopes ?? ['class', 'grade', 'school', 'region'])
   return {
     hasExam: true,
     totalStatus: detail.confirmed_by_user ? 'confirmed' : 'pending',
     totalText: `${detail.earned_points} / ${detail.max_points}`,
-    confirmedItems: detail.items.filter(item => item.confirmed_by_user).length,
-    draftItems: detail.items.filter(item => !item.confirmed_by_user).length,
-    attachments: detail.attachments.length,
-    rankScopes: ranks?.ranks.map(rank => rank.scope) ?? [],
-    missingRankScopes: ranks?.missing_scopes ?? ['class', 'grade', 'school', 'region'],
+    confirmedItems: scopedItems.filter(item => item.confirmed_by_user).length,
+    draftItems: scopedItems.filter(item => !item.confirmed_by_user).length,
+    attachments: scopedAttachments.length,
+    rankScopes: scopedRanks.map(rank => rank.scope),
+    missingRankScopes,
   }
 }
 
@@ -246,7 +310,13 @@ export interface SchoolExamItemScoreSummary {
 
 /** 汇总本场校考已确认与待核对小题分值，并与卷面总分只读对账。 */
 export function summarizeSchoolExamItemScores(
-  detail: Pick<SchoolExamDetail, 'items' | 'earned_points' | 'max_points' | 'confirmed_by_user'> | null,
+  detail: Pick<SchoolExamDetail, 'subject' | 'items' | 'earned_points' | 'max_points' | 'confirmed_by_user'> | null,
+  subjectScope?: SchoolSubject,
+  paperTotalsOverride?: {
+    earned_points: number
+    max_points: number
+    confirmed_by_user: boolean
+  },
 ): SchoolExamItemScoreSummary {
   if (!detail) {
     return {
@@ -260,13 +330,20 @@ export function summarizeSchoolExamItemScores(
       maxDiff: null,
     }
   }
+  const filterBySubject = detail.subject === 'all' && Boolean(subjectScope)
+  const items = filterBySubject
+    ? detail.items.filter(it => {
+        const subj = inferSchoolExamItemSubject(it)
+        return subj === null || subj === subjectScope
+      })
+    : detail.items
   let totalEarned = 0
   let totalMax = 0
   let pendingCount = 0
   let confirmedCount = 0
   let correctPendingCount = 0
   let lostPendingCount = 0
-  for (const it of detail.items) {
+  for (const it of items) {
     totalEarned += it.earned_points
     totalMax += it.max_points
     if (it.confirmed_by_user) {
@@ -282,11 +359,12 @@ export function summarizeSchoolExamItemScores(
   }
   totalEarned = Math.round(totalEarned * 100) / 100
   totalMax = Math.round(totalMax * 100) / 100
-  const earnedDiff = detail.confirmed_by_user
-    ? Math.round((totalEarned - detail.earned_points) * 100) / 100
+  const compareTarget = filterBySubject ? paperTotalsOverride : detail
+  const earnedDiff = compareTarget?.confirmed_by_user
+    ? Math.round((totalEarned - compareTarget.earned_points) * 100) / 100
     : null
-  const maxDiff = detail.max_points > 0
-    ? Math.round((totalMax - detail.max_points) * 100) / 100
+  const maxDiff = compareTarget && compareTarget.max_points > 0
+    ? Math.round((totalMax - compareTarget.max_points) * 100) / 100
     : null
   return {
     totalEarned,

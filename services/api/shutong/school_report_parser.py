@@ -35,7 +35,7 @@ _SHORT_YEAR = re.compile(r"(?<!\d)(\d{2})\s*[-—~]\s*(\d{2})\s*学?年?度?")
 _GRADE = re.compile(r"(初[一二三]|[七八九]年级|高[一二三]|1[0-2]年级)")
 _TYPE = re.compile(r"(期中考试|期末考试|统一练习[一二三四五六七八九十0-9]*|月考|阶段检测|模拟考试)")
 _REPORT_TIME = re.compile(r"报告时间\s*[:：]?\s*([0-9]{4}\s*年\s*[0-9]{1,2}\s*月\s*[0-9]{1,2}\s*日[^\n]*)")
-_SUBJECT_HEADING = re.compile(r"([\u4e00-\u9fa5]{1,6})\s*成绩分析")
+_SUBJECT_HEADING = re.compile(r"([\u4e00-\u9fa5]{1,6})\s*成\s*绩\s*分\s*析")
 _PII_PATTERNS = (
     (re.compile(r"朝阳\s*\d+\s*班"), "[班级已脱敏]"),
     (re.compile(r"[\u4e00-\u9fa5]{2,4}(?=同学)"), "[已脱敏]"),
@@ -137,8 +137,12 @@ def split_pages(text: str) -> list[tuple[int, str]]:
 
 
 def _norm_number(value: str) -> float | None:
+    cleaned = str(value or "").strip()
+    if cleaned == "了":
+        # OCR 常将独立印刷数字 7 误识为“了”
+        return 7.0
     try:
-        return float(value.replace("，", "").replace(",", "").rstrip("%"))
+        return float(cleaned.replace("，", "").replace(",", "").rstrip("%"))
     except (TypeError, ValueError):
         return None
 
@@ -380,8 +384,10 @@ def _reconcile_question_scores(
     score: float | None,
     score_rate: float | None,
 ) -> tuple[float | None, float | None]:
-    """校正 OCR 小数点漏识（如满分 0.5、得分 0.5 被误识为 5.0）：绝不允许 实得 > 满分。"""
-    if max_score is not None and max_score > 0 and score is not None and score > max_score:
+    """校正 OCR 小数点漏识、漏识得分/满分或形近误识：绝不允许 实得 > 满分。"""
+    if max_score is not None and max_score > 0 and score is None and score_rate is not None and 0 <= score_rate <= 100:
+        score = round(max_score * (score_rate / 100.0), 2)
+    elif max_score is not None and max_score > 0 and score is not None and score > max_score:
         if score_rate is not None and 0 <= score_rate <= 100:
             score = round(max_score * (score_rate / 100.0), 2)
         elif abs(score / 10.0 - max_score) < 1e-6 or score / 10.0 <= max_score:
@@ -391,8 +397,65 @@ def _reconcile_question_scores(
     elif max_score is None and score is not None and score_rate is not None and score_rate > 0:
         inferred = round(score * 100.0 / score_rate, 2)
         if inferred >= score and 0 < inferred <= 150:
-            max_score = inferred
+            max_score = round(inferred * 2) / 2 if abs(inferred * 2 - round(inferred * 2)) < 0.05 else inferred
+    elif (
+        max_score is not None
+        and max_score > 0
+        and score is not None
+        and score > 0
+        and score_rate is not None
+        and score_rate > 0
+    ):
+        actual_rate = (score / max_score) * 100.0
+        if abs(actual_rate - score_rate) > 15.0:
+            inferred = round(score * 100.0 / score_rate, 2)
+            if inferred >= score and 0 < inferred <= 150 and abs(inferred * 2 - round(inferred * 2)) < 0.05:
+                max_score = round(inferred * 2) / 2
     return max_score, score
+
+
+def _repair_sequential_question_numbers(questions: list[ReportQuestion]) -> list[ReportQuestion]:
+    """根据同科紧邻上下文修复 OCR 首位截断或形近重复的纯数字题号（如 10, "1, 12 -> 11）。"""
+    by_subj: dict[str, list[ReportQuestion]] = {}
+    for q in questions:
+        by_subj.setdefault(q.subject, []).append(q)
+
+    repaired: list[ReportQuestion] = []
+    for subj, subj_qs in by_subj.items():
+        _ = subj
+        seen: set[str] = set()
+        for idx, q in enumerate(subj_qs):
+            num_str = q.number.strip()
+            if re.fullmatch(r"\d+", num_str):
+                curr_num = int(num_str)
+                prev_num = (
+                    int(subj_qs[idx - 1].number.strip())
+                    if idx > 0 and re.fullmatch(r"\d+", subj_qs[idx - 1].number.strip())
+                    else None
+                )
+                next_num = (
+                    int(subj_qs[idx + 1].number.strip())
+                    if idx + 1 < len(subj_qs) and re.fullmatch(r"\d+", subj_qs[idx + 1].number.strip())
+                    else None
+                )
+                is_dup = num_str in seen
+                if prev_num is not None and prev_num >= 10:
+                    candidate = prev_num + 1
+                    cand_str = str(candidate)
+                    if cand_str not in seen:
+                        exact_gap = next_num is not None and next_num == prev_num + 2
+                        same_tail = curr_num == candidate % 10
+                        near_miss = is_dup and abs(candidate - curr_num) <= 2 and (
+                            next_num is None or next_num > candidate
+                        )
+                        if (exact_gap and (is_dup or same_tail)) or near_miss:
+                            q.number = cand_str
+            key = q.number.strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            repaired.append(q)
+    return repaired
 
 
 def _question_rows(page_number: int, text: str) -> list[ReportQuestion]:
@@ -574,18 +637,14 @@ def parse_report_text(text: str, *, filename: str = "", digest: str = "") -> Rep
     _section_score_override(pages, subject_map)
     questions: list[ReportQuestion] = []
     page_subject = _page_subjects(pages, subject_map)
-    seen_questions: set[tuple[str, str]] = set()
     for page_number, page_text in pages:
         code = page_subject.get(page_number)
         if code is None or "小题分析表" not in page_text:
             continue
         for row in _question_rows(page_number, page_text):
-            key = (code, row.number)
-            if key in seen_questions:
-                continue
-            seen_questions.add(key)
             row.subject = code
             questions.append(row)
+    questions = _repair_sequential_question_numbers(questions)
     listed_score, listed_max, scope = _scope(subject_map, total_data)
     report = ReportDocument(
         kind=kind,
@@ -636,7 +695,6 @@ def _tsv_questions(
 ) -> list[ReportQuestion]:
     """用逐词 OCR 还原的列单元格重建逐题表；无表头页回退纯文本行解析。"""
     questions: list[ReportQuestion] = []
-    seen: set[tuple[str, str]] = set()
     for page in pages:
         code = page_subject.get(page["page"])
         if code is None:
@@ -645,10 +703,7 @@ def _tsv_questions(
         if not rows:
             for fallback in _question_rows(page["page"], page_bodies.get(page["page"], "")):
                 fallback.subject = code
-                key = (code, fallback.number)
-                if key not in seen:
-                    seen.add(key)
-                    questions.append(fallback)
+                questions.append(fallback)
             continue
         for cells in rows:
             number = str(cells.get("小题") or "").strip()
@@ -663,10 +718,6 @@ def _tsv_questions(
                 _norm_number(str(cells.get("得分") or "")),
                 rate,
             )
-            key = (code, number)
-            if key in seen:
-                continue
-            seen.add(key)
             questions.append(
                 ReportQuestion(
                     subject=code,
@@ -680,7 +731,7 @@ def _tsv_questions(
                     confidence="medium",
                 )
             )
-    return questions
+    return _repair_sequential_question_numbers(questions)
 
 
 def parse_report_pdf(data: bytes, *, filename: str = "", digest: str = "") -> ReportDocument:
@@ -691,7 +742,8 @@ def parse_report_pdf(data: bytes, *, filename: str = "", digest: str = "") -> Re
     """
     text, _version = files.parse_text(data, "application/pdf")
     doc = parse_report_text(text, filename=filename, digest=digest or sha256(data).hexdigest())
-    question_page_numbers = [number for number, body in split_pages(text) if "小题分析表" in body]
+    text_pages = split_pages(sanitize_report_text(text))
+    question_page_numbers = [number for number, body in text_pages if "小题分析表" in body]
     if question_page_numbers:
         pages, page_count = report_ocr.ocr_pdf(data)
         doc.pages = page_count
@@ -701,8 +753,9 @@ def parse_report_pdf(data: bytes, *, filename: str = "", digest: str = "") -> Re
             for p in pages
         ]
         _section_score_override(ocr_tuples, subject_map, fill_missing_only=True)
-        page_subject = _page_subjects(ocr_tuples, subject_map)
-        doc.answer_card_pages = _answer_cards(ocr_tuples, page_subject)
+        page_subject = _page_subjects(text_pages, subject_map) or _page_subjects(ocr_tuples, subject_map)
+        if not doc.answer_card_pages:
+            doc.answer_card_pages = _answer_cards(ocr_tuples, page_subject)
         wanted = {number for number in question_page_numbers}
         page_bodies = {number: body for number, body in ocr_tuples}
         questions = _tsv_questions(doc, [page for page in pages if page["page"] in wanted], page_subject, page_bodies)

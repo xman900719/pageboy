@@ -136,8 +136,6 @@ function signOut() {
             :class="examSubject === id ? 'subject-chip selected' : 'subject-chip'"
             @click="
               examSubject = id;
-              pendingExamId = undefined;
-              pendingExamTab = 'scores';
               if (id !== 'ethics') subject = id;
               notify(`已切换到${SCHOOL_SUBJECT_LABELS[id]}。`)
             "
@@ -159,7 +157,7 @@ function signOut() {
       </nav>
     </header>
 
-    <main v-if="client" class="view" :key="`${view}:${view === 'exams' ? examSubject : subject}`">
+    <main v-if="client" class="view" :key="view === 'exams' ? 'exams' : `${view}:${subject}`">
       <AdminView
         v-if="view === 'ledger'"
         v-model:sub-tab="ledgerSubTab"

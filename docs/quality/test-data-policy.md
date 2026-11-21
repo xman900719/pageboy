@@ -44,7 +44,7 @@ python scripts/seed_demo.py  # 仅限 Owner 批准的虚构演示题；不得用
 - `$PAGEBOY_HOME/development/data/shutong-dev.sqlite3` 中的 2018–2025 北京中考真题来源/题目；
 - `data/attachments` 中与这些真实来源关联的附件；
 - `data/curriculum_standards` 中的正式课程标准 PDF；
-- `school-exams/inbox/十月`、`期中` 下的真实学校试卷；
+- `data/school-exams/inbox/十月`、`期中` 下的真实学校试卷；
 - 生产环境、生产数据与生产服务未触碰。
 
 ## 4. 复核

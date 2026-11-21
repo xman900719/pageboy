@@ -1847,7 +1847,6 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
 .admin-page .error-cat-list,
 .admin-page .entry-list,
 .admin-page .exam-paper-list,
-.admin-page .exam-sync-persisted-list,
 .admin-page .exam-sync-error-list,
 .admin-page .exam-sync-candidates,
 .admin-page .exam-sync-report-actions,
@@ -1905,7 +1904,6 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
   .admin-page .error-cat-list,
   .admin-page .entry-list,
   .admin-page .exam-paper-list,
-  .admin-page .exam-sync-persisted-list,
   .admin-page .exam-sync-error-list,
   .admin-page .exam-sync-candidates,
   .admin-page .exam-sync-report-actions,
@@ -1924,7 +1922,6 @@ button.mode-switch-btn.active:hover:not(:disabled) { background: var(--primary);
   .admin-page .error-cat-list,
   .admin-page .entry-list,
   .admin-page .exam-paper-list,
-  .admin-page .exam-sync-persisted-list,
   .admin-page .exam-sync-error-list,
   .admin-page .exam-sync-candidates,
   .admin-page .exam-sync-report-actions,
@@ -2110,7 +2107,7 @@ button.exam-sync-step:hover:not(:disabled) b { color: var(--ink) }
 .exam-sync-report-row-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; font-size: 0.74rem; color: var(--ink-2) }
 .exam-sync-persisted-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 10px; max-height: clamp(260px, 48vh, 520px); overflow-y: auto }
 .exam-sync-persisted-list > li { padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fff; min-width: 0 }
-.exam-sync-persisted-subjects { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 8px }
+.exam-sync-persisted-subjects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px }
 .exam-sync-persisted-subject { display: flex; flex-direction: column; gap: 3px; padding: 8px 9px; border-radius: 8px; border: 1px solid var(--line-soft); background: var(--card-warm); min-width: 0 }
 .exam-sync-persisted-subject-main { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 0.82rem }
 .exam-sync-readiness { margin: 8px 0 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--teal-line); background: var(--teal-soft); font-size: 0.8rem }
@@ -2150,7 +2147,7 @@ button.exam-sync-step:hover:not(:disabled) b { color: var(--ink) }
 @media (max-width: 900px) {
   .exam-sync-steps { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .exam-sync-step { min-height: 70px }
-  .exam-sync-facts, .exam-sync-identity, .exam-sync-scope-grid, .exam-sync-options, .exam-sync-review-kpis { grid-template-columns: 1fr }
+  .exam-sync-facts, .exam-sync-identity, .exam-sync-scope-grid, .exam-sync-options, .exam-sync-persisted-subjects, .exam-sync-review-kpis { grid-template-columns: 1fr }
   .exam-sync-identity > div.wide { grid-column: auto }
   .exam-sync-checks { grid-template-columns: 1fr }
   .exam-sync-dir { flex-basis: 100% }
