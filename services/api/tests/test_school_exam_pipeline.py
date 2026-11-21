@@ -525,7 +525,7 @@ def test_cli_dry_run_is_read_only(tmp_path, monkeypatch):
     assert payload["dry_run"] is True
     assert payload["file_count"] == 1
     assert payload["papers"][0]["header"]["subject"] == "math"
-    assert not (home / "development" / "school-exams").exists()
+    assert not (home / "development" / "data" / "school-exams").exists()
     assert not (home / "development" / "data" / "shutong-dev.sqlite3").exists()
     assert (source / "九年级数学月考试卷.docx").exists()
 
@@ -683,7 +683,7 @@ def test_source_directory_cannot_read_other_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("PAGEBOY_HOME", str(tmp_path / "pageboy-home"))
     monkeypatch.setenv("SHUTONG_ENV", "development")
     monkeypatch.setenv("SHUTONG_PRIVATE_DIR", str(tmp_path / "private"))
-    production_source = tmp_path / "pageboy-home" / "production" / "school-exams" / "inbox"
+    production_source = tmp_path / "pageboy-home" / "production" / "data" / "school-exams" / "inbox"
     production_source.mkdir(parents=True)
     (production_source / "九年级数学月考试卷.docx").write_bytes(_docx_bytes(_header_lines()))
 

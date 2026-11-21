@@ -121,6 +121,7 @@ uv run python scripts/run_dev_env.py sim-landscape
 | **主题 18** | [18-knowledge-dual-games-and-admin-control.md](checklists/18-knowledge-dual-games-and-admin-control.md) | 知识点展示双游戏（知识合成工坊 & 迷雾科技树探险）大留白大字号布局与管理端基础管控联动 | 依赖【主题 7 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 19** | [19-knowledge-graph-flow-ui.md](checklists/19-knowledge-graph-flow-ui.md) | 学生端知识点关系图谱重构（Vue Flow + Dagre 自上而下领域分组有向图、脉络聚焦、跨领域桥梁与 iPad 触控适配） | 依赖【主题 7、18 通过】 | **[x] 已通过（2026-11-19）** |
 | **主题 20** | [20-school-exam-stage1-storage-reorg.md](checklists/20-school-exam-stage1-storage-reorg.md) | 管理端校考第一阶段三步重组（全科新建档、提交考试信息、上传原卷入 `exam-paper/`、全科同步答题卡入 `answer-sheet/`、取消总分概览与材料入口、分科 Tab 核对与诊断） | 依赖【主题 13 通过】 | **[x] 已通过核验** |
+| **主题 21** | [21-school-exam-subject-sync-and-summary.md](checklists/21-school-exam-subject-sync-and-summary.md) | 学校考试第三/四阶段去掉详情页内科目 Tab 并响应右上角科目切换，同步中心与各科汇总数与所列项目数及单科总分一致 | 依赖【主题 20 通过】 | **[ ] 待核验** |
 
 ---
 

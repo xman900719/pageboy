@@ -62,7 +62,7 @@ def close(a: float | None, b: float | None) -> bool:
 
 
 def main() -> int:
-    inbox = Path("/media/xc/backup_ext4/pageboy-home/development/school-exams/inbox")
+    inbox = Path("/media/xc/backup_ext4/pageboy-home/development/data/school-exams/inbox")
     samples = {"A": next(inbox.glob("期中/*分析报告册.pdf")), "B": next(inbox.glob("十月/*分析报告册.pdf"))}
     failed = 0
     for label, path in samples.items():

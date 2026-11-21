@@ -25,6 +25,7 @@ import {
 import {
   compareQuestionLabel,
   formatQuestionLabelHeading,
+  inferSchoolExamItemSubject,
   isSchoolItemFullScore,
   parseDraftBasisTags,
   summarizeSchoolExamItemScores,
@@ -121,6 +122,7 @@ const errorAnalysis = ref<SchoolExamErrorAnalysis | null>(null)
 const loadingDetail = ref(false)
 const activeTab = ref<ExamTabId>(props.initialTab ?? 'scores')
 const scoreStep = ref<ScoreStepId>('pick')
+const syncCenterStep = ref<1 | 2 | 3 | 4>(1)
 const scorePickMode = ref<'list' | 'create'>('list')
 const paperStep = ref<PaperStepId>('parse')
 const itemStep = ref<ItemStepId>('list')
@@ -209,67 +211,36 @@ const allParseAttachmentsSelected = computed(
     parseableAttachments.value.length > 0 &&
     parseableAttachments.value.every(a => selectedParseAttachmentIds.value.includes(a.id)),
 )
+const examPaperAttachments = computed(
+  () =>
+    selectedDetail.value?.attachments.filter(
+      a => a.category !== 'answer_sheet' && !/答题卡|答题纸|answer.?card/i.test(a.filename),
+    ) ?? [],
+)
 const answerCardAttachments = computed(
   () => parseableAttachments.value.filter(a => /答题卡|答题纸|answer.?card/i.test(a.filename)),
 )
 const hasAnswerCard = computed(() => answerCardAttachments.value.length > 0)
-const unconfirmedDrafts = computed(() =>
-  [...(selectedDetail.value?.items.filter(it => !it.confirmed_by_user) ?? [])].sort((x, y) =>
-    compareQuestionLabel(x.question_label, y.question_label),
-  ),
-)
-const stageSubjectFilter = ref<SchoolSubject>(props.subject)
-
-const STAGE_SUBJECT_PREFIXES: Array<[string, SchoolSubject]> = [
-  ['语文·', 'chinese'],
-  ['数学·', 'math'],
-  ['英语·', 'english'],
-  ['物理·', 'physics'],
-  ['道德与法治·', 'ethics'],
-  ['道法·', 'ethics'],
-]
-
-function inferItemSubject(it: SchoolExamItem): SchoolSubject | null {
-  const lbl = String(it.question_label || '').trim()
-  for (const [prefix, code] of STAGE_SUBJECT_PREFIXES) {
-    if (lbl.startsWith(prefix)) return code
-  }
-  const kid = String(it.knowledge_id || '').trim().toLowerCase()
-  for (const code of ['chinese', 'math', 'english', 'physics', 'ethics'] as SchoolSubject[]) {
-    if (kid.startsWith(`${code}.`)) return code
-  }
-  return null
-}
-
-const stageSubjectTabs = computed(() => {
+const unconfirmedDrafts = computed(() => {
   const detail = selectedDetail.value
-  if (!detail || detail.subject !== 'all') return []
-  const order: SchoolSubject[] = ['chinese', 'math', 'english', 'physics', 'ethics']
-  const counts = new Map<SchoolSubject, number>()
-  for (const it of detail.items) {
-    if (!it.confirmed_by_user) continue
-    const subj = inferItemSubject(it)
-    if (subj) counts.set(subj, (counts.get(subj) ?? 0) + 1)
-  }
-  if (!counts.has(props.subject)) counts.set(props.subject, 0)
-  return order
-    .filter(code => counts.has(code))
-    .map(code => ({
-      subject: code,
-      label: SCHOOL_SUBJECT_LABELS[code] || code,
-      count: counts.get(code) ?? 0,
-    }))
+  const list = detail?.items.filter(it => !it.confirmed_by_user) ?? []
+  const filtered =
+    detail?.subject === 'all'
+      ? list.filter(it => {
+          const subj = inferSchoolExamItemSubject(it)
+          return subj === null || subj === props.subject
+        })
+      : list
+  return [...filtered].sort((x, y) => compareQuestionLabel(x.question_label, y.question_label))
 })
+const stageSubjectFilter = computed<SchoolSubject>(() => props.subject)
 
 const confirmedItems = computed(() => {
   const detail = selectedDetail.value
   const list = detail?.items.filter(it => it.confirmed_by_user) ?? []
   const filtered =
     detail?.subject === 'all'
-      ? list.filter(it => {
-          const subj = inferItemSubject(it)
-          return subj ? subj === stageSubjectFilter.value : stageSubjectFilter.value === props.subject
-        })
+      ? list.filter(it => inferSchoolExamItemSubject(it) === props.subject)
       : list
   return [...filtered].sort((x, y) => compareQuestionLabel(x.question_label, y.question_label))
 })
@@ -322,7 +293,24 @@ const stemStats = computed(() => {
     allRecognized: lost.length > 0 && unextracted === 0,
   }
 })
-const scoreSummary = computed(() => summarizeSchoolExamItemScores(selectedDetail.value))
+const currentSubjectPaperTotals = computed(() => {
+  const detail = selectedDetail.value
+  if (!detail || detail.subject !== 'all') return undefined
+  const ana = errorAnalysis.value
+  if (!ana || ana.exam_id !== detail.id || ana.subject !== props.subject) return undefined
+  return {
+    earned_points: ana.overview.earned_points,
+    max_points: ana.overview.max_points,
+    confirmed_by_user: ana.confirmed_by_user,
+  }
+})
+const scoreSummary = computed(() =>
+  summarizeSchoolExamItemScores(
+    selectedDetail.value,
+    selectedDetail.value?.subject === 'all' ? props.subject : undefined,
+    currentSubjectPaperTotals.value,
+  ),
+)
 const verifiedExamsCount = computed(
   () => (exams.value ?? []).filter(e => e.confirmed_by_user).length,
 )
@@ -419,6 +407,15 @@ const examStageGroups = computed<StageGroup[]>(() => {
 
 const examContext = computed<StepFlowContext | null>(() => {
   if (!selectedDetail.value) return null
+  const subjTotals = currentSubjectPaperTotals.value
+  if (selectedDetail.value.subject === 'all' && subjTotals) {
+    return {
+      eyebrow: `当前场次 · ${SCHOOL_SUBJECT_LABELS[props.subject]}`,
+      title: selectedDetail.value.title,
+      statusText: `${fmtPoints(subjTotals.earned_points)} / ${fmtPoints(subjTotals.max_points)} · ${subjTotals.confirmed_by_user ? '已核对' : '未核对'}`,
+      statusTone: subjTotals.confirmed_by_user ? 'good' : 'wait',
+    }
+  }
   return {
     eyebrow: '当前场次',
     title: selectedDetail.value.title,
@@ -552,17 +549,6 @@ const analysisSteps = computed<StepDefinition[]>(() => {
     },
   ]
 })
-
-async function selectStageSubject(subj: SchoolSubject) {
-  stageSubjectFilter.value = subj
-  if (selectedExamId.value) {
-    try {
-      errorAnalysis.value = await props.client.schoolExamErrorAnalysis(selectedExamId.value, subj)
-    } catch {
-      // ignore transient error
-    }
-  }
-}
 
 async function loadDetail(examId: string) {
   loadingDetail.value = true
@@ -723,34 +709,45 @@ async function refreshExams(preferId?: string, advanceToUpload = false) {
   }
 }
 
+function resetTransientSubjectState() {
+  paperFile.value = null
+  uploadError.value = ''
+  returningItemId.value = null
+  returnReasonInput.value = ''
+  stemExtractStatus.value = null
+  adminCoachOpenId.value = null
+  adminCoachCache.value = {}
+  lastParseInitExamId.value = null
+  selectedParseAttachmentIds.value = []
+  parseDraftError.value = ''
+  lastParseSummary.value = ''
+  draftFilter.value = 'all'
+  draftErrorItemId.value = null
+  draftEdits.value = {}
+  autoAssociatedExamIds.value = new Set()
+  confirmDeleteExamId.value = null
+}
+
 watch(
-  [() => props.client, () => props.subject],
+  () => props.client,
   () => {
-    stageSubjectFilter.value = props.subject
     scoreStep.value = 'pick'
     scorePickMode.value = 'list'
     paperStep.value = 'parse'
     itemStep.value = 'list'
     analysisStep.value = 'overview'
-    paperFile.value = null
-    uploadError.value = ''
-    returningItemId.value = null
-    returnReasonInput.value = ''
-    stemExtractStatus.value = null
-    adminCoachOpenId.value = null
-    adminCoachCache.value = {}
-    lastParseInitExamId.value = null
-    selectedParseAttachmentIds.value = []
-    parseDraftError.value = ''
-    lastParseSummary.value = ''
-    draftFilter.value = 'all'
-    draftErrorItemId.value = null
-    draftEdits.value = {}
-    autoAssociatedExamIds.value = new Set()
-    confirmDeleteExamId.value = null
+    resetTransientSubjectState()
     void refreshExams(props.initialExamId)
   },
-  { immediate: true }
+  { immediate: true },
+)
+
+watch(
+  () => props.subject,
+  () => {
+    resetTransientSubjectState()
+    void refreshExams(selectedExamId.value ?? props.initialExamId)
+  },
 )
 
 async function selectExam(examId: string) {
@@ -800,7 +797,7 @@ async function saveExam() {
       confirmedByUser: false,
     })
     props.notify(
-      `全科校考档案已创建（已在 school-exams 下建立档案目录）。${EXAM_NOTE}`,
+      `全科校考档案已创建（已在 data/school-exams 下建立档案目录）。${EXAM_NOTE}`,
       'success'
     )
     examTitle.value = ''
@@ -875,11 +872,18 @@ async function uploadPaper() {
 
 async function addItem() {
   if (!selectedDetail.value) return
-  const label = itemLabel.value.trim()
+  let label = itemLabel.value.trim()
   const kid = resolveKnowledgeCodeInput(itemKnowledgeId.value, props.subject)
   if (label === '' || kid === '' || itemEarned.value === '' || itemMax.value === '') {
     props.notify('请完整填写题号、所属知识点、小题得分与满分。', 'caution')
     return
+  }
+  if (
+    selectedDetail.value.subject === 'all' &&
+    inferSchoolExamItemSubject({ question_label: label, knowledge_id: '' }) === null
+  ) {
+    const subjPrefix = props.subject === 'ethics' ? '道德与法治' : SCHOOL_SUBJECT_LABELS[props.subject]
+    label = `${subjPrefix}·${label}`
   }
   const earnedNum = Number(itemEarned.value)
   const maxNum = Number(itemMax.value)
@@ -1632,7 +1636,7 @@ async function handleSyncPapersImported(examId: string) {
                 <p class="card-sub">
                   {{
                     scorePickMode === 'create'
-                      ? '新建档案不分科目、面向全科，并在 school-exams 下新建档案目录'
+                      ? '新建档案不分科目、面向全科，并在 data/school-exams 下新建档案目录'
                       : '先选定一场学校考试或新建档案，再进入第 2 步上传原卷'
                   }}
                 </p>
@@ -1655,7 +1659,7 @@ async function handleSyncPapersImported(examId: string) {
                   </button>
                 </div>
                 <HelpBubble v-if="scorePickMode === 'create'" compact title="校考建档口径" label="建档说明">
-                  <p>{{ EXAM_NOTE }} 新建档案不分科目面向全科，自动在 school-exams 下建立专属档案目录。</p>
+                  <p>{{ EXAM_NOTE }} 新建档案不分科目面向全科，自动在 data/school-exams 下建立专属档案目录。</p>
                 </HelpBubble>
               </div>
             </div>
@@ -1812,17 +1816,17 @@ async function handleSyncPapersImported(examId: string) {
 
             <div class="exam-detail" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);" aria-label="已归档原卷列表">
               <div class="card-head">
-                <span class="field-label" style="margin: 0;">已归档原卷与附件（{{ selectedDetail.attachments.length }}）</span>
+                <span class="field-label" style="margin: 0;">已归档原卷（{{ examPaperAttachments.length }}）</span>
                 <span class="chip good">原件校验已隔离</span>
               </div>
-              <p v-if="selectedDetail.attachments.length === 0" class="muted tiny" style="margin-top: 6px;">
-                还没有上传原卷附件。
+              <p v-if="examPaperAttachments.length === 0" class="muted tiny" style="margin-top: 6px;">
+                还没有上传原卷。
               </p>
               <ul v-else class="attachment-list" tabindex="0" aria-label="已归档原卷列表">
-                <li v-for="att in selectedDetail.attachments" :key="att.id" class="attachment-row">
+                <li v-for="att in examPaperAttachments" :key="att.id" class="attachment-row">
                   <div class="attachment-main">
                     <b>{{ att.filename }}</b>
-                    <span class="chip good">{{ att.category === 'answer_sheet' ? 'answer-sheet' : 'exam-paper' }}</span>
+                    <span class="chip good">exam-paper</span>
                     <span class="muted tiny">
                       {{ fmtBytes(att.byte_size) }} · {{ getMediaTypeLabel(att.media_type) }}
                     </span>
@@ -1860,12 +1864,13 @@ async function handleSyncPapersImported(examId: string) {
               :selected-exam-id="selectedExamId"
               @open-exam="openExamFromSync"
               @papers-imported="handleSyncPapersImported"
+              @step-change="syncCenterStep = $event"
             />
             <div class="card-footer-flow" style="margin-top: 12px;">
               <button type="button" class="ghost small" @click="scoreStep = 'upload'">
                 ← 上一步：上传原卷
               </button>
-              <button type="button" class="primary small" @click="enterPapersStage">
+              <button v-if="syncCenterStep === 4" type="button" class="primary small" @click="enterPapersStage">
                 下一步：进入第二阶段 · 明细提取与核对 →
               </button>
             </div>
@@ -2091,12 +2096,12 @@ async function handleSyncPapersImported(examId: string) {
                   <span v-if="scoreSummary.earnedDiff !== null" :class="['chip', scoreSummary.earnedDiff === 0 ? 'good' : 'wait']">
                     {{
                       scoreSummary.earnedDiff === 0
-                        ? `与卷面总分（${fmtPoints(selectedDetail.earned_points)} 分）完全吻合 ✓`
+                        ? `与卷面总分（${fmtPoints(currentSubjectPaperTotals?.earned_points ?? selectedDetail.earned_points)} 分）完全吻合 ✓`
                         : `与卷面总分差 ${scoreSummary.earnedDiff > 0 ? '+' : ''}${fmtPoints(scoreSummary.earnedDiff)} 分`
                     }}
                   </span>
                   <span v-else class="chip subtle">
-                    卷面总分待核对（参考 {{ fmtPoints(selectedDetail.earned_points) }} / {{ fmtPoints(selectedDetail.max_points) }} 分）
+                    卷面总分待核对（参考 {{ fmtPoints(currentSubjectPaperTotals?.earned_points ?? selectedDetail.earned_points) }} / {{ fmtPoints(currentSubjectPaperTotals?.max_points ?? selectedDetail.max_points) }} 分）
                   </span>
                 </div>
                 <div class="draft-summary-counts muted tiny">
@@ -2413,20 +2418,6 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-list>
           <section v-if="selectedDetail" class="card" aria-label="逐题得分与考点明细">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="明细查漏科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>已核对逐题得分与考点明细（{{ confirmedItems.length }}）</h3>
@@ -2608,20 +2599,6 @@ async function handleSyncPapersImported(examId: string) {
           </section>
 
           <section v-else class="card" aria-label="错误分析数据状态说明">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>本场错误分析 · {{ errorAnalysis.title }}</h3>
@@ -2669,20 +2646,6 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-overview>
           <section v-if="errorAnalysis" class="card" aria-label="本场失分概览与错因分布">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>本场失分概览与错因分布</h3>
@@ -2793,20 +2756,6 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-knowledge>
           <section v-if="errorAnalysis" class="card" aria-label="本场失分考点排行与交叉诊断">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>本场失分考点排行与交叉诊断</h3>
@@ -2894,20 +2843,6 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-history>
           <section v-if="errorAnalysis" class="card" aria-label="同科历次校考顽固失分点对比">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>同科历次校考顽固失分点对比</h3>
@@ -2963,20 +2898,6 @@ async function handleSyncPapersImported(examId: string) {
 
         <template #step-reflection>
           <section v-if="errorAnalysis && selectedDetail" class="card" aria-label="失分题干与学生复盘">
-            <div v-if="stageSubjectTabs.length > 0" class="exam-sync-subject-tabs" role="tablist" aria-label="诊断终点科目切换">
-              <button
-                v-for="tab in stageSubjectTabs"
-                :key="tab.subject"
-                type="button"
-                role="tab"
-                :aria-selected="stageSubjectFilter === tab.subject"
-                :class="['exam-sync-subject-tab', { active: stageSubjectFilter === tab.subject }]"
-                @click="selectStageSubject(tab.subject)"
-              >
-                <span>{{ tab.label }}</span>
-                <span class="chip tiny subtle">{{ tab.count }}</span>
-              </button>
-            </div>
             <div class="card-head">
               <div>
                 <h3>失分题干与学生复盘</h3>

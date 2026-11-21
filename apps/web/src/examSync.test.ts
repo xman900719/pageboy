@@ -10,6 +10,8 @@ import {
   getPaperNextStep,
   getReportActionMeta,
   groupSchoolReflectionsByExam,
+  inferSchoolAttachmentSubject,
+  inferSchoolExamItemSubject,
   isSchoolItemFullScore,
   parseDraftBasisTags,
   summarizeReportJob,
@@ -166,6 +168,23 @@ describe('examSync 四步状态与核对覆盖', () => {
     expect(coverage.attachments).toBe(1)
     expect(coverage.rankScopes).toEqual(['class'])
     expect(coverage.missingRankScopes).toEqual(['grade', 'school', 'region'])
+
+    const multiRanks: SchoolExamRanksPayload = {
+      exam_id: 'e-all',
+      ranks: [
+        { ...ranks.ranks[0], id: 'r-math', subject_scope: 'math', scope: 'class', rank_value: 13 },
+        { ...ranks.ranks[0], id: 'r-eng-c', subject_scope: 'english', scope: 'class', rank_value: 16 },
+        { ...ranks.ranks[0], id: 'r-eng-g', subject_scope: 'english', scope: 'grade', rank_value: 525 },
+      ],
+      missing_scopes: ['school', 'region'],
+      disclaimer: '不进入画像',
+    }
+    const mathCov = deriveReviewCoverage(detail({ subject: 'all' }), multiRanks, 'math')
+    expect(mathCov.rankScopes).toEqual(['class'])
+    expect(mathCov.missingRankScopes).toEqual(['grade', 'school', 'region'])
+    const engCov = deriveReviewCoverage(detail({ subject: 'all' }), multiRanks, 'english')
+    expect(engCov.rankScopes).toEqual(['class', 'grade'])
+    expect(engCov.missingRankScopes).toEqual(['school', 'region'])
   })
 
   it('没有考试档案时如实返回缺失，不把 0 当作分数', () => {
@@ -351,5 +370,83 @@ describe('examSync 四步状态与核对覆盖', () => {
     expect(groups[0].items.map(i => i.item_id)).toEqual(['i1', 'i3'])
     expect(groups[1].examId).toBe('e1')
     expect(groups[1].completedCount).toBe(1)
+  })
+
+  it('全科档案按当前科目推断学科（含 *_cand. 新版编码）并分别统计覆盖与分值汇总', () => {
+    expect(inferSchoolExamItemSubject({ question_label: '数学·1', knowledge_id: 'unmapped' })).toBe('math')
+    expect(inferSchoolExamItemSubject({ question_label: '第8题', knowledge_id: 'chinese_cand.base.contextual_expression' })).toBe('chinese')
+    expect(inferSchoolExamItemSubject({ question_label: '第2题', knowledge_id: 'ethics.general' })).toBe('ethics')
+    expect(inferSchoolAttachmentSubject({ filename: '报告答题卡-physics-第19页.png' })).toBe('physics')
+
+    const allDetail = detail({
+      subject: 'all',
+      earned_points: 273,
+      max_points: 420,
+      confirmed_by_user: true,
+      items: [
+        {
+          id: 'm1',
+          question_label: '数学·1',
+          knowledge_id: 'math_cand.num.rational',
+          earned_points: 2,
+          max_points: 2,
+          scoring_origin: 'ocr_draft',
+          confirmed_by_user: true,
+        },
+        {
+          id: 'm2',
+          question_label: '数学·2',
+          knowledge_id: 'math_cand.num.rational',
+          earned_points: 1,
+          max_points: 2,
+          scoring_origin: 'ocr_draft',
+          confirmed_by_user: false,
+        },
+        {
+          id: 'c1',
+          question_label: '语文·1',
+          knowledge_id: 'chinese_cand.base.contextual_expression',
+          earned_points: 2,
+          max_points: 2,
+          scoring_origin: 'ocr_draft',
+          confirmed_by_user: true,
+        },
+      ],
+      attachments: [
+        {
+          id: 'am',
+          filename: '报告答题卡-math-第9页.png',
+          media_type: 'image/png',
+          sha256: 'c'.repeat(64),
+          byte_size: 100,
+          created_at: '2026-11-21T00:00:00Z',
+        },
+        {
+          id: 'ac',
+          filename: '报告答题卡-chinese-第4页.png',
+          media_type: 'image/png',
+          sha256: 'd'.repeat(64),
+          byte_size: 100,
+          created_at: '2026-11-21T00:00:00Z',
+        },
+      ],
+    })
+
+    const mathCoverage = deriveReviewCoverage(allDetail, null, 'math')
+    expect(mathCoverage.confirmedItems).toBe(1)
+    expect(mathCoverage.draftItems).toBe(1)
+    expect(mathCoverage.attachments).toBe(1)
+
+    const mathSummary = summarizeSchoolExamItemScores(allDetail, 'math', {
+      earned_points: 3,
+      max_points: 4,
+      confirmed_by_user: true,
+    })
+    expect(mathSummary.totalEarned).toBe(3)
+    expect(mathSummary.totalMax).toBe(4)
+    expect(mathSummary.pendingCount).toBe(1)
+    expect(mathSummary.confirmedCount).toBe(1)
+    expect(mathSummary.earnedDiff).toBe(0)
+    expect(mathSummary.maxDiff).toBe(0)
   })
 })

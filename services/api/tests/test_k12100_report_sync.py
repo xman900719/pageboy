@@ -1014,3 +1014,85 @@ def test_k12100_report_sync_targets_archive_without_creating_ledger(client, auth
     rep_after = {row["subject"]: row for row in sc_after["synced_reports"][0]["exams"]}
     assert rep_after["math"]["confirmed_by_user"] is True
     assert rep_after["english"]["confirmed_by_user"] is False
+
+    # 多学科合并档案下的 /ranks 必须按 (subject_scope, scope) 完整返回各科排名，不得按 scope 互相覆盖
+    arc_ranks = client.get(f"/api/school-exams/{archive_id}/ranks", headers=auth).json()
+    subj_rank_keys = {(r["subject_scope"], r["scope"]): (r["rank_value"], r["history_count"]) for r in arc_ranks["ranks"]}
+    assert subj_rank_keys[("math", "class")] == (5, 1)
+    assert subj_rank_keys[("math", "grade")] == (35, 1)
+    assert subj_rank_keys[("english", "class")] == (8, 1)
+    assert subj_rank_keys[("english", "grade")] == (60, 1)
+    assert subj_rank_keys[("physics", "class")] == (4, 1)
+    assert subj_rank_keys[("physics", "grade")] == (28, 1)
+    assert subj_rank_keys[("ethics", "class")] == (6, 1)
+    assert subj_rank_keys[("ethics", "grade")] == (40, 1)
+    assert {(r["scope"], r["rank_value"]) for r in arc_ranks["total_ranks"]} == {("class", 6), ("grade", 38)}
+
+    # 在全科档案中写入不同科目的小题（含 *_cand. 编码）与附件后，synced_reports 必须按单科分别计数，不得混淆全科总和
+    # 注：上面 process_downloaded_reports 已在 archive_id 下生成了数学 2 条（1/2）未确认草稿。
+    session = next(app.dependency_overrides[get_db]())
+    try:
+        session.add_all(
+            [
+                m.SchoolExamItem(
+                    school_exam_id=archive_id,
+                    question_label="数学·101",
+                    knowledge_id="math_cand.num.rational",
+                    earned_points=2.0,
+                    max_points=2.0,
+                    scoring_origin="ocr_draft",
+                    confirmed_by_user=True,
+                ),
+                m.SchoolExamItem(
+                    school_exam_id=archive_id,
+                    question_label="数学·102",
+                    knowledge_id="math_cand.num.rational",
+                    earned_points=0.0,
+                    max_points=2.0,
+                    scoring_origin="ocr_draft",
+                    confirmed_by_user=False,
+                ),
+                m.SchoolExamItem(
+                    school_exam_id=archive_id,
+                    question_label="第103题",
+                    knowledge_id="english_cand.vocab.collocation_context",
+                    earned_points=2.0,
+                    max_points=2.0,
+                    scoring_origin="manual_entry",
+                    confirmed_by_user=True,
+                ),
+                m.SchoolPaperAttachment(
+                    school_exam_id=archive_id,
+                    owner_id="owner",
+                    filename="报告答题卡-math-第1页.png",
+                    media_type="image/png",
+                    sha256="1" * 64,
+                    byte_size=128,
+                    storage_key="k1",
+                ),
+                m.SchoolPaperAttachment(
+                    school_exam_id=archive_id,
+                    owner_id="owner",
+                    filename="报告答题卡-english-第2页.png",
+                    media_type="image/png",
+                    sha256="2" * 64,
+                    byte_size=128,
+                    storage_key="k2",
+                ),
+            ]
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    sc_counts = client.get(f"/api/school-exams/sync-center?exam_id={archive_id}", headers=auth).json()
+    by_subj_counts = {row["subject"]: row for row in sc_counts["synced_reports"][0]["exams"]}
+    assert by_subj_counts["math"]["confirmed_item_count"] == 1
+    assert by_subj_counts["math"]["draft_count"] == 3
+    assert by_subj_counts["math"]["attachment_count"] == 1
+    assert by_subj_counts["english"]["confirmed_item_count"] == 1
+    assert by_subj_counts["english"]["draft_count"] == 0
+    assert by_subj_counts["english"]["attachment_count"] == 1
+    assert by_subj_counts["physics"]["confirmed_item_count"] == 0
+    assert by_subj_counts["physics"]["draft_count"] == 0
+    assert by_subj_counts["physics"]["attachment_count"] == 0

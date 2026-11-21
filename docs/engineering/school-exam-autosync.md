@@ -51,7 +51,7 @@ uv run python scripts/school_exam_pipeline.py run --env development --collect-k1
 uv run python scripts/school_exam_pipeline.py acquire --env development
 ```
 
-默认目录：`$PAGEBOY_HOME/<development|production>/school-exams/inbox/`。API 只读取当前环境的该目录；CLI 的 `--source-dir` 只作为只读来源，文件复制到当前环境 inbox，原文件不删除、不改名。调用 API 需要 `SHUTONG_ADMIN_TOKEN` 或 `--admin-token`。
+默认目录：`$PAGEBOY_HOME/<development|production>/data/school-exams/inbox/`。API 只读取当前环境的该目录；CLI 的 `--source-dir` 只作为只读来源，文件复制到当前环境 inbox，原文件不删除、不改名。调用 API 需要 `SHUTONG_ADMIN_TOKEN` 或 `--admin-token`。
 
 `--collect-k12100` 只允许**恰好一份**唯一匹配试卷；零份或多份均 fail-closed，不猜测采集目标。采集任务仍默认 `confirm_total_scores=False`，真实账号/运行环境未配置时由 API 返回阻断，不会伪报完成。
 

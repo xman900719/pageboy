@@ -784,18 +784,7 @@ def discard_school_exam_item(
 
 
 def _infer_attachment_subject(filename: str, fallback: str = "math") -> str:
-    lower = str(filename or "").lower()
-    if "语文" in lower or "chinese" in lower:
-        return "chinese"
-    if "数学" in lower or "math" in lower:
-        return "math"
-    if "英语" in lower or "english" in lower:
-        return "english"
-    if "物理" in lower or "physics" in lower:
-        return "physics"
-    if "道德与法治" in lower or "道法" in lower or "ethics" in lower or "daofa" in lower:
-        return "ethics"
-    return fallback if fallback != "all" else "math"
+    return exam_pipeline.infer_attachment_subject(filename, fallback=fallback)
 
 
 _SUBJECT_CN_PREFIX: dict[str, str] = {
@@ -2191,30 +2180,8 @@ def delete_school_exam(
     }
 
 
-_SUBJECT_LABEL_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("语文·", "chinese"),
-    ("数学·", "math"),
-    ("英语·", "english"),
-    ("物理·", "physics"),
-    ("道德与法治·", "ethics"),
-    ("道法·", "ethics"),
-    ("历史·", "history"),
-    ("地理·", "geography"),
-    ("生物·", "biology"),
-    ("化学·", "chemistry"),
-)
-
-
 def _infer_school_item_subject(question_label: str, knowledge_id: str | None) -> str | None:
-    label = str(question_label or "").strip()
-    for prefix, code in _SUBJECT_LABEL_PREFIXES:
-        if label.startswith(prefix):
-            return code
-    kid = str(knowledge_id or "").strip().lower()
-    for code in ("chinese", "math", "english", "physics", "ethics", "history", "geography", "biology", "chemistry"):
-        if kid.startswith(f"{code}."):
-            return code
-    return None
+    return exam_pipeline.infer_school_item_subject(question_label, knowledge_id)
 
 
 @app.get("/api/school-exams/{exam_id}/error-analysis", response_model=SchoolExamErrorAnalysisOut)
