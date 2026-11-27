@@ -7,9 +7,9 @@
 #   阶段 C（退回开发用户 xc）：线上环回探针（app_revision/ready/静态资源/CF-Ray 403）与环境隔离复检
 #
 # 用法：
-#   bash scripts/release_prod.sh             # 从干净的 main 分支发布到生产并完成终验
+#   bash scripts/release_prod.sh --approve-sha=<完整SHA>  # 正式发布必须有独立授权
 #   bash scripts/release_prod.sh --dry-run   # 仅执行开发侧预检、打印发布命令并探测当前线上状态
-#   bash scripts/release_prod.sh --allow-non-main
+#   bash scripts/release_prod.sh --approve-sha=<完整SHA>
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,7 +19,7 @@ release_git="$prod_home/release.git"
 web_base_url="${WEB_BASE_URL:-http://127.0.0.1:8180}"
 
 dry_run=0
-allow_non_main=0
+approved_sha=""
 
 usage() {
   cat <<'EOF'
@@ -27,7 +27,7 @@ usage() {
 
 选项：
   --dry-run         仅执行开发侧只读预检、打印三阶段计划并查看当前线上状态，不执行 push 或 sudo 部署
-  --allow-non-main  允许从非 main 分支发布（默认要求当前位于 main 且与 origin/main 一致）
+  --approve-sha=SHA  正式发布必须显式确认完整 40 位已通过 CI 的 main SHA
   -h, --help        显示帮助
 EOF
 }
@@ -35,7 +35,7 @@ EOF
 for arg in "$@"; do
   case "$arg" in
     --dry-run) dry_run=1 ;;
-    --allow-non-main) allow_non_main=1 ;;
+    --approve-sha=*) approved_sha="${arg#*=}" ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$arg" >&2; usage >&2; exit 2 ;;
   esac
@@ -85,16 +85,15 @@ log "阶段 A · 开发侧预检 ($repo_root)"
 [[ -z "$(git -C "$repo_root" status --porcelain)" ]] || fail "工作区存在未提交改动，拒绝发布"
 
 branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD)"
-if [[ "$allow_non_main" -eq 0 ]]; then
-  [[ "$branch" == "main" ]] || fail "当前分支为 $branch，默认仅允许从 main 发布（如需例外请传 --allow-non-main）"
-  if git -C "$repo_root" show-ref --verify --quiet refs/remotes/origin/main; then
-    [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$(git -C "$repo_root" rev-parse origin/main)" ]] || \
-      fail "本地 main 与 origin/main 不一致，请先同步远端并确认 CI 通过"
-  fi
-fi
-
+[[ "$branch" == main ]] || fail "仅允许发布 main"
 target_sha="$(git -C "$repo_root" rev-parse HEAD)"
 target_rev="$(git -C "$repo_root" rev-parse --short HEAD)"
+remote_sha="$(git -C "$repo_root" ls-remote --exit-code origin refs/heads/main | cut -f1)"
+[[ "$target_sha" == "$remote_sha" ]] || fail "本地 HEAD 不是远端 main 当前 SHA"
+if [[ "$dry_run" -eq 0 ]]; then
+  [[ "$approved_sha" == "$target_sha" ]] || fail "正式发布须传 --approve-sha=$target_sha"
+fi
+python3 "$repo_root/scripts/check_release_ci.py" "$target_sha"
 echo "发布目标：$branch @ $target_rev ($target_sha)"
 
 bash "$repo_root/scripts/check_env_isolation.sh"
@@ -104,8 +103,8 @@ if [[ "$dry_run" -eq 1 ]]; then
   cat <<EOF
 1. [xc]       git -C "$repo_root" push "$release_git" HEAD:refs/heads/release
 2. [shutong-prod] 校验 prod.env 与四科 2022 课标 PDF 目录
-3. [shutong-prod] ENV_FILE="$prod_home/env/prod.env" bash infra/backup.sh
-4. [shutong-prod] git pull --ff-only && 核对 HEAD == $target_sha
+3. [shutong-prod] fetch release + 核对 SHA + fast-forward（不启动服务）
+4. [shutong-prod] ENV_FILE="$prod_home/env/prod.env" bash infra/backup.sh（必须返回确认快照 ID）
 5. [shutong-prod] ENV_FILE="$prod_home/env/prod.env" infra/deploy.sh --web
 6. [shutong-prod] alembic current + python -m shutong.taxonomy_audit
 7. [xc]       校验 $web_base_url (/health/live == api-$target_rev, ready, 静态资源, CF-Ray 403) + check_env_isolation.sh
@@ -142,16 +141,21 @@ sudo -iu shutong-prod bash -ceu '
   [[ "$pdf_count" -ge 4 ]] || { echo "课标原件目录 PDF 数量异常（$pdf_count < 4）：$standards_dir" >&2; exit 1; }
 
   cd "$prod_repo"
-  echo "-- 1/4 升级前执行 R2 联合冷备 --"
-  ENV_FILE="$prod_env" bash infra/backup.sh
+  echo "-- 1/4 fetch release 并核对 SHA（不更新运行中的服务） --"
+  [[ -z "$(git status --porcelain)" ]] || { echo "生产工作树不干净" >&2; exit 1; }
+  git fetch origin release
+  [[ "$(git rev-parse FETCH_HEAD)" == "$expected_sha" ]] || { echo "release SHA 不符" >&2; exit 1; }
+  git merge --ff-only "$expected_sha"
+  [[ "$(git rev-parse HEAD)" == "$expected_sha" ]] || exit 1
 
-  echo "-- 2/4 拉取 release 分支并核对 SHA ($expected_rev) --"
-  git pull --ff-only
-  actual_sha="$(git rev-parse HEAD)"
-  [[ "$actual_sha" == "$expected_sha" ]] || { echo "生产仓库 SHA ($actual_sha) 与推送目标 ($expected_sha) 不一致" >&2; exit 1; }
+  echo "-- 2/4 升级前使用新脚本执行 R2 联合备份 --"
+  [[ -z "${BACKUP_OUTPUT_DIR:-}" ]] || { echo "禁止本地演练备份作为生产发布门禁" >&2; exit 1; }
+  backup_result="$(ENV_FILE="$prod_env" bash infra/backup.sh)"
+  printf "%s\n" "$backup_result"
+  grep -Eq "^BACKUP_SNAPSHOT_OK=[0-9a-f]{8,64}$" <<<"$backup_result" || { echo "无已确认的异地快照 ID，停止发布" >&2; exit 1; }
 
   echo "-- 3/4 执行前端构建、镜像构建、迁移与容器替换 --"
-  ENV_FILE="$prod_env" bash infra/deploy.sh --web
+  EXPECTED_RELEASE_SHA="$expected_sha" SHUTONG_API_TAG="api-$expected_rev" ENV_FILE="$prod_env" bash infra/deploy.sh --web
 
   echo "-- 4/4 核对 Alembic 当前版本与四科 v2022.1.0 知识体系 --"
   docker compose --env-file "$prod_env" -f infra/compose.yaml -f infra/compose.local.yaml exec -T api alembic current

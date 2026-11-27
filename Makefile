@@ -9,6 +9,7 @@ diagrams:
 docs: diagrams
 	python scripts/check_docs.py
 	python -m pytest scripts/test_docs_checker.py -q
+	python scripts/test_st024b_gates.py
 openapi:
 	python scripts/check_openapi.py
 frontend-build:

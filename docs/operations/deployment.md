@@ -51,3 +51,8 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 - 真实 iPad 只访问生产（Cloudflare 隧道入口）；`scripts/run_dev_env.py` 的开发服务仅监听 `127.0.0.1`，由宿主机桌面模拟机访问。
 - 沿用现有密钥，暂不轮换；项目暂不对外发布。
 - 同机分离的目录/用户/Docker/发布流程与切换命令见 [prod-separation-runbook.md](prod-separation-runbook.md)（**脚本与手册已就绪，切换需 owner 以 sudo 执行，未执行前现网仍是旧布局**）；云迁移准备见 [cloud-migration.md](cloud-migration.md)；自检脚本 `scripts/check_env_isolation.sh`。
+
+
+## ST-024-B 候选发布门禁（未执行生产发布）
+
+推荐入口 `scripts/release_prod.sh --dry-run`；必须在干净 main 上，实时比对 origin/main，使用已认证的 GitHub CLI（`gh`）核验该 SHA 最新 push workflow 的五个作业。正式发布须另获 Owner 授权并传 `--approve-sha=<完整SHA>`，不允许非 main。生产工作树先校验并快进到指定提交（不启动服务），再用新备份脚本确认异地快照，随后才允许构建/迁移/切换。构建与迁移显式继承同一镜像标签。禁止以本地演练快照替代发布备份；直接调用底层部署/回滚脚本只限授权的独立运维操作，不代表通过一键发布门禁。实际恢复与版本兼容性仍需 ST-024-C，生产发布需 ST-024-D 单独授权。
