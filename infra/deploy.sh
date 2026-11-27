@@ -56,6 +56,14 @@ build_tag="${SHUTONG_API_TAG:-}"
 if [[ -z "$build_tag" ]]; then
   build_tag="api-$(git -C "$repo_root" rev-parse --short HEAD)"
 fi
+# Compose resolves image: from the environment for build AND run, not only up.
+if [[ -n "${EXPECTED_RELEASE_SHA:-}" ]]; then
+  [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$EXPECTED_RELEASE_SHA" &&
+     "$build_tag" == "api-$(git -C "$repo_root" rev-parse --short HEAD)" ]] || {
+    echo 'REFUSED: release SHA or image tag mismatch' >&2; exit 1;
+  }
+fi
+export SHUTONG_API_TAG="$build_tag"
 
 smoke() {
   local tag="$1"

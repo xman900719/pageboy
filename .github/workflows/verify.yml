@@ -22,6 +22,7 @@ jobs:
           python scripts/check_docs.py
           python scripts/check_openapi.py
           python -m pytest scripts/test_docs_checker.py -q
+          python scripts/test_st024b_gates.py
       - name: Build Docs as Code site (strict)
         run: |
           python -m pip install zensical
