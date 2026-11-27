@@ -110,9 +110,9 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
 
   // 第 1 步先建档进入第 2 步「上传原卷」，再进入第 3 步「全科校考同步」（测完在 UI 删除占位档案，保持空库给 J4）
   await page.getByLabel('考试名称').fill('视口巡检占位校考（虚构测试数据）')
-  await expect(page.getByLabel('获得分数')).toHaveValue('100')
-  await page.getByLabel('获得分数').fill('88')
-  await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
+  await page.getByLabel('考试日期').fill('2026-06')
+  await expect(page.getByLabel('获得分数')).toHaveCount(0)
+  await page.getByRole('button', { name: '提交考试信息并建档', exact: true }).click()
   await expect(page.getByRole('heading', { name: '上传原卷' })).toBeVisible()
 
   await page.locator('ol.step-pill-bar').getByRole('button', { name: /3\. 全科校考同步/ }).click()
@@ -120,6 +120,10 @@ test('R1 竖屏 810×1080：四视图无横向溢出，720 断点未触发，触
   await expectNoHorizontalOverflow(page)
 
   await page.locator('ol.step-pill-bar').getByRole('button', { name: /1\. 选定或新建校考档案/ }).click()
+  const placeholderRow = page.locator('.exam-item', { hasText: '视口巡检占位校考（虚构测试数据）' })
+  await expect(placeholderRow).toHaveCount(1)
+  await expect(placeholderRow).toContainText('全科')
+  await expect(placeholderRow).toContainText('未核对')
   await page.getByRole('button', { name: '删除 视口巡检占位校考（虚构测试数据）' }).click()
   await page.getByRole('button', { name: '确认删除 视口巡检占位校考（虚构测试数据）' }).click()
   await expect(page.getByLabel('考试名称')).toBeVisible()
