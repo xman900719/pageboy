@@ -395,7 +395,7 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
   await page.getByRole('button', { name: '道法' }).click()
 
   const examRegion = page.getByRole('region', { name: '学校考试总分' })
-  // 新建档案不分科目、面向全科；若已有全科档案，点击「＋ 新建 / 暂存档案」进入建档表单，取消勾选“我已人工核对总分”
+  // 新建档案不分科目、面向全科；若已有全科档案，点击「＋ 新建 / 暂存档案」进入建档表单，总分待后续核对
   const createModeBtn = examRegion.getByRole('button', { name: '＋ 新建 / 暂存档案' })
   if (await createModeBtn.isVisible()) {
     await createModeBtn.click()
@@ -407,7 +407,10 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
 
   await expect(page.getByRole('status')).toContainText('全科校考档案已创建')
   await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
-  await expect(examRegion.locator('.exam-list')).toContainText('未核对')
+  const ethicsRow = examRegion.locator('.exam-item', { hasText: '虚构测试数据：十月道法统一练习' })
+  await expect(ethicsRow).toHaveCount(1)
+  await expect(ethicsRow).toContainText('全科')
+  await expect(ethicsRow).toContainText('未核对')
 
   // 切至第二阶段「原卷提取与明细核对」Tab：未上传原卷且无待核对明细时，第 2 步「逐题明细核对台」应呈锁定拦截态
   await examRegion.getByRole('tab', { name: /原卷提取与明细核对/ }).click()
@@ -454,7 +457,8 @@ test('J4b 道法校考归档：暂存待核对、原卷上传与总分补录锁�
   await scoresPanel.getByRole('button', { name: /下一步：3\. 全科校考同步/ }).click()
   await expect(scoresPanel.getByRole('region', { name: '全科校考同步中心' })).toBeVisible()
   await examRegion.locator('ol.step-pill-bar').getByRole('button', { name: /选定或新建校考档案/ }).click()
-  await expect(examRegion.locator('.exam-list')).toContainText('50 / 50')
+  await expect(ethicsRow).toContainText('100 / 100')
+  await expect(ethicsRow).toContainText('未核对')
 
   // 切至「已核对明细与补录」第 2 步录入道法失分小题（确认后进入学生端待复盘）
   await examRegion.getByRole('tab', { name: /已核对明细与补录/ }).click()
@@ -1378,16 +1382,12 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
 
   await enterAdminSpace(page)
   await adminNavTab(page, /学校考试/).click()
-  const enterBtn = page.getByRole('button', { name: '提交考试信息' }).first()
-  const titleInput = page.getByLabel('考试名称')
-  await expect(enterBtn.or(titleInput)).toBeVisible()
-  if (await enterBtn.isVisible()) {
-    await enterBtn.click()
-  } else {
-    await titleInput.fill('同步入口占位校考（虚构测试数据）')
-    await page.getByRole('button', { name: /提交考试信息并建档|暂存全科档案/ }).click()
-  }
-  await page.getByRole('button', { name: /3\. 全科校考同步/ }).click()
+  const targetRow = page.getByRole('region', { name: '学校考试总分' })
+    .locator('.exam-item', { hasText: '虚构测试数据 · 九上10月月考 UI 核对' })
+  await expect(targetRow).toHaveCount(1)
+  await targetRow.getByRole('button', { name: '提交考试信息', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '上传原卷' })).toBeVisible()
+  await page.locator('ol.step-pill-bar').getByRole('button', { name: /3\. 全科校考同步/ }).click()
   const sync = page.getByRole('region', { name: '全科校考同步中心' })
   await expect(sync).toBeVisible()
   await expect(sync).toContainText('还没有发现试卷')
@@ -1400,6 +1400,7 @@ test('J10 全科校考同步中心：四步发现、冲突人工匹配、私有�
   // 直接进入「核对入档」：档案与排名均来自真实管理端接口
   await sync.getByRole('button', { name: /核对入档/ }).click()
   await expect(sync).toContainText('核对入档')
+  await expect(sync).toContainText('虚构测试数据 · 九上10月月考 UI 核对')
   await expect(sync).toContainText('总分待核对')
   await expect(sync).toContainText('第 5 名 / 320 人')
   await expect(sync).toContainText('待确认来源')
