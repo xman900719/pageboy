@@ -56,3 +56,10 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 ## ST-024-B 候选发布门禁（未执行生产发布）
 
 推荐入口 `scripts/release_prod.sh --dry-run`；必须在干净 main 上，实时比对 origin/main，使用已认证的 GitHub CLI（`gh`）核验该 SHA 最新 push workflow 的五个作业。正式发布须另获 Owner 授权并传 `--approve-sha=<完整SHA>`，不允许非 main。生产工作树先校验并快进到指定提交（不启动服务），再用新备份脚本确认异地快照，随后才允许构建/迁移/切换。构建与迁移显式继承同一镜像标签。禁止以本地演练快照替代发布备份；直接调用底层部署/回滚脚本只限授权的独立运维操作，不代表通过一键发布门禁。实际恢复与版本兼容性仍需 ST-024-C，生产发布需 ST-024-D 单独授权。
+
+
+## ST-024-C5 候选来源证明
+
+`deploy.sh` 的 API 构建从干净 Git 提交导出构建上下文，镜像记录完整 OCI revision；启动后核验运行镜像 ID。`--allow-dirty` 不再允许，`--no-build` 仅接受与当前干净 HEAD 相符的镜像；历史版本另走授权回滚。`--web` 从同一干净提交的独立导出树运行 `npm ci`、`npm run build`，再更新 dist 和本地 `.local/web-provenance.json`；失败不写入虚假的成功记录。构建需要 Python 3.11+（tarfile data filter）、flock、Git、Node/npm、Docker，首次构建使用独立 npm 缓存，网络受限时会失败停止。
+
+旧 Web 没有来源记录时，先备份原始可用产物并标为 UNVERIFIED，不回填。`rollback.sh` 仍为 API-only，C5 不提供生产原子 API/Web 切换或自动 DB 降级；需按恢复手册确认配对与兼容性。Web 目录更新与 API 切换不是跨服务原子事务。正式生产发布另行授权，C5 不执行。

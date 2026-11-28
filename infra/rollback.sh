@@ -23,6 +23,8 @@ STATE_DIR="$here/.local"
 PREVIOUS_TAG_FILE="$STATE_DIR/previous-tag"
 DEPLOYED_TAG_FILE="$STATE_DIR/deployed-tag"
 mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/artifact.lock"
+flock -x 9
 
 target="${1:-$(cat "$PREVIOUS_TAG_FILE" 2>/dev/null || true)}"
 [[ -n "$target" ]] || { echo "未指定标签且无 previous-tag 记录；用法：infra/rollback.sh <tag>" >&2; exit 2; }

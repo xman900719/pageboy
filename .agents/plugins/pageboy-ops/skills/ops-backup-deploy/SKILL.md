@@ -31,9 +31,5 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "CF-Ray: simulated-edge" http://127.
 ## 3. R2 异地联合备份与独立隔离恢复演练（ST-OPS-01 / AC-OPS-01~02）
 
 - 权威策略：修改备份策略只改 [docs/operations/backup-policy.md](../../../../docs/operations/backup-policy.md)，其余手册引用它。
-- 隔离恢复冒烟脚本（在独立临时容器/目录中验证 DB 行数、迁移版本与附件 SHA-256 字节一致性，不触碰生产库）：
-  ```bash
-  PATH="$PWD/.venv/bin:$PATH" python scripts/smoke_joint_restore.py
-  bash scripts/restore_drill.sh
-  ```
+- ST-024-C1/C2 仅允许普通开发用户执行 `.venv/bin/python scripts/smoke_joint_restore.py`（已有原生 PG16；私有 Unix Socket；全合成数据）。禁止运行旧版 Compose 演练、任意 DB URL 恢复、生产 Docker 或旧 R2 恢复脚本；R2 真实快照恢复待 C3 独立授权与门禁。详见 [隔离恢复手册](../../../../docs/operations/recovery-runbook.md)。
 - **严禁未授权执行**：`restic forget`、`restic prune`、生产库 `pg_restore` 覆盖或删除生产备份仓库。

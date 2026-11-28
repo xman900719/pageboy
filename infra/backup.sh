@@ -6,13 +6,9 @@
 #   ATTACHMENTS_DIR     private attachments root (default: /media/xc/backup_ext4/pageboy-home/production/data/attachments, resolved).
 #                       Missing/inaccessible dir => fail closed.
 #   MIGRATION_REVISION  optional assertion of the actual database revision; never an override.
-#   BACKUP_OUTPUT_DIR   LOCAL DRILL MODE: when set, skip restic entirely and copy the artifact set
-#                       (postgres.dump, attachments.tar.gz, SHA256SUMS, manifest.txt) into this directory.
-#                       本地演练模式，非异地备份，不满足 3-2-1，不构成 AC-OPS-01。
+# Local synthetic drill: backup.sh --local-drill <private-run-dir> source (no Docker/R2).
+# Legacy BACKUP_OUTPUT_DIR mode is refused before Docker access.
 #   ENV_FILE            env file to source and pass to docker compose (default: .env in infra/).
-#                       The drill sets this to a generated /tmp env so no infra/.env is ever created.
-#   COMPOSE_PROJECT_NAME  honored from ENV_FILE (exported via `set -a; source`) so `compose exec db`
-#                       targets the drill project instead of the default one.
 #   KUMA_PUSH_URL       optional Uptime Kuma push URL: on SUCCESSFUL backup+check, send one
 #                       push so Kuma's timeout (>12min silence) raises the "距上次成功备份>5h" alarm.
 #                       Push failure is a WARNING only — the backup itself stays valid.
@@ -26,31 +22,33 @@ umask 077
 here="$(cd "$(dirname "$0")" && pwd)"
 cd "$here"
 repo_root="$(cd .. && pwd)"
+if [[ "${1:-}" == --local-drill ]]; then
+  [[ $# -eq 3 ]] || { echo 'REFUSED: invalid local-drill arguments' >&2; exit 1; }
+  exec python3 "$repo_root/scripts/st024c_local.py" backup "$2" "$3"
+fi
+[[ $# -eq 0 && -z "${BACKUP_OUTPUT_DIR:-}" ]] || { echo 'REFUSED: legacy local backup or invalid arguments' >&2; exit 1; }
 ENV_FILE="${ENV_FILE:-.env}"
 if [[ ! -f "$ENV_FILE" ]]; then echo "missing env file: $ENV_FILE" >&2; exit 1; fi
 # shellcheck source=/dev/null
 set -a; source "$ENV_FILE"; set +a
 
-local_drill=0
-if [[ -n "${BACKUP_OUTPUT_DIR:-}" ]]; then
-  local_drill=1
-  [[ ! -e "$BACKUP_OUTPUT_DIR" || ( -d "$BACKUP_OUTPUT_DIR" && -z "$(ls -A "$BACKUP_OUTPUT_DIR")" ) ]] || {
-    echo 'REFUSED: local drill output must be empty' >&2; exit 1;
-  }
-fi
-
-if [[ "$local_drill" -eq 0 ]]; then
-  : "${RESTIC_REPOSITORY:?restic repository must be set}"
-  : "${RESTIC_PASSWORD_FILE:?restic password file required}"
-  command -v restic >/dev/null || { echo 'restic not installed' >&2; exit 1; }
-fi
+[[ -z "${BACKUP_OUTPUT_DIR:-}" ]] || { echo 'REFUSED: legacy local backup mode' >&2; exit 1; }
+# Serialize backup, deploy and rollback; no production lock acquired by the C5 installer.
+STATE_DIR="$here/.local"
+mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/artifact.lock"
+flock -x 9
+helper="$repo_root/scripts/web_artifact_provenance.py"
+: "${RESTIC_REPOSITORY:?restic repository must be set}"
+: "${RESTIC_PASSWORD_FILE:?restic password file required}"
+command -v restic >/dev/null || { echo 'restic not installed' >&2; exit 1; }
 
 # A missing attachment root is a failed joint backup, never a DB-only success.
 attachments_requested="${ATTACHMENTS_DIR:-${SHUTONG_ATTACHMENTS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/attachments}}"
 attachments_dir="$(cd "$attachments_requested" 2>/dev/null && pwd)" || {
   echo 'REFUSED: attachment directory missing or inaccessible' >&2; exit 1;
 }
-if [[ -n "${SHUTONG_ATTACHMENTS_DIR:-}" && "$local_drill" -eq 0 ]]; then
+if [[ -n "${SHUTONG_ATTACHMENTS_DIR:-}" ]]; then
   mounted_dir="$(cd "$SHUTONG_ATTACHMENTS_DIR" 2>/dev/null && pwd)" || exit 1
   [[ "$mounted_dir" == "$attachments_dir" ]] || { echo 'REFUSED: attachment roots disagree' >&2; exit 1; }
 fi
@@ -65,11 +63,27 @@ migration_revision="$(read_revision)"
 [[ -z "${MIGRATION_REVISION:-}" || "$MIGRATION_REVISION" == "$migration_revision" ]] || {
   echo 'REFUSED: expected database revision differs from actual revision' >&2; exit 1;
 }
-if [[ "$local_drill" -eq 0 ]]; then
-  app_revision="$(compose_db exec -T api printenv SHUTONG_APP_REVISION)"
-else
-  app_revision="${APP_REVISION:-local-drill}"
-fi
+api_identity() {
+  local tag cid image config_image tagged label deployed
+  tag="$(compose_db exec -T api printenv SHUTONG_APP_REVISION)" || return 1
+  cid="$(compose_db ps -q api)" || return 1
+  [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || { echo 'REFUSED: ambiguous API container' >&2; return 1; }
+  image="$(docker inspect --format '{{.Image}}' "$cid")" || return 1
+  config_image="$(docker inspect --format '{{.Config.Image}}' "$cid")" || return 1
+  [[ "$(docker inspect --format '{{.State.Running}}' "$cid")" == true ]] || return 1
+  tagged="$(docker image inspect --format '{{.Id}}' "shutong-api:$tag")" || return 1
+  label="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" || return 1
+  deployed="$(cat "$STATE_DIR/deployed-tag")" || return 1
+  local meta
+  meta="$(python3 "$helper" api "$tag" "$deployed" "$config_image" "$image" "$tagged" "$label")" || return 1
+  if [[ "$label" =~ ^[0-9a-f]{40}$ ]]; then
+    [[ "$(git -C "$repo_root" cat-file -t "$label")" == commit ]] || { echo 'REFUSED: API Git commit unavailable' >&2; return 1; }
+  fi
+  printf '%s\n' "$meta"
+  printf 'app_revision=%s\ncontainer_id=%s\n' "$tag" "$cid"
+}
+api_before="$(api_identity)"
+app_revision="$(sed -n 's/^app_revision=//p' <<<"$api_before")"
 [[ "$app_revision" =~ ^[[:alnum:]_.-]+$ && "$app_revision" != unknown && "$app_revision" != dev ]] || { echo 'REFUSED: unknown application revision' >&2; exit 1; }
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"; rm -f "$work.restic.json"' EXIT
@@ -81,19 +95,24 @@ test -s "$work/postgres.dump"
 # A changing/unreadable attachment tree makes tar fail under set -e.
 tar czf "$work/attachments.tar.gz" -C "$attachments_dir" .
 [[ "$(read_revision)" == "$migration_revision" ]] || { echo 'REFUSED: database revision changed during joint backup' >&2; exit 1; }
-( cd "$work" && sha256sum postgres.dump attachments.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS )
+web_meta="$(python3 "$helper" archive "$repo_root/apps/web/dist" "$STATE_DIR/web-provenance.json" "$work/web-dist.tar.gz")"
+web_sha="$(sed -n 's/^web_source_git_sha=//p' <<<"$web_meta")"
+if [[ "$web_sha" != UNVERIFIED ]]; then
+  [[ "$(git -C "$repo_root" cat-file -t "$web_sha")" == commit ]] || { echo 'REFUSED: Web Git commit unavailable' >&2; exit 1; }
+fi
+[[ "$(api_identity)" == "$api_before" ]] || { echo 'REFUSED: API changed during backup' >&2; exit 1; }
+[[ "$(read_revision)" == "$migration_revision" ]] || { echo 'REFUSED: DB changed during Web backup' >&2; exit 1; }
 
 printf 'timestamp_utc=%s\napp_revision=%s\nmigration_revision=%s\nattachments_included=%s\nattachment_count=%s\n' \
   "$(date -u +%FT%TZ)" "$app_revision" "$migration_revision" "$attachments_included" "$attachment_count" > "$work/manifest.txt"
 
-if [[ "$local_drill" -eq 1 ]]; then
-  mkdir -p "$BACKUP_OUTPUT_DIR"
-  cp "$work/postgres.dump" "$work/SHA256SUMS" "$work/manifest.txt" "$BACKUP_OUTPUT_DIR/"
-  cp "$work/attachments.tar.gz" "$BACKUP_OUTPUT_DIR/"
-  echo 'WARNING: 本地演练模式，非异地备份，不满足 3-2-1（docs/operations/backup-policy.md）；不能据此宣称 AC-OPS-01 或任何 RPO/RTO。' >&2
-  printf 'Local drill backup written to %s. THIS IS NOT AN OFFSITE BACKUP.\n' "$BACKUP_OUTPUT_DIR"
-  exit 0
-fi
+{
+  printf 'artifact_format=2\n'
+  grep -E '^api_(git_sha|image_id)=' <<<"$api_before"
+  printf '%s\n' "$web_meta"
+} >> "$work/manifest.txt"
+( cd "$work" && sha256sum postgres.dump attachments.tar.gz web-dist.tar.gz manifest.txt > SHA256SUMS )
+python3 "$helper" verify "$work"
 
 # Backup and verify the specific snapshot; destructive retention is separate maintenance.
 restic backup "$work" --tag shutong-foundation --json > "$work.restic.json"

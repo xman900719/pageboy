@@ -31,3 +31,13 @@
 - 附件目录缺失、实际 DB 迁移版本未知或不一致、快照 ID 无法确认均阻断成功；本地演练不得覆盖非空输出目录。备份清单记录运行中的应用身份与实际数据库迁移版本。
 - 备份成功心跳仅在具体 restic 快照确认及 `restic check` 通过后发送；不等同于完整恢复成功。常规备份不再执行 `forget/prune`，保留目标不变，需另行经 Owner 明确授权与独立备份确认安排保留期维护并监控容量。
 - DB 快照与附件 tar 顺序采集并非跨存储原子事务；真实协调停写、异地恢复、RPO/RTO 及附件与数据库引用一致性在 ST-024-C 验证，不得据此放行生产。
+
+## ST-024-C1/C2 候选隔离门禁
+
+本地演练改用普通用户独立 PostgreSQL 16 私有 Unix Socket，旧 `BACKUP_OUTPUT_DIR` 路径拒绝；参见 [隔离恢复手册](recovery-runbook.md)。本地合成数据演练保留四工件格式，但不运行生产 Compose/restic 路径，不代表生产备份链已重新实测。R2 真实快照与迁移/回滚、RPO/RTO 留待独立授权的后续阶段。
+
+## ST-024-C5 候选联合工件契约（待现场验证）
+
+- 新格式 `artifact_format=2`：除 DB dump、附件 tar、manifest 与 SHA256SUMS 外，纳入 `web-dist.tar.gz`；清单同时覆盖 dump、附件、Web tar、manifest 四项。文件树摘要按 UTF-8 相对路径排序，逐项计算 `path + NUL + sha256 + LF` 的 SHA256，并记录文件数。
+- API 来源来自运行容器的实际 image ID、部署标签、镜像标签及构建时 OCI revision 的交叉核验；完整 SHA 必须是本地已有的 Git commit。旧镜像缺 OCI revision 时为 UNVERIFIED，不推断完整 SHA。Web 来源来自干净提交导出的构建流程，缺旧记录时仍归档实际 dist，但来源为 UNVERIFIED；已有记录与实际文件树不符、归档不完整或身份不一致则失败，不发成功心跳。
+- deploy、backup、rollback 共享本地工件锁；不能替代 DB 与附件协调停写、独立备份、全机恢复及镜像保留策略。仅归档 API 镜像身份，不归档镜像本体，不承诺相同镜像可重建。C5 不修改本策略的 RPO/RTO 或保留目标，不执行生产备份。

@@ -25,6 +25,10 @@ docs/operations/backup-policy.md 的实际演练记录证明，不因本脚本�
 """
 from __future__ import annotations
 
+# C1/C2 quarantine must run before project imports or environment access.
+if __name__ == "__main__":
+    raise SystemExit("REFUSED: legacy real-snapshot verifier disabled pending ST-024-C3; use smoke_joint_restore.py for synthetic drill")
+
 import argparse
 import json
 import os
