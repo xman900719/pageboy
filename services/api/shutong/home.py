@@ -173,7 +173,7 @@ def default_school_exams_dir(
     """返回当前环境校考文件统一存储根目录（位于 pageboy-home/<env>/data/school-exams/）。"""
     env = normalize_environment(environment)
     override = os.getenv("SHUTONG_SCHOOL_EXAMS_DIR", "").strip()
-    if override and environment is None and home_root is None:
+    if override and home_root is None and env == normalize_environment():
         return assert_no_cross_environment_path(override, expected_env=env, home_root=home_root)
     env_dir = get_env_home(env, home_root=home_root)
     return env_dir / "data" / "school-exams"

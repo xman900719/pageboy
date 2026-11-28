@@ -20,6 +20,8 @@ services:
       # ST-017：镜像标签透传进应用，/health/live 的 app_revision 因此可证明"哪个构建在服务"。
       SHUTONG_APP_REVISION: ${SHUTONG_API_TAG:-dev}
       SHUTONG_STANDARDS_DIR: /app/private-data/curriculum_standards
+      # Keep the school archive under the existing persistent, backed-up bind mount.
+      SHUTONG_SCHOOL_EXAMS_DIR: /var/lib/shutong/attachments/school-exams
     volumes:
       # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
       - ${SHUTONG_ATTACHMENTS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/attachments}:/var/lib/shutong/attachments

@@ -70,6 +70,12 @@ api_identity() {
   [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || { echo 'REFUSED: ambiguous API container' >&2; return 1; }
   mounts="$(docker inspect --format '{{json .Mounts}}' "$cid")" || return 1
   python3 "$helper" mount "$mounts" "$attachments_dir" || return 1
+  # The old 0022 runtime predates relative-path storage; the new runtime must use the covered root.
+  if [[ "$migration_revision" != 0022 ]]; then
+    [[ "$(compose_db exec -T api printenv SHUTONG_SCHOOL_EXAMS_DIR)" == /var/lib/shutong/attachments/school-exams ]] || {
+      echo 'REFUSED: school archive outside backed-up attachment root' >&2; return 1;
+    }
+  fi
   image="$(docker inspect --format '{{.Image}}' "$cid")" || return 1
   config_image="$(docker inspect --format '{{.Config.Image}}' "$cid")" || return 1
   [[ "$(docker inspect --format '{{.State.Running}}' "$cid")" == true ]] || return 1
@@ -89,6 +95,15 @@ app_revision="$(sed -n 's/^app_revision=//p' <<<"$api_before")"
 [[ "$app_revision" =~ ^[[:alnum:]_.-]+$ && "$app_revision" != unknown && "$app_revision" != dev ]] || { echo 'REFUSED: unknown application revision' >&2; exit 1; }
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"; rm -f "$work.restic.json"' EXIT
+read_refs() {
+  local query
+  query=$(cat <<'REFSQL'
+SELECT COALESCE(json_agg(json_build_array(storage_key,sha256,byte_size,rel) ORDER BY storage_key,sha256,byte_size,rel), '[]'::json) FROM (SELECT storage_key,sha256,byte_size,to_jsonb(t)->>'relative_path' AS rel FROM public.source_attachments t UNION ALL SELECT storage_key,sha256,byte_size,to_jsonb(t)->>'relative_path' AS rel FROM public.school_paper_attachments t UNION ALL SELECT storage_key,sha256,byte_size,to_jsonb(t)->>'relative_path' AS rel FROM public.school_exam_papers t UNION ALL SELECT storage_key,sha256,byte_size,to_jsonb(t)->>'relative_path' AS rel FROM public.school_exam_reports t UNION ALL SELECT storage_key,sha256,byte_size,to_jsonb(t)->>'relative_path' AS rel FROM public.school_exam_report_attachments t) refs
+REFSQL
+)
+  compose_db exec -T db sh -c 'exec psql -X -w -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' _ "$query"
+}
+refs_before="$(read_refs)"
 # A consistent pg_dump snapshot (custom format) from the compose db service.
 docker compose --env-file "$ENV_FILE" -f compose.yaml exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$work/postgres.dump"
 test -s "$work/postgres.dump"
@@ -115,6 +130,8 @@ printf 'timestamp_utc=%s\napp_revision=%s\nmigration_revision=%s\nattachments_in
 } >> "$work/manifest.txt"
 ( cd "$work" && sha256sum postgres.dump attachments.tar.gz web-dist.tar.gz manifest.txt > SHA256SUMS )
 python3 "$helper" verify "$work"
+[[ "$(read_refs)" == "$refs_before" ]] || { echo 'REFUSED: attachment references changed during backup' >&2; exit 1; }
+printf '%s\n' "$refs_before" | python3 "$helper" refs "$work/attachments.tar.gz"
 
 # Backup and verify the specific snapshot; destructive retention is separate maintenance.
 restic backup "$work" --tag shutong-foundation --json > "$work.restic.json"
