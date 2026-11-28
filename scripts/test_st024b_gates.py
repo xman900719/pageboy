@@ -58,6 +58,7 @@ case "$*" in
   *pg_dump*) printf 'synthetic dump' ;;
   *printenv*) printf 'api-aaaaaaa\n' ;;
   *'ps -q api'*) printf 'aaaaaaaaaaaa\n' ;;
+  *'.Mounts'*) printf '[{"Type":"bind","Source":"%s","Destination":"/var/lib/shutong/attachments"}]\n' "${TEST_MOUNT:-$ATTACHMENTS_DIR}" ;;
   *'.Config.Image'*) printf 'shutong-api:api-aaaaaaa\n' ;;
   *'.State.Running'*) printf 'true\n' ;;
   *'.Config.Labels'*) printf '%s\n' "${TEST_LABEL:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
@@ -107,6 +108,11 @@ esac""")
     def test_api_mismatch_refused(self):
         r = self.run_backup(TEST_LABEL="cccccccccccccccccccccccccccccccccccccccc")
         self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("restic", self.calls())
+    def test_mount_mismatch_refused(self):
+        r = self.run_backup(TEST_MOUNT=str(self.root / "wrong"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("attachment mount differs", r.stderr)
         self.assertNotIn("restic", self.calls())
     def test_remote_stub_success(self):
         r = self.run_backup()

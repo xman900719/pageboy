@@ -196,6 +196,35 @@ def api_identity(tag, deployed, config_image, running_id, tagged_id, label):
     return {'api_git_sha':revision,'api_image_id':running_id}
 
 
+def validate_attachments(archive, expected_count):
+    """Accept GNU tar -C DIR . and canonical relative names; never extract."""
+    entries = {}
+    with tarfile.open(regular(archive), 'r:gz') as t:
+        for m in t:
+            name = m.name
+            if name == '.':
+                need(m.isdir() and '' not in entries, 'invalid attachment root')
+                entries[''] = False
+                continue
+            if name.startswith('./'):
+                name = name[2:]
+            name_ok(name)
+            need(name not in entries and (m.isfile() or m.isdir()), 'duplicate/link/special attachment entry')
+            entries[name] = m.isfile()
+    for name in entries:
+        need(not any(entries.get(str(p), False) for p in PurePosixPath(name).parents), 'attachment file as parent')
+    need(sum(entries.values()) == expected_count, 'attachment count mismatch')
+
+
+def verify_mount(raw, directory):
+    mounts = json.loads(raw)
+    need(isinstance(mounts, list), 'invalid container mounts')
+    matches = [m for m in mounts if m.get('Destination') == '/var/lib/shutong/attachments']
+    need(len(matches) == 1 and matches[0].get('Type') == 'bind', 'attachment bind mount missing or ambiguous')
+    source = matches[0].get('Source', '')
+    need(isinstance(source, str) and os.path.isabs(source) and os.path.realpath(source) == os.path.realpath(directory), 'attachment mount differs from backup root')
+
+
 def manifest(path):
     result={}
     for line in regular(path).read_text().splitlines():
@@ -226,6 +255,7 @@ def validate_bundle(root):
     need(set(sums)==expected,'incomplete checksum list')
     need({p.name for p in root.iterdir()} == expected|{'manifest.txt','SHA256SUMS'},'unexpected bundle entries')
     for n,d in sums.items(): need(sha(root/n)==d,'checksum mismatch: '+n)
+    validate_attachments(root/'attachments.tar.gz', int(m['attachment_count']))
     if modern:
         need(re.fullmatch('[0-9a-f]{64}',m['web_tree_sha256']) and re.fullmatch('[1-9][0-9]*',m['web_file_count']), 'invalid Web tree metadata')
         need(archive_digest(root/'web-dist.tar.gz')==(m['web_tree_sha256'],int(m['web_file_count'])),'archive tree mismatch')
@@ -253,7 +283,7 @@ def restore_web(root,dest):
 
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest='cmd',required=True)
-    for cmd,args in [('build',('repo','state')),('export',('repo','revision','dest')),('archive',('dist','record','archive')),('restore',('root','dest')),('verify',('root',)),('api',('tag','deployed','config_image','running_id','tagged_id','label'))]:
+    for cmd,args in [('build',('repo','state')),('export',('repo','revision','dest')),('archive',('dist','record','archive')),('restore',('root','dest')),('verify',('root',)),('api',('tag','deployed','config_image','running_id','tagged_id','label')),('mount',('raw','directory'))]:
         sub=s.add_parser(cmd)
         for arg in args: sub.add_argument(arg)
     a=p.parse_args(); d=vars(a); cmd=d.pop('cmd')
@@ -263,6 +293,7 @@ def main():
         if cmd=='archive': result=archive_tree(Path(a.dist),Path(a.record),Path(a.archive))
         elif cmd=='restore': restore_web(Path(a.root),Path(a.dest)); return
         elif cmd=='verify': validate_bundle(Path(a.root)); print('BUNDLE_CHECK_OK'); return
+        elif cmd=='mount': verify_mount(a.raw,a.directory); return
         else: result=api_identity(**d)
         for k,v in result.items(): print(f'{k}={v}')
     except (OSError,ValueError,TypeError,tarfile.TarError,subprocess.SubprocessError) as e:

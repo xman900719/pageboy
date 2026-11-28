@@ -23,7 +23,9 @@ class ArtifactTest(unittest.TestCase):
         if recorded: self.write_record()
         m=w.archive_tree(self.dist,self.record,self.bundle/'web-dist.tar.gz')
         m.update(timestamp_utc='2026-11-27T00:00:00Z',app_revision='api-aaaaaaa',migration_revision='0023',attachments_included='yes',attachment_count='1',artifact_format='2',api_git_sha='a'*40,api_image_id='sha256:'+'b'*64)
-        for n in w.BASE_FILES: (self.bundle/n).write_bytes(b'synthetic')
+        (self.bundle/'postgres.dump').write_bytes(b'synthetic')
+        with tarfile.open(self.bundle/'attachments.tar.gz','w:gz') as t:
+            entry=tarfile.TarInfo('blob'); entry.size=3; t.addfile(entry,io.BytesIO(b'abc'))
         (self.bundle/'manifest.txt').write_text(''.join(f'{k}={v}\n' for k,v in m.items()))
         self.sums(); return m
     def sums(self):
@@ -56,6 +58,26 @@ class ArtifactTest(unittest.TestCase):
     def test_manifest_hash(self):
         self.bundle_setup();p=self.bundle/'manifest.txt';p.write_text(p.read_text().replace('0023','0022'))
         with self.assertRaises(ValueError): w.validate_bundle(self.bundle)
+    def test_attachment_invalid_archive(self):
+        self.bundle_setup(); (self.bundle/'attachments.tar.gz').write_bytes(b'not a tar'); self.sums()
+        with self.assertRaises((ValueError,tarfile.TarError)): w.validate_bundle(self.bundle)
+    def test_attachment_unsafe_archive(self):
+        self.bundle_setup()
+        for names,kind in [(['../escape'],tarfile.REGTYPE),(['/absolute'],tarfile.REGTYPE),(['link'],tarfile.SYMTYPE),(['hard'],tarfile.LNKTYPE),(['pipe'],tarfile.FIFOTYPE),(['blob','./blob'],tarfile.REGTYPE)]:
+            with self.subTest(names=names,kind=kind):
+                with tarfile.open(self.bundle/'attachments.tar.gz','w:gz') as t:
+                    for name in names:
+                        m=tarfile.TarInfo(name); m.type=kind; t.addfile(m,io.BytesIO(b''))
+                self.sums()
+                with self.assertRaises(ValueError): w.validate_bundle(self.bundle)
+    def test_attachment_count(self):
+        self.bundle_setup(); p=self.bundle/'manifest.txt'; p.write_text(p.read_text().replace('attachment_count=1','attachment_count=2')); self.sums()
+        with self.assertRaises(ValueError): w.validate_bundle(self.bundle)
+    def test_mount_type_and_cardinality(self):
+        mount={'Type':'bind','Source':str(self.p),'Destination':'/var/lib/shutong/attachments'}
+        w.verify_mount(json.dumps([mount]),self.p)
+        for mounts in ([],[mount,mount],[dict(mount,Type='volume')],[dict(mount,Source='/wrong')]):
+            with self.assertRaises(ValueError): w.verify_mount(json.dumps(mounts),self.p)
     def test_manifest_tree(self):
         self.bundle_setup();p=self.bundle/'manifest.txt';p.write_text(p.read_text().replace('web_file_count=3','web_file_count=4'));self.sums()
         with self.assertRaises(ValueError): w.validate_bundle(self.bundle)

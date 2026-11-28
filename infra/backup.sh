@@ -64,10 +64,12 @@ migration_revision="$(read_revision)"
   echo 'REFUSED: expected database revision differs from actual revision' >&2; exit 1;
 }
 api_identity() {
-  local tag cid image config_image tagged label deployed
+  local tag cid image config_image tagged label deployed mounts
   tag="$(compose_db exec -T api printenv SHUTONG_APP_REVISION)" || return 1
   cid="$(compose_db ps -q api)" || return 1
   [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || { echo 'REFUSED: ambiguous API container' >&2; return 1; }
+  mounts="$(docker inspect --format '{{json .Mounts}}' "$cid")" || return 1
+  python3 "$helper" mount "$mounts" "$attachments_dir" || return 1
   image="$(docker inspect --format '{{.Image}}' "$cid")" || return 1
   config_image="$(docker inspect --format '{{.Config.Image}}' "$cid")" || return 1
   [[ "$(docker inspect --format '{{.State.Running}}' "$cid")" == true ]] || return 1

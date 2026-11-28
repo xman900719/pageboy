@@ -36,7 +36,7 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 
 事实与边界（实现时如实记录）：
 
-- 镜像按 git 短 SHA 打标签；`SHUTONG_APP_REVISION` 透传进容器，`/health/live` 因此返回 `app_revision`，"哪个构建在服务"可经应用自身证明，不靠宿主机 `docker inspect`。
+- 镜像按 git 短 SHA 打标签；`SHUTONG_APP_REVISION` 透传进容器，`/health/live` 返回 `app_revision`；C5 另核验 OCI 完整 revision 和实际镜像 ID，不能仅凭应用自报版本证明来源。
 - 部署流程：构建 → 同镜像一次性容器 `alembic upgrade head`（幂等，head 已达成时为无操作）→ 仅替换 api 服务（db 卷与附件 bind mount 不触碰）→ 就绪等待 + 冒烟（live/ready/subjects/web 四项）。
 - **回滚只切镜像，不降级 schema**：结构回滚属数据决策，须人工判断 + 独立备份确认，流程见 [recovery-runbook.md](recovery-runbook.md)。
 - 回滚目标镜像必须仍在本地：`deploy.sh` 不清理旧镜像，但也**没有镜像保留策略**（未演练磁盘压力），使用方不得自行 `docker image prune`。
@@ -47,7 +47,7 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 
 - 运行环境由 `SHUTONG_ENV`（`dev`/`test`/`prod`，缺省 `dev`）标识并经 `/health/live` 的 `env` 字段自报；生产 compose 固定为 `prod`，手工测试环境为 `test`。
 - `scripts/seed_demo.py` 探测到目标 `env=prod` 即拒绝写入虚构演示数据。
-- `infra/deploy.sh` 在工作区有未提交改动时拒绝部署（退出码 3），需显式 `--allow-dirty`；冒烟另校验 `env=prod`。
+- `infra/deploy.sh` 在工作区有未提交改动时拒绝部署（退出码 3），C5 禁止 `--allow-dirty`；冒烟另校验 `env=prod`。
 - 真实 iPad 只访问生产（Cloudflare 隧道入口）；`scripts/run_dev_env.py` 的开发服务仅监听 `127.0.0.1`，由宿主机桌面模拟机访问。
 - 沿用现有密钥，暂不轮换；项目暂不对外发布。
 - 同机分离的目录/用户/Docker/发布流程与切换命令见 [prod-separation-runbook.md](prod-separation-runbook.md)（**脚本与手册已就绪，切换需 owner 以 sudo 执行，未执行前现网仍是旧布局**）；云迁移准备见 [cloud-migration.md](cloud-migration.md)；自检脚本 `scripts/check_env_isolation.sh`。
