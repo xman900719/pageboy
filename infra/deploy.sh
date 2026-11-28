@@ -113,6 +113,8 @@ fi
 image_id="$(docker image inspect --format '{{.Id}}' "shutong-api:$build_tag")"
 label="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_id")"
 [[ "$label" == "$full_sha" && "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'REFUSED: API build provenance mismatch' >&2; exit 1; }
+# No DB or live mounts: check exact committed migration bytes and graph as the actual Compose UID.
+python3 "$repo_root/scripts/check_api_image_migrations.py" "$repo_root" "$image_id" "${SHUTONG_UID:-1000}:${SHUTONG_GID:-1000}"
 if [[ "$with_web" == "1" ]]; then
   python3 "$helper" build "$repo_root" "$STATE_DIR"
 fi

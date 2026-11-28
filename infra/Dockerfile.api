@@ -8,8 +8,12 @@ COPY services/api/shutong /app/shutong
 COPY services/api/alembic /app/alembic
 COPY services/api/alembic.ini /app/alembic.ini
 COPY contracts /app/contracts
+# Git export may use a private umask; runtime source must be readable by arbitrary non-root UID.
+RUN chmod -R a+rX,go-w /app/shutong /app/alembic /app/contracts && chmod a+r,go-w /app/alembic.ini /app/pyproject.toml
 RUN pip install --no-cache-dir .
 RUN useradd -r -u 10001 shutong && mkdir -p /var/lib/shutong/attachments && chown -R shutong:shutong /var/lib/shutong
 ENV SHUTONG_PRIVATE_DIR=/var/lib/shutong/attachments
 USER shutong
+# Build-time negative guard: a non-root user must resolve the complete migration graph.
+RUN python -B -c "from alembic.config import Config; from alembic.script import ScriptDirectory; s=ScriptDirectory.from_config(Config('/app/alembic.ini')); assert len(s.get_heads()) == 1 and s.get_revision('0022') and s.get_revision('0023')"
 CMD ["uvicorn", "shutong.main:app", "--host", "0.0.0.0", "--port", "8000"]

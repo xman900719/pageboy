@@ -67,3 +67,7 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 ## ST-024-D4 本机校考存储（候选）
 
 本机 Compose 将 `SHUTONG_SCHOOL_EXAMS_DIR` 显式设为附件持久化挂载内部的 `school-exams/`。宿主物理位置为 `${SHUTONG_ATTACHMENTS_DIR}/school-exams`（默认 `production/data/attachments/school-exams`），开发环境默认目录不变；界面逻辑目录描述不代表宿主实际挂载路径。发布前确认旧外部目录没有待迁移文件，并验证运行容器实际根、容器替换和归档恢复。详见 [备份策略](backup-policy.md)。
+
+## ST-024-D4 迁移镜像权限门禁
+
+私有构建目录保持 0700；安全解包后仅将内部 Git 源码目录设为 0755、普通文件按 Git 可执行位设为 0644/0755。Dockerfile 独立规范镜像内源码读/遍历权限，不开放组或其他用户写权限。构建默认非 root 用户须可解析迁移链；正式部署在 Web 切换与数据库迁移之前，使用不可变镜像 ID 和实际 Compose 非 root UID/GID，在无网络、只读、无生产挂载的容器内对照 Git 迁移文件 SHA256、完整单 head 图及 UID/GID。CI 在私有 umask 下导出并故意构造 0700 版本目录，验证双重防线，并使用 CI 专属 PostgreSQL 库执行非 root TCP 0022→0023 迁移及 head 幂等检查。不得以 root 隔离迁移代替生产等价非 root TCP 隔离迁移。

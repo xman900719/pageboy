@@ -124,4 +124,46 @@ class ArtifactTest(unittest.TestCase):
         self.assertNotIn('artifact_format',w.validate_bundle(self.bundle))
         with self.assertRaises(ValueError): w.restore_web(self.bundle,self.p/'out')
 
+    def test_export_private_umask_preserves_source_modes(self):
+        repo=self.p/'source-repo'; repo.mkdir(); dest=self.p/'export'; dest.mkdir(mode=0o700)
+        old=os.umask(0o077)
+        try:
+            d=repo/'services/api/alembic/versions'; d.mkdir(parents=True)
+            f=d/'0022.py'; f.write_text('revision = "0022"\n')
+            executable=repo/'run.sh'; executable.write_text('#!/bin/sh\n'); executable.chmod(0o700)
+            w.git(repo,'init','-q'); w.git(repo,'add','.'); w.git(repo,'-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','fixture')
+            w.export_source(repo,w.git(repo,'rev-parse','HEAD'),dest)
+            out=dest/'services/api/alembic/versions/0022.py'
+            self.assertEqual(out.read_bytes(),f.read_bytes())
+            self.assertEqual(out.stat().st_mode&0o777,0o644)
+            self.assertEqual((dest/'run.sh').stat().st_mode&0o777,0o755)
+            self.assertEqual(dest.stat().st_mode&0o777,0o700)
+            for p in out.parents:
+                if p==dest: break
+                self.assertEqual(p.stat().st_mode&0o777,0o755)
+        finally: os.umask(old)
+
+    def test_export_refuses_unsafe_archive(self):
+        for name,kind in [('../escape',tarfile.REGTYPE),('/abs',tarfile.REGTYPE),('link',tarfile.SYMTYPE),('pipe',tarfile.FIFOTYPE)]:
+            with self.subTest(name=name):
+                dest=self.p/'unsafe'; dest.mkdir(mode=0o700,exist_ok=True)
+                with io.BytesIO() as b:
+                    with tarfile.open(fileobj=b,mode='w') as t:
+                        m=tarfile.TarInfo(name); m.type=kind; t.addfile(m,io.BytesIO(b''))
+                    b.seek(0)
+                    with tarfile.open(fileobj=b) as t:
+                        with self.assertRaises(ValueError): w.extract_committed_archive(t,dest)
+                self.assertEqual(list(dest.iterdir()),[])
+        (dest/'keep').write_text('keep')
+        with self.assertRaises(ValueError): w.extract_committed_archive(None,dest)
+        self.assertEqual((dest/'keep').read_text(),'keep')
+
+    def test_image_graph_gate_rejects_bad_identity_graph_or_hash(self):
+        import check_api_image_migrations as gate
+        files={'alembic.ini':'a','alembic/env.py':'b','alembic/versions/0022.py':'c','alembic/versions/0023.py':'d'}
+        good=dict(uid=1001,gid=1001,heads=['0023'],revisions=['0022','0023'],files=files)
+        self.assertEqual(gate.validate(good,files,'1001:1001'),2)
+        for bad in [dict(uid=0),dict(gid=0),dict(heads=[]),dict(heads=['0022','0023']),dict(revisions=['0023']),dict(files=dict(files,**{'alembic/versions/0022.py':'wrong'}))]:
+            with self.subTest(bad=bad), self.assertRaises(ValueError): gate.validate(dict(good,**bad),files,'1001:1001')
+
 if __name__=='__main__': unittest.main()
