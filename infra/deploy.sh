@@ -12,7 +12,7 @@
 #   infra/deploy.sh                 # 构建并部署 shutong-api:api-<git短SHA>
 #   SHUTONG_API_TAG=api-<sha> infra/deploy.sh --no-build   # 只切换/重部署已有本地镜像
 #   infra/deploy.sh --web           # 部署前先重建 apps/web/dist（宿主 caddy 直接伺服）
-#   infra/deploy.sh --allow-dirty   # 工作区有未提交改动时默认拒绝部署；显式放行（标签将不可追溯）
+#   C5: --allow-dirty 已禁用；构建必须来自干净提交。
 #
 # 环境：infra/.env（与运行栈同一份；不新建、不打印其中的机密）。
 set -euo pipefail
@@ -31,14 +31,14 @@ for arg in "$@"; do
   case "$arg" in
     --no-build) no_build=1 ;;
     --web) with_web=1 ;;
-    --allow-dirty) allow_dirty=1 ;;
+    --allow-dirty) echo 'REFUSED: C5 requires a clean committed build source' >&2; exit 3 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
 # 环境隔离护栏：标签取自 git HEAD，有未提交改动时镜像内容与标签不符，默认拒绝。
 if [[ "$allow_dirty" -eq 0 && -n "$(git -C "$repo_root" status --porcelain)" ]]; then
-  echo "工作区有未提交改动，拒绝部署（标签 $(git -C "$repo_root" rev-parse --short HEAD) 将不可追溯）；确需部署请加 --allow-dirty" >&2
+  echo "工作区有未提交改动，拒绝部署（标签 $(git -C "$repo_root" rev-parse --short HEAD) 将不可追溯）；C5 不允许脏工作区" >&2
   exit 3
 fi
 
@@ -48,6 +48,10 @@ STATE_DIR="$here/.local"
 PREVIOUS_TAG_FILE="$STATE_DIR/previous-tag"
 DEPLOYED_TAG_FILE="$STATE_DIR/deployed-tag"
 mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/artifact.lock"
+flock -x 9
+helper="$repo_root/scripts/web_artifact_provenance.py"
+full_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
 compose() { docker compose --env-file "$ENV_FILE" -f compose.yaml -f compose.local.yaml "$@"; }
 
@@ -63,6 +67,7 @@ if [[ -n "${EXPECTED_RELEASE_SHA:-}" ]]; then
     echo 'REFUSED: release SHA or image tag mismatch' >&2; exit 1;
   }
 fi
+[[ "$full_sha" =~ ^[0-9a-f]{40}$ && "$build_tag" == api-$(git -C "$repo_root" rev-parse --short HEAD) ]] || { echo 'REFUSED: build tag must match clean HEAD' >&2; exit 1; }
 export SHUTONG_API_TAG="$build_tag"
 
 smoke() {
@@ -98,18 +103,20 @@ wait_healthy() {
   return 1
 }
 
-if [[ "$with_web" == "1" ]]; then
-  echo "== rebuild web dist =="
-  (cd "$repo_root/apps/web" && npm ci --no-audit --no-fund && npm run build)
-fi
-
 if [[ "$no_build" == "0" ]]; then
-  echo "== build shutong-api:$build_tag =="
-  # compose.yaml 的 image: 命名保证构建产物即 shutong-api:$build_tag（不依赖项目名间接标签）。
-  compose build api
-else
-  docker image inspect "shutong-api:$build_tag" >/dev/null || { echo "本地不存在镜像 shutong-api:$build_tag" >&2; exit 1; }
+  echo "== build API from committed source =="
+  build_context="$(mktemp -d "$STATE_DIR/.c5-api.XXXXXX")"
+  trap 'rm -rf "$build_context"' EXIT
+  python3 "$helper" export "$repo_root" "$full_sha" "$build_context"
+  docker build --build-arg "SHUTONG_GIT_SHA=$full_sha" -t "shutong-api:$build_tag" -f "$build_context/infra/Dockerfile.api" "$build_context"
 fi
+image_id="$(docker image inspect --format '{{.Id}}' "shutong-api:$build_tag")"
+label="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_id")"
+[[ "$label" == "$full_sha" && "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'REFUSED: API build provenance mismatch' >&2; exit 1; }
+if [[ "$with_web" == "1" ]]; then
+  python3 "$helper" build "$repo_root" "$STATE_DIR"
+fi
+[[ "$(git -C "$repo_root" rev-parse HEAD)" == "$full_sha" && -z "$(git -C "$repo_root" status --porcelain)" ]] || { echo 'REFUSED: source changed' >&2; exit 1; }
 
 echo "== migrate to head（同镜像一次性容器；幂等） =="
 compose run --rm -e SHUTONG_APP_REVISION="$build_tag" api alembic upgrade head
@@ -118,6 +125,9 @@ echo "== replace api service =="
 SHUTONG_API_TAG="$build_tag" compose up -d --no-deps api
 wait_healthy
 smoke "$build_tag"
+cid="$(compose ps -q api)"
+[[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || { echo 'REFUSED: ambiguous API container' >&2; exit 1; }
+[[ "$(docker inspect --format '{{.Image}}' "$cid")" == "$image_id" && "$(docker inspect --format '{{.Config.Image}}' "$cid")" == "shutong-api:$build_tag" ]] || { echo 'REFUSED: deployed API image mismatch' >&2; exit 1; }
 
 if [[ -n "$current_tag" && "$current_tag" != "$build_tag" ]]; then
   printf '%s\n' "$current_tag" > "$PREVIOUS_TAG_FILE"

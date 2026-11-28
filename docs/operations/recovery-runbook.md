@@ -12,65 +12,36 @@
 6. 在隔离环境运行私有 API 冒烟检查和“从答题证据重建画像”测试。
 7. 记录实际 RPO、RTO 和恢复材料，人工确认后才可能切换生产访问。
 
-## 推荐方式：一键自动化隔离恢复演练
+## ST-024-C1/C2：本地合成数据演练（非异地灾备）
 
-项目中已将拉取异地快照、启动隔离 PostgreSQL 容器、校验 SHA-256、执行 `restore.sh` 及运行 `smoke_restore_verify.py` 冒烟封装为一键脚本：
+旧的 Compose 演练复用生产固定卷名 `infra_pgdata`，不能仅凭项目名保证隔离。禁止运行旧版本演练、旧 `--database-url`/`--force` 恢复命令或使用生产 Docker。旧 R2 演练入口和旧快照验证入口仍关闭；C3/C4 已完成专用只读隔离演练，通用真实数据恢复入口另行建设。
 
-```bash
-# 默认拉取 latest 快照并在独立临时容器验证，完成后自动清理：
-bash scripts/restore_drill.sh
-
-# 亦可指定特定快照 ID：
-SNAPSHOT_ID=7f387bab bash scripts/restore_drill.sh
-```
-
-## 手工逐步执行流程（隔离环境）
-
-若因特定排错需要分步手工执行，请使用以下真实流程（切勿直接运行未填入实际参数的占位符）：
+在独立开发 worktree 中以普通开发用户运行（不使用 sudo）：
 
 ```bash
-cd /media/xc/backup_ext4/code/pageboy/infra
-
-# 1. 在当前子 shell 加载连接凭据（避免泄露在终端历史或环境）
-(
-  set -euo pipefail
-  set -a; source .env; set +a
-
-  # 2. 查询快照列表
-  restic snapshots --compact
-
-  # 3. 恢复最新快照至隔离临时目录
-  DRILL_DIR=$(mktemp -d /tmp/shutong-drill.XXXXXX); chmod 700 "$DRILL_DIR"
-  restic restore latest --tag shutong-foundation --target "$DRILL_DIR/restic"
-
-  # 4. 定位备份解压路径并核验 SHA256SUMS
-  BACKUP_DIR=$(dirname "$(find "$DRILL_DIR/restic" -name SHA256SUMS | head -1)")
-  ( cd "$BACKUP_DIR" && sha256sum -c SHA256SUMS )
-
-  # 5. 启动临时隔离 PostgreSQL（端口 55432，库名必须以 pageboy 开头以通过安全护栏）
-  docker run -d --name pageboy-drill-manual \
-    -e POSTGRES_USER=drill -e POSTGRES_PASSWORD=drill_secret_123 \
-    -e POSTGRES_DB=pageboy_drill -p 127.0.0.1:55432:5432 \
-    postgres:16
-
-  # 等待容器就绪后执行恢复
-  sleep 5
-  PG_RESTORE_IMAGE=postgres:16 bash restore.sh \
-    --backup-dir "$BACKUP_DIR" \
-    --database-url postgresql://drill:drill_secret_123@127.0.0.1:55432/pageboy_drill \
-    --attachments-dir "$DRILL_DIR/attachments"
-
-  # 6. 运行冒烟测试核验数据与附件
-  cd ..
-  .venv/bin/python scripts/smoke_restore_verify.py \
-    --database-url postgresql+psycopg://drill:drill_secret_123@127.0.0.1:55432/pageboy_drill \
-    --attachments-dir "$DRILL_DIR/attachments"
-
-  # 7. 清理临时演练环境
-  docker rm -f pageboy-drill-manual
-  rm -rf "$DRILL_DIR"
-)
+.venv/bin/python scripts/smoke_joint_restore.py
 ```
 
-> [!WARNING]
-> `smoke_restore_verify.py` 取题会在演练库内记录一次曝光（业务语义）。该操作仅在隔离库执行，不触碰生产。
+依赖本机已有 PostgreSQL 16 服务端及客户端二进制（不启动系统 PostgreSQL 服务）和 API 测试依赖。缺失依赖则停止；不得借用生产 Docker、凭据或数据。演练仅创建当前用户所有的 0700 临时目录、独立 PG 实例和私有 Unix Socket；不发布 TCP 端口。校验系统标识、路径、空库、双工件 SHA256、附件数、归档路径安全和恢复版本；仅清理身份已验证的本次临时实例。
+
+仅使用标记为虚构测试数据的临时测试库，通过应用 API 建档、答题、附件下载；停写后备份，删除演练源库，在不同系统标识的空库恢复，比对全部 public 表的行数及行内容指纹、附件 DB/文件/API SHA256，并复核非空目标被拒绝。成功标志 `ST024C12_LOCAL_DRILL_OK`。禁止将该标志解释为生产备份、R2 恢复、跨主机恢复、RPO/RTO 或迁移回滚已达成。
+
+## ST-024-C3：真实快照（既有专用演练通过；通用入口仍未放行）
+
+需要独立授权及只读 R2 凭据、确定快照 ID、独立目标身份、恢复后迁移及脱敏证据。C3/C4 专用宿主机只读演练已有证据（见 C5 收口记录）；仍禁止运行旧命令；不得读取生产 env 或密钥，不得对生产执行恢复/迁移/清理。真实故障恢复另行决策并执行独立备份确认。
+
+
+## ST-024-C5：Web 工件独立恢复（候选）
+
+对已单独授权取得并放在隔离目录的完整 v2 备份，可仅恢复 Web：
+
+```bash
+# 使用已有的独立备份目录；不能指向生产目录。
+WORK=$(mktemp -d /tmp/pageboy-web-restore.XXXXXX)
+chmod 700 "$WORK"
+bash infra/restore.sh --web-only --backup-dir "$ISOLATED_BACKUP_DIR" --web-dist-dir "$WORK/dist"
+```
+
+`--web-only` 不连接数据库、Docker 或 R2，不读取 `.env`。要求当前用户所有的 0700 父目录与不存在/空的目标；拒绝链接、路径穿越、重复归档路径、清单不完整与哈希不符。恢复前核验全部 v2 工件哈希、附件归档路径及文件数，随后在临时目录复核 Web 文件树、数量。旧四工件快照没有 Web，拒绝 Web 恢复；v2 的 UNVERIFIED 来源只证明归档字节一致，不证明源码版本。
+
+本地合成数据演练还覆盖 DB+附件+Web 同一备份的源销毁与独立恢复；禁止任意 DB URL、生产覆盖、自动 schema 降级和旧 R2 入口。专用 C3/C4 实测并不等于通用真实数据恢复工具已重建。证据边界见 [ST-024-C5](../quality/st-024-c5-closeout.md)。

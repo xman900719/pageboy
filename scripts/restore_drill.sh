@@ -7,6 +7,9 @@
 #
 # 依赖：docker、restic、python3、.venv（带 shutong 依赖）
 set -euo pipefail
+# Temporary C1/C2 quarantine; C3 must implement explicit read-only R2 approval.
+echo "REFUSED: R2 restore disabled pending ST-024-C3 isolated target and authorization" >&2
+exit 1
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INFRA_DIR="$REPO_ROOT/infra"

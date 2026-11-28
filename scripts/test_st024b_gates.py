@@ -39,6 +39,11 @@ class BackupGate(unittest.TestCase):
         self.infra = self.root / "infra"; self.infra.mkdir()
         (self.infra / "backup.sh").write_bytes((ROOT / "infra/backup.sh").read_bytes())
         (self.infra / "compose.yaml").touch()
+        scripts=self.root/"scripts"; scripts.mkdir()
+        (scripts/"web_artifact_provenance.py").write_bytes((ROOT/"scripts/web_artifact_provenance.py").read_bytes())
+        state=self.infra/".local"; state.mkdir(); (state/"deployed-tag").write_text("api-aaaaaaa\n")
+        dist=self.root/"apps/web/dist"; (dist/"assets").mkdir(parents=True)
+        for n in ("index.html","admin.html","assets/app.js"): (dist/n).write_text("synthetic")
         self.bin = self.root / "bin"; self.bin.mkdir()
         self.attach = self.root / "attachments"; self.attach.mkdir()
         (self.attach / "synthetic.txt").write_text("虚构测试数据")
@@ -51,7 +56,13 @@ class BackupGate(unittest.TestCase):
 case "$*" in
   *psql*) printf '%s\n' "${TEST_REV-0023}" ;;
   *pg_dump*) printf 'synthetic dump' ;;
-  *printenv*) printf 'api-test\n' ;;
+  *printenv*) printf 'api-aaaaaaa\n' ;;
+  *'ps -q api'*) printf 'aaaaaaaaaaaa\n' ;;
+  *'.Mounts'*) printf '[{"Type":"bind","Source":"%s","Destination":"/var/lib/shutong/attachments"}]\n' "${TEST_MOUNT:-$ATTACHMENTS_DIR}" ;;
+  *'.Config.Image'*) printf 'shutong-api:api-aaaaaaa\n' ;;
+  *'.State.Running'*) printf 'true\n' ;;
+  *'.Config.Labels'*) printf '%s\n' "${TEST_LABEL:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" ;;
+  *'.Image'*|*'.Id'*) printf 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n' ;;
   *) exit 99 ;;
 esac""")
         self.fake("restic", """echo "restic $1" >> "$TEST_LOG"
@@ -64,6 +75,7 @@ esac""")
         # Default JSON is explicit, avoiding shell expansion ambiguity.
         self.env["TEST_RESTIC_JSON"] = '{"message_type":"summary","snapshot_id":"abcdef12"}'
         self.fake("curl", 'echo curl >> "$TEST_LOG"')
+        self.fake("git", '[[ "$*" == *"cat-file -t"* ]] && echo commit')
     def fake(self, name, body):
         p = self.bin / name; p.write_text("#!/bin/bash\nset -eu\n"+body+"\n"); p.chmod(0o700)
     def run_backup(self, **env):
@@ -81,22 +93,32 @@ esac""")
         out = self.root / "out"; out.mkdir(); (out / "keep").write_text("keep")
         self.assertNotEqual(self.run_backup(BACKUP_OUTPUT_DIR=str(out)).returncode, 0)
         self.assertEqual((out / "keep").read_text(), "keep")
-    def test_local_success(self):
+    def test_legacy_local_refused(self):
         out = self.root / "out"
         r = self.run_backup(BACKUP_OUTPUT_DIR=str(out))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("migration_revision=0023", (out / "manifest.txt").read_text())
-        self.assertTrue((out / "attachments.tar.gz").is_file())
-        self.assertNotIn("restic", self.calls())
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("REFUSED", r.stderr)
+        self.assertFalse(out.exists())
+        self.assertEqual(self.calls(), "")
     def test_snapshot_check(self):
         for args in ({"TEST_RESTIC_JSON":"{}"}, {"TEST_CHECK_RC":"1"}):
             r = self.run_backup(**args)
             self.assertNotEqual(r.returncode, 0)
             self.assertNotIn("curl", self.calls())
+    def test_api_mismatch_refused(self):
+        r = self.run_backup(TEST_LABEL="cccccccccccccccccccccccccccccccccccccccc")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("restic", self.calls())
+    def test_mount_mismatch_refused(self):
+        r = self.run_backup(TEST_MOUNT=str(self.root / "wrong"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("attachment mount differs", r.stderr)
+        self.assertNotIn("restic", self.calls())
     def test_remote_stub_success(self):
         r = self.run_backup()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("BACKUP_SNAPSHOT_OK=abcdef12", r.stdout)
+        self.assertIn("BUNDLE_CHECK_OK", r.stdout)
         self.assertIn("curl", self.calls())
         self.assertNotIn("forget", self.calls())
         self.assertNotIn("prune", self.calls())
