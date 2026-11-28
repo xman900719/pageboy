@@ -17,7 +17,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import models as m
-from .fourcorpus import _latest, seed_candidate_nodes
+from .fourcorpus import (
+    TaxonomyReleaseIn, _latest, seed_candidate_nodes, validate_taxonomy_release,
+)
 from .home import resolve_repo_root
 
 SUBJECTS: tuple[str, ...] = ("math", "chinese", "english", "physics")
@@ -355,6 +357,15 @@ def seed_and_approve_subject(
     }
 
 
+def _existing_published_release(db: Session, subject: str, full_ver: str):
+    existing = db.scalar(select(m.KnowledgeTaxonomyRelease).where(
+        m.KnowledgeTaxonomyRelease.release_version == full_ver,
+    ))
+    if existing is not None and (existing.subject != subject or existing.status != "published"):
+        raise ValueError("RELEASE_STATE_NOT_PUBLISHED: explicit historical reconciliation required")
+    return existing
+
+
 def publish_subject_taxonomy_release(
     db: Session,
     subject: str,
@@ -362,113 +373,36 @@ def publish_subject_taxonomy_release(
     published_by: str = "beijing_zhongkao_expert",
     force_update_existing: bool = False,
 ) -> dict:
-    """
-    在全部候选节点均已 approved 的前提下，生成并持久化不可变的学科知识体系发布快照（或当 force_update_existing=True 时刷新快照）。
-    """
-    prefix = f"{subject}_cand."
-    cand_nodes = db.scalars(
-        select(m.KnowledgeNode)
-        .where(
-            m.KnowledgeNode.subject == subject,
-            m.KnowledgeNode.code.startswith(prefix),
-            m.KnowledgeNode.status == "active",
-        )
-        .order_by(m.KnowledgeNode.code)
-    ).all()
-
-    if not cand_nodes:
-        raise ValueError(f"学科 {subject} 无活跃候选节点，无法发布")
-
-    snapshot_nodes: list[dict] = []
-    for n in cand_nodes:
-        ver = _latest(db, n.id)
-        if ver is None or ver.review_status != "approved":
-            raise ValueError(f"节点 {n.code} 尚未审核通过，拒绝发布")
-        snapshot_nodes.append(
-            {
-                "id": n.id,
-                "code": n.code,
-                "name": ver.name,
-                "version": ver.version,
-                "parent_id": n.parent_id,
-                "parent_node_id": ver.parent_node_id,
-                "parent_code": ver.parent_code,
-                "description": ver.description,
-                "source_clause_ids": ver.source_clause_ids,
-                "reviewer_id": ver.reviewer_id,
-                "review_opinion": ver.review_opinion,
-                "reviewed_at": ver.reviewed_at.isoformat() if ver.reviewed_at else None,
-                "is_elective": bool(n.is_elective),
-            }
-        )
-
-    now_dt = datetime.now(timezone.utc)
+    """Publish through the same validation gate as the admin API."""
     full_ver = f"{subject}-{release_version}" if not release_version.startswith(f"{subject}-") else release_version
-    snapshot_payload = {
-        "subject": subject,
-        "release_version": full_ver,
-        "published_at": now_dt.isoformat(),
-        "published_by": published_by,
-        "total_nodes": len(snapshot_nodes),
-        "expected_nodes_count": len(cand_nodes),
-        "nodes": snapshot_nodes,
-    }
-    existing_rel = db.scalar(
-        select(m.KnowledgeTaxonomyRelease).where(
-            m.KnowledgeTaxonomyRelease.subject == subject,
-            m.KnowledgeTaxonomyRelease.release_version == full_ver,
-        )
-    )
-    summary_text = (
-        f"{SUBJECT_META.get(subject, {}).get('cn', subject)} 2022年版课标与北京市中考专家终审正式版"
-        f"（共 {len(snapshot_nodes)} 个节点，由 {published_by} 审定签发）"
-    )
-    if existing_rel is not None:
-        if force_update_existing:
-            existing_rel.snapshot = snapshot_payload
-            existing_rel.published_by = published_by
-            existing_rel.published_at = now_dt
-            existing_rel.summary = summary_text
-            db.commit()
-            db.refresh(existing_rel)
-            return {
-                "release_id": existing_rel.id,
-                "subject": subject,
-                "release_version": full_ver,
-                "total_nodes": len(snapshot_nodes),
-                "status": "published",
-            }
-        existing_total = (
-            existing_rel.snapshot.get("total_nodes", len(existing_rel.snapshot.get("nodes", [])))
-            if isinstance(existing_rel.snapshot, dict)
-            else (len(existing_rel.snapshot) if isinstance(existing_rel.snapshot, list) else 0)
-        )
-        return {
-            "release_id": existing_rel.id,
-            "subject": subject,
-            "release_version": full_ver,
-            "total_nodes": existing_total,
-            "status": "already_published",
-        }
+    existing = _existing_published_release(db, subject, full_ver)
+    if existing is not None and not force_update_existing:
+        total = (existing.snapshot.get("total_nodes", len(existing.snapshot.get("nodes", [])))
+                 if isinstance(existing.snapshot, dict) else len(existing.snapshot) if isinstance(existing.snapshot, list) else 0)
+        return {"release_id": existing.id, "subject": subject, "release_version": full_ver,
+                "total_nodes": total, "status": "already_published"}
 
-    rel = m.KnowledgeTaxonomyRelease(
-        subject=subject,
-        release_version=full_ver,
-        published_by=published_by,
-        published_at=now_dt,
-        summary=summary_text,
-        snapshot=snapshot_payload,
+    p = TaxonomyReleaseIn(subject=subject, release_version=full_ver, published_by=published_by)
+    snapshot, now_dt = validate_taxonomy_release(p, db)
+    summary = (
+        f"{SUBJECT_META.get(subject, {}).get('cn', subject)} 2022年版课标与北京市中考专家终审正式版"
+        f"（共 {len(snapshot['nodes'])} 个节点，由 {published_by} 审定签发）"
     )
-    db.add(rel)
+    if existing is None:
+        existing = m.KnowledgeTaxonomyRelease(
+            subject=subject, release_version=full_ver, status="published", snapshot=snapshot,
+            published_by=published_by, published_at=now_dt, summary=summary,
+        )
+        db.add(existing)
+    else:
+        existing.snapshot = snapshot
+        existing.published_by = published_by
+        existing.published_at = now_dt
+        existing.summary = summary
     db.commit()
-    db.refresh(rel)
-    return {
-        "release_id": rel.id,
-        "subject": subject,
-        "release_version": full_ver,
-        "total_nodes": len(snapshot_nodes),
-        "status": "published",
-    }
+    db.refresh(existing)
+    return {"release_id": existing.id, "subject": subject, "release_version": full_ver,
+            "total_nodes": len(snapshot["nodes"]), "status": existing.status}
 
 
 def audit_and_publish_subject(
@@ -479,6 +413,8 @@ def audit_and_publish_subject(
     force_update_existing: bool = False,
 ) -> dict:
     """一键完成单学科候选入库、逐点课标审核与正式版本发布。"""
+    full_ver = f"{subject}-{release_version}" if not release_version.startswith(f"{subject}-") else release_version
+    _existing_published_release(db, subject, full_ver)
     audit_res = seed_and_approve_subject(
         db=db,
         subject=subject,

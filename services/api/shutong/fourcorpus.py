@@ -1,5 +1,6 @@
 """四科语料增量接口：知识点版本化与双向关联、真题连续性、命题研究与回测。组合复用现有 owner 鉴权与模型。"""
 from __future__ import annotations
+from datetime import datetime
 import os
 from pathlib import Path
 from typing import Literal
@@ -726,24 +727,11 @@ def batch_review_nodes(p: BatchNodeReviewIn, db: Session = Depends(get_db)):
     return {"reviewed_count": len(results), "items": results}
 
 
-@router.post("/knowledge/releases", status_code=201)
-def publish_taxonomy_release(p: TaxonomyReleaseIn, db: Session = Depends(get_db)):
-    """
-    发布知识库正式版本（强门禁）：
-    1. 必须完整包含本次候选体系契约定义的全量候选节点（数学为 47 个 math_cand.* 节点）；缺少任一节点拒绝发布。
-    2. 旧 math.* 节点只能用于历史兼容，不能独立满足新版发布条件。若无 math_cand.* 候选节点，拒绝发布。
-    3. 每个候选节点最新版本必须为 approved，且必须具备完整的人工审核证据（reviewer_id, review_opinion, reviewed_at）；
-       存在 pending、rejected 或缺乏必要审核证据时，强行拒绝发布。
-    4. 节点的来源条款必须有效，不能引用不存在的官方条款。
-    5. 成功发布时生成不可变历史快照 snapshot，记录获批节点与权威课标来源版本。
-    """
+def validate_taxonomy_release(p: TaxonomyReleaseIn, db: Session) -> tuple[dict, datetime]:
+    """Build a release snapshot after the existing full publication gate; no writes."""
     from datetime import datetime, timezone
     from pathlib import Path
     import json
-
-    existing = db.scalar(select(m.KnowledgeTaxonomyRelease).where(m.KnowledgeTaxonomyRelease.release_version == p.release_version))
-    if existing:
-        raise HTTPException(409, detail="RELEASE_VERSION_EXISTS")
 
     # 1. 读取权威候选知识点契约、官方条款全集契约与官方来源元数据契约（P0-04）
     cand_file = _repo_path(f"contracts/{p.subject}_knowledge_taxonomy_candidate.json")
@@ -1043,6 +1031,27 @@ def publish_taxonomy_release(p: TaxonomyReleaseIn, db: Session = Depends(get_db)
         "nodes": snapshot_nodes
     }
 
+    return snapshot, now_dt
+
+
+@router.post("/knowledge/releases", status_code=201)
+def publish_taxonomy_release(p: TaxonomyReleaseIn, db: Session = Depends(get_db)):
+    """
+    发布知识库正式版本（强门禁）：
+    1. 必须完整包含本次候选体系契约定义的全量候选节点（数学为 47 个 math_cand.* 节点）；缺少任一节点拒绝发布。
+    2. 旧 math.* 节点只能用于历史兼容，不能独立满足新版发布条件。若无 math_cand.* 候选节点，拒绝发布。
+    3. 每个候选节点最新版本必须为 approved，且必须具备完整的人工审核证据（reviewer_id, review_opinion, reviewed_at）；
+       存在 pending、rejected 或缺乏必要审核证据时，强行拒绝发布。
+    4. 节点的来源条款必须有效，不能引用不存在的官方条款。
+    5. 成功发布时生成不可变历史快照 snapshot，记录获批节点与权威课标来源版本。
+    """
+    existing = db.scalar(select(m.KnowledgeTaxonomyRelease).where(m.KnowledgeTaxonomyRelease.release_version == p.release_version))
+    if existing:
+        raise HTTPException(409, detail="RELEASE_VERSION_EXISTS")
+
+    snapshot, now_dt = validate_taxonomy_release(p, db)
+    sorted_sources = snapshot["curriculum_source_ids"]
+    snapshot_nodes = snapshot["nodes"]
     release = m.KnowledgeTaxonomyRelease(
         subject=p.subject,
         release_version=p.release_version,

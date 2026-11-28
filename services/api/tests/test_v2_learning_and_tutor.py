@@ -393,6 +393,8 @@ def test_batch_review_and_full_taxonomy_audit_publish(client, admin_auth):
             )
         )
         assert rel is not None
+        assert rel.status == "published"
+        assert rel.snapshot["curriculum_sources"]
         assert rel.published_by == "beijing_zhongkao_expert"
         assert isinstance(rel.snapshot, dict)
         assert rel.snapshot["total_nodes"] == 48
@@ -409,6 +411,7 @@ def test_batch_review_and_full_taxonomy_audit_publish(client, admin_auth):
         assert len(rel_list) == 1
         assert rel_list[0]["release_version"] == "math-v2022.1.0"
         assert rel_list[0]["total_nodes"] == 48
+        assert rel_list[0]["status"] == "published"
     finally:
         db.close()
 

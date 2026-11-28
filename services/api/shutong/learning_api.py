@@ -138,7 +138,10 @@ def _load_effective_knowledge_nodes(db: Session, subject: str) -> tuple[list[dic
 
     latest_release = db.execute(
         select(m.KnowledgeTaxonomyRelease)
-        .where(m.KnowledgeTaxonomyRelease.subject == subject)
+        .where(
+            m.KnowledgeTaxonomyRelease.subject == subject,
+            m.KnowledgeTaxonomyRelease.status == "published",
+        )
         .order_by(m.KnowledgeTaxonomyRelease.published_at.desc(), m.KnowledgeTaxonomyRelease.id.desc())
         .limit(1)
     ).scalar_one_or_none()
