@@ -45,8 +45,11 @@ def postgres_engine():
 
 @pytest.fixture
 def revision_server(postgres_engine, monkeypatch):
-    token = f'test-only-{uuid4().hex}'
-    monkeypatch.setenv('SHUTONG_TOKEN', token)
+    admin_token = f'test-admin-{uuid4().hex}'
+    student_token = f'test-student-{uuid4().hex}'
+    monkeypatch.delenv('SHUTONG_TOKEN', raising=False)
+    monkeypatch.setenv('SHUTONG_ADMIN_TOKEN', admin_token)
+    monkeypatch.setenv('SHUTONG_STUDENT_TOKEN', student_token)
     def independent_session():
         with Session(postgres_engine) as session:
             yield session
@@ -63,7 +66,17 @@ def revision_server(postgres_engine, monkeypatch):
         while not server.started and thread.is_alive() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert server.started, '临时 HTTP 服务未启动'
-        yield base_url, {'Authorization': f'Bearer {token}'}
+        admin_headers = {'Authorization': f'Bearer {admin_token}'}
+        student_headers = {'Authorization': f'Bearer {student_token}'}
+        # Exercise the real authorization boundary before any race.
+        with httpx.Client(base_url=base_url, timeout=45, trust_env=False) as client:
+            denied = client.get('/api/practice/next?subject=math', headers=admin_headers)
+            assert denied.status_code == 403
+            denied = client.post('/api/admin/sources', headers=student_headers, json={
+                'title': '虚构测试数据：越权请求', 'subject': 'math',
+                'rights_status': 'personal_use_reviewed', 'verified': True})
+            assert denied.status_code == 403
+        yield base_url, admin_headers, student_headers
     finally:
         server.should_exit = True
         thread.join(timeout=10)
@@ -74,8 +87,8 @@ def revision_server(postgres_engine, monkeypatch):
 @pytest.mark.parametrize('round_number', range(1, 4))
 @pytest.mark.parametrize('synchronize_reads', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_revisions(postgres_engine, revision_server, synchronize_reads, round_number):
-    base_url, headers = revision_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = revision_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source = client.post('/api/admin/sources', json={
             'title': '虚构测试数据：并发修订题源', 'subject': 'math',
             'rights_status': 'personal_use_reviewed', 'verified': True,
@@ -89,8 +102,8 @@ def test_concurrent_revisions(postgres_engine, revision_server, synchronize_read
         old_id = original.json()['id']
         assert client.post(f'/api/admin/questions/{old_id}/review').status_code == 200
         assert client.post(f'/api/admin/questions/{old_id}/publish').status_code == 200
-        exposure = client.get('/api/practice/next?subject=math').json()
-        attempt = client.post('/api/practice/attempts', json={
+        exposure = client.get('/api/practice/next?subject=math', headers=student_headers).json()
+        attempt = client.post('/api/practice/attempts', headers=student_headers, json={
             'exposure_id': exposure['exposure_id'], 'client_attempt_id': 'original-attempt', 'answer': 'B',
         })
         assert attempt.status_code == 201 and attempt.json()['earned_points'] == 2
@@ -119,7 +132,7 @@ def test_concurrent_revisions(postgres_engine, revision_server, synchronize_read
 
     def revise(index):
         payload = {**body, 'stem': f'虚构测试数据：并发更正 {index}', 'correct_answer': 'A'}
-        with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+        with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
             start.wait(timeout=20)
             response = client.post(f'/api/admin/questions/{old_id}/revisions', json=payload)
             return index, response
@@ -156,7 +169,7 @@ def test_concurrent_revisions(postgres_engine, revision_server, synchronize_read
     assert history() == before
 
     # 冲突请求重新提交后逐一成功，且不遗留失败事务或编号空洞。
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         for index in rejected:
             response = client.post(f'/api/admin/questions/{old_id}/revisions', json={
                 **body, 'stem': f'虚构测试数据：冲突后重试 {index}',

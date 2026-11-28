@@ -39,6 +39,7 @@ mkdir -p "$STATE_DIR"
 exec 9>"$STATE_DIR/artifact.lock"
 flock -x 9
 helper="$repo_root/scripts/web_artifact_provenance.py"
+bank_helper="$repo_root/scripts/exam_bank_backup.py"
 : "${RESTIC_REPOSITORY:?restic repository must be set}"
 : "${RESTIC_PASSWORD_FILE:?restic password file required}"
 command -v restic >/dev/null || { echo 'restic not installed' >&2; exit 1; }
@@ -52,6 +53,10 @@ if [[ -n "${SHUTONG_ATTACHMENTS_DIR:-}" ]]; then
   mounted_dir="$(cd "$SHUTONG_ATTACHMENTS_DIR" 2>/dev/null && pwd)" || exit 1
   [[ "$mounted_dir" == "$attachments_dir" ]] || { echo 'REFUSED: attachment roots disagree' >&2; exit 1; }
 fi
+# The new corpus remains a sibling of the legacy attachment root.
+bank_dir="${SHUTONG_EXAM_BANK_DIR:-$(dirname "$attachments_dir")/exam_bank_2018_2025}"
+[[ "$bank_dir" == "$(dirname "$attachments_dir")/exam_bank_2018_2025" ]] || { echo 'REFUSED: corpus root must be an attachment sibling' >&2; exit 1; }
+configured_bank_pin="${SHUTONG_EXAM_BANK_MANIFEST_SHA256:-}"
 attachments_included=yes
 attachment_count="$(find "$attachments_dir" -type f | wc -l | tr -d ' ')"
 compose_db() { docker compose --env-file "$ENV_FILE" -f compose.yaml "$@"; }
@@ -70,6 +75,25 @@ api_identity() {
   [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || { echo 'REFUSED: ambiguous API container' >&2; return 1; }
   mounts="$(docker inspect --format '{{json .Mounts}}' "$cid")" || return 1
   python3 "$helper" mount "$mounts" "$attachments_dir" || return 1
+  # Read only the relevant env keys from the running API; no secret dump.
+  local live_pin live_bank_dir bank_mode
+  live_pin="$(compose_db exec -T api python -c 'import os; print(os.getenv("SHUTONG_EXAM_BANK_MANIFEST_SHA256", ""))')" || return 1
+  live_bank_dir="$(compose_db exec -T api python -c 'import os; print(os.getenv("SHUTONG_EXAM_BANK_DIR", ""))')" || return 1
+  bank_mode=inactive
+  if [[ -n "$live_pin" ]]; then
+    [[ "$live_pin" =~ ^[0-9a-f]{64}$ && "$live_pin" == "$configured_bank_pin" && "$live_bank_dir" == /var/lib/shutong/exam_bank_2018_2025 ]] || return 1
+    bank_mode=active
+    python3 "$bank_helper" mount "$mounts" "$bank_dir" active || return 1
+  elif [[ -n "$configured_bank_pin" ]]; then
+    # Pre-release snapshot: old API has no mount or pin; capture staged corpus as well as legacy bytes.
+    [[ "$configured_bank_pin" =~ ^[0-9a-f]{64}$ && -z "$live_bank_dir" ]] || return 1
+    bank_mode=staged
+    python3 "$bank_helper" mount "$mounts" "$bank_dir" staged || return 1
+  else
+    [[ -z "$live_bank_dir" ]] || { echo 'REFUSED: corpus configured in API without pin' >&2; return 1; }
+    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert not any(str(m.get("Destination", "")).startswith("/var/lib/shutong/exam_bank_2018_2025") for m in d)' "$mounts" || return 1
+  fi
+  printf 'exam_bank_mode=%s\nexam_bank_pin=%s\n' "$bank_mode" "$configured_bank_pin"
   # The old 0022 runtime predates relative-path storage; the new runtime must use the covered root.
   if [[ "$migration_revision" != 0022 ]]; then
     [[ "$(compose_db exec -T api printenv SHUTONG_SCHOOL_EXAMS_DIR)" == /var/lib/shutong/attachments/school-exams ]] || {
@@ -104,6 +128,16 @@ REFSQL
   compose_db exec -T db sh -c 'exec psql -X -w -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' _ "$query"
 }
 refs_before="$(read_refs)"
+bank_pin="$(sed -n 's/^exam_bank_pin=//p' <<<"$api_before")"
+read_bank_refs() {
+  local query
+  query=$(cat <<'BANKSQL'
+SELECT COALESCE(json_agg(json_build_array(a.id,s.id,a.storage_key,a.sha256,a.byte_size,s.exam_year,s.subject,a.status,s.verified,s.title) ORDER BY a.id), '[]'::json) FROM public.source_documents s LEFT JOIN public.source_attachments a ON a.source_document_id=s.id WHERE s.source_class='official_exam' AND s.exam_year BETWEEN 2018 AND 2025
+BANKSQL
+)
+  compose_db exec -T db sh -c 'exec psql -X -w -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' _ "$query"
+}
+if [[ -n "$bank_pin" ]]; then bank_refs_before="$(read_bank_refs)"; fi
 # A consistent pg_dump snapshot (custom format) from the compose db service.
 docker compose --env-file "$ENV_FILE" -f compose.yaml exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$work/postgres.dump"
 test -s "$work/postgres.dump"
@@ -111,6 +145,9 @@ test -s "$work/postgres.dump"
 
 # A changing/unreadable attachment tree makes tar fail under set -e.
 tar czf "$work/attachments.tar.gz" -C "$attachments_dir" .
+if [[ -n "$bank_pin" ]]; then
+  printf '%s\n' "$bank_refs_before" | python3 "$bank_helper" capture "$bank_dir" "$work/exam-bank.tar.gz" "$bank_pin"
+fi
 [[ "$(read_revision)" == "$migration_revision" ]] || { echo 'REFUSED: database revision changed during joint backup' >&2; exit 1; }
 web_meta="$(python3 "$helper" archive "$repo_root/apps/web/dist" "$STATE_DIR/web-provenance.json" "$work/web-dist.tar.gz")"
 web_sha="$(sed -n 's/^web_source_git_sha=//p' <<<"$web_meta")"
@@ -124,14 +161,26 @@ printf 'timestamp_utc=%s\napp_revision=%s\nmigration_revision=%s\nattachments_in
   "$(date -u +%FT%TZ)" "$app_revision" "$migration_revision" "$attachments_included" "$attachment_count" > "$work/manifest.txt"
 
 {
-  printf 'artifact_format=2\n'
+  if [[ -n "$bank_pin" ]]; then
+    printf 'artifact_format=3\nexam_bank_manifest_sha256=%s\n' "$bank_pin"
+  else
+    printf 'artifact_format=2\n'
+  fi
   grep -E '^api_(git_sha|image_id)=' <<<"$api_before"
   printf '%s\n' "$web_meta"
 } >> "$work/manifest.txt"
-( cd "$work" && sha256sum postgres.dump attachments.tar.gz web-dist.tar.gz manifest.txt > SHA256SUMS )
+checksum_files=(postgres.dump attachments.tar.gz web-dist.tar.gz manifest.txt)
+if [[ -n "$bank_pin" ]]; then checksum_files+=(exam-bank.tar.gz); fi
+( cd "$work" && sha256sum "${checksum_files[@]}" > SHA256SUMS )
 python3 "$helper" verify "$work"
 [[ "$(read_refs)" == "$refs_before" ]] || { echo 'REFUSED: attachment references changed during backup' >&2; exit 1; }
+# Deliberately retain and verify all legacy copies until a separately authorized cleanup.
 printf '%s\n' "$refs_before" | python3 "$helper" refs "$work/attachments.tar.gz"
+if [[ -n "$bank_pin" ]]; then
+  [[ "$(read_bank_refs)" == "$bank_refs_before" ]] || { echo 'REFUSED: corpus database references changed' >&2; exit 1; }
+  printf '%s\n' "$bank_refs_before" | python3 "$bank_helper" verify "$work/exam-bank.tar.gz" "$bank_pin"
+  [[ "$(api_identity)" == "$api_before" ]] || { echo 'REFUSED: corpus API changed during backup' >&2; exit 1; }
+fi
 
 # Backup and verify the specific snapshot; destructive retention is separate maintenance.
 restic backup "$work" --tag shutong-foundation --json > "$work.restic.json"

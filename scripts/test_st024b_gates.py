@@ -57,6 +57,8 @@ case "$*" in
   *psql*school_paper_attachments*) printf '%s\n' "${TEST_REFS:-[]}" ;;
   *psql*) printf '%s\n' "${TEST_REV-0023}" ;;
   *pg_dump*) printf 'synthetic dump' ;;
+  *'python -c'*SHUTONG_EXAM_BANK_MANIFEST_SHA256*) printf '%s\n' "${TEST_LIVE_BANK_PIN:-}" ;;
+  *'python -c'*SHUTONG_EXAM_BANK_DIR*) printf '%s\n' "${TEST_LIVE_BANK_DIR:-}" ;;
   *printenv*SHUTONG_SCHOOL_EXAMS_DIR*) printf '%s\n' "${TEST_SCHOOL_ROOT:-/var/lib/shutong/attachments/school-exams}" ;;
   *printenv*) printf 'api-aaaaaaa\n' ;;
   *'ps -q api'*) printf 'aaaaaaaaaaaa\n' ;;

@@ -293,13 +293,16 @@ def validate_bundle(root):
     need(BASE_KEYS <= m.keys() and m['attachments_included']=='yes' and re.fullmatch('[0-9]+',m['attachment_count']), 'invalid base manifest')
     modern = 'artifact_format' in m
     if modern:
-        need(m['artifact_format']=='2' and set(m)==BASE_KEYS|WEB_KEYS|API_KEYS|{'artifact_format'}, 'invalid v2 manifest')
+        v3 = m['artifact_format']=='3'
+        extra = {'exam_bank_manifest_sha256'} if v3 else set()
+        need(m['artifact_format'] in ('2','3') and set(m)==BASE_KEYS|WEB_KEYS|API_KEYS|{'artifact_format'}|extra, 'invalid modern manifest')
         need(m['web_source_git_sha']==UNKNOWN or re.fullmatch('[0-9a-f]{40}',m['web_source_git_sha']), 'invalid Web source')
         need(m['api_git_sha']==UNKNOWN or re.fullmatch('[0-9a-f]{40}',m['api_git_sha']), 'invalid API source')
         need(m['api_image_id']==UNKNOWN or re.fullmatch('sha256:[0-9a-f]{64}',m['api_image_id']), 'invalid image ID')
         if m['api_git_sha']!=UNKNOWN:
             need(m['api_image_id']!=UNKNOWN and re.fullmatch('api-[0-9a-f]{7,40}',m['app_revision']) and m['api_git_sha'].startswith(m['app_revision'][4:]), 'inconsistent API identity')
         expected=BASE_FILES|{'manifest.txt','web-dist.tar.gz'}
+        if v3: expected=expected|{'exam-bank.tar.gz'}
     else:
         need(set(m)==BASE_KEYS and not (root/'web-dist.tar.gz').exists(), 'partial legacy manifest')
         expected=BASE_FILES
@@ -314,12 +317,15 @@ def validate_bundle(root):
     if modern:
         need(re.fullmatch('[0-9a-f]{64}',m['web_tree_sha256']) and re.fullmatch('[1-9][0-9]*',m['web_file_count']), 'invalid Web tree metadata')
         need(archive_digest(root/'web-dist.tar.gz')==(m['web_tree_sha256'],int(m['web_file_count'])),'archive tree mismatch')
+    if modern and v3:
+        from exam_bank_backup import validate_archive
+        validate_archive(root/'exam-bank.tar.gz',m['exam_bank_manifest_sha256'])
     return m
 
 
 def restore_web(root,dest):
     m=validate_bundle(root)
-    need(m.get('artifact_format')=='2','legacy snapshot has no Web artifact (UNVERIFIED)')
+    need(m.get('artifact_format') in ('2','3'),'legacy snapshot has no Web artifact (UNVERIFIED)')
     dest=safe(dest); need(not dest.exists() or (dest.is_dir() and not any(dest.iterdir())), 'restore destination must be empty')
     # Only private, current-user-owned parent, never the live dist or production path.
     parent=dest.parent; need(parent.is_dir() and parent.stat().st_uid==os.getuid() and stat.S_IMODE(parent.stat().st_mode)==0o700,'private 0700 parent required')
