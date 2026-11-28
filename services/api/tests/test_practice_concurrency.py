@@ -46,8 +46,11 @@ def postgres_engine():
 
 @pytest.fixture
 def practice_server(postgres_engine, monkeypatch):
-    token = f'test-only-{uuid4().hex}'
-    monkeypatch.setenv('SHUTONG_TOKEN', token)
+    admin_token = f'test-admin-{uuid4().hex}'
+    student_token = f'test-student-{uuid4().hex}'
+    monkeypatch.delenv('SHUTONG_TOKEN', raising=False)
+    monkeypatch.setenv('SHUTONG_ADMIN_TOKEN', admin_token)
+    monkeypatch.setenv('SHUTONG_STUDENT_TOKEN', student_token)
     def independent_session():
         with Session(postgres_engine) as session:
             yield session
@@ -64,7 +67,17 @@ def practice_server(postgres_engine, monkeypatch):
         while not server.started and thread.is_alive() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert server.started, '临时 HTTP 服务未启动'
-        yield base_url, {'Authorization': f'Bearer {token}'}
+        admin_headers = {'Authorization': f'Bearer {admin_token}'}
+        student_headers = {'Authorization': f'Bearer {student_token}'}
+        # Exercise the real authorization boundary before any race.
+        with httpx.Client(base_url=base_url, timeout=45, trust_env=False) as client:
+            denied = client.get('/api/practice/next?subject=math', headers=admin_headers)
+            assert denied.status_code == 403
+            denied = client.post('/api/admin/sources', headers=student_headers, json={
+                'title': '虚构测试数据：越权请求', 'subject': 'math',
+                'rights_status': 'personal_use_reviewed', 'verified': True})
+            assert denied.status_code == 403
+        yield base_url, admin_headers, student_headers
     finally:
         server.should_exit = True
         thread.join(timeout=10)
@@ -168,8 +181,8 @@ def print_evidence(round_label, mode, pids, statuses, rows):
 @pytest.mark.parametrize('synchronize', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_evaluation_first_exposure(postgres_engine, practice_server, synchronize, round_number):
     """evaluation 首曝竞争：每逻辑题至多一条 unseen 认定，抢曝失败者 404。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         for index in range(3):
             make_published_question(client, source_id, f'虚构测试数据：首曝竞争题 {index}')
@@ -177,7 +190,7 @@ def test_concurrent_evaluation_first_exposure(postgres_engine, practice_server, 
     def request(client, index):
         return client.get('/api/practice/next?subject=math&purpose=evaluation')
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_exposure_read, synchronize, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_exposure_read, synchronize, request)
 
     statuses = [response.status_code for _, response in results]
     assert all(status in (200, 404) for status in statuses), [
@@ -214,8 +227,8 @@ def test_concurrent_evaluation_first_exposure(postgres_engine, practice_server, 
 @pytest.mark.parametrize('synchronize', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_training_first_exposure(postgres_engine, practice_server, synchronize):
     """training 竞争：8 连发全部 200，复练合法，恰一条 unseen 首曝认定。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         question_id, _ = make_published_question(client, source_id, '虚构测试数据：training 竞争题')
     exposures_before = len(fetch_rows(postgres_engine, m.Exposure))
@@ -223,7 +236,7 @@ def test_concurrent_training_first_exposure(postgres_engine, practice_server, sy
     def request(client, index):
         return client.get('/api/practice/next?subject=math&purpose=training')
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_exposure_read, synchronize, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_exposure_read, synchronize, request)
 
     statuses = [response.status_code for _, response in results]
     assert statuses == [200] * WORKERS, [(response.status_code, response.text) for _, response in results]
@@ -248,11 +261,11 @@ def test_concurrent_training_first_exposure(postgres_engine, practice_server, sy
 @pytest.mark.parametrize('synchronize', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_same_key_same_payload(postgres_engine, practice_server, synchronize, round_number):
     """同键同载荷并发：恰一条 recorded，其余 already_recorded 返回同一持久行。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         make_published_question(client, source_id, '虚构测试数据：幂等竞争题')
-        exposure = client.get('/api/practice/next?subject=math&purpose=training').json()
+        exposure = client.get('/api/practice/next?subject=math&purpose=training', headers=student_headers).json()
         payload = {'client_attempt_id': 'race-key', 'exposure_id': exposure['exposure_id'],
                    'answer': 'B', 'hints_used': False}
 
@@ -264,7 +277,7 @@ def test_concurrent_same_key_same_payload(postgres_engine, practice_server, sync
     def request(client, index):
         return client.post('/api/practice/attempts', json=payload)
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_attempt_read, synchronize, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_attempt_read, synchronize, request)
 
     statuses = [response.status_code for _, response in results]
     assert statuses == [201] * WORKERS, [(response.status_code, response.text) for _, response in results]
@@ -292,18 +305,18 @@ def test_concurrent_same_key_same_payload(postgres_engine, practice_server, sync
 @pytest.mark.parametrize('synchronize', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_same_key_different_payloads(postgres_engine, practice_server, synchronize):
     """同键异载荷并发：恰一条 201，其余 409 幂等键冲突，只落一行。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         make_published_question(client, source_id, '虚构测试数据：同键异载荷竞争题')
-        exposure = client.get('/api/practice/next?subject=math&purpose=training').json()
+        exposure = client.get('/api/practice/next?subject=math&purpose=training', headers=student_headers).json()
         payload = {'client_attempt_id': 'race-key', 'exposure_id': exposure['exposure_id'],
                    'answer': 'B', 'hints_used': False}
 
     def request(client, index):
         return client.post('/api/practice/attempts', json={**payload, 'answer': str(index)})
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_attempt_read, synchronize, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_attempt_read, synchronize, request)
 
     statuses = [response.status_code for _, response in results]
     succeeded = [response for _, response in results if response.status_code == 201]
@@ -326,18 +339,18 @@ def test_concurrent_same_key_different_payloads(postgres_engine, practice_server
 @pytest.mark.parametrize('synchronize', [False, True], ids=['natural', 'colliding'])
 def test_concurrent_same_exposure_different_keys(postgres_engine, practice_server, synchronize):
     """同曝光异键并发：一个曝光只落一条作答，其余 409 曝光已提交。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         make_published_question(client, source_id, '虚构测试数据：同曝光异键竞争题')
-        exposure_id = client.get('/api/practice/next?subject=math&purpose=training').json()['exposure_id']
+        exposure_id = client.get('/api/practice/next?subject=math&purpose=training', headers=student_headers).json()['exposure_id']
 
     def request(client, index):
         return client.post('/api/practice/attempts', json={
             'client_attempt_id': f'k-{index}', 'exposure_id': exposure_id,
             'answer': 'B', 'hints_used': False})
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_attempt_read, synchronize, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_attempt_read, synchronize, request)
 
     statuses = [response.status_code for _, response in results]
     succeeded = [(index, response) for index, response in results if response.status_code == 201]
@@ -360,12 +373,12 @@ def test_concurrent_same_exposure_different_keys(postgres_engine, practice_serve
 
 def test_cross_version_seen_blocks_evaluation_concurrency(postgres_engine, practice_server):
     """跨版本已见：v1 练过并作答后发布 v2，evaluation 仍无可用题，不落新曝光。"""
-    base_url, headers = practice_server
-    with httpx.Client(base_url=base_url, headers=headers, timeout=45, trust_env=False) as client:
+    base_url, admin_headers, student_headers = practice_server
+    with httpx.Client(base_url=base_url, headers=admin_headers, timeout=45, trust_env=False) as client:
         source_id = make_source(client)
         _, v1_id = make_published_question(client, source_id, '虚构测试数据：跨版本已见原题')
-        exposure = client.get('/api/practice/next?subject=math&purpose=training').json()
-        attempt = client.post('/api/practice/attempts', json={
+        exposure = client.get('/api/practice/next?subject=math&purpose=training', headers=student_headers).json()
+        attempt = client.post('/api/practice/attempts', headers=student_headers, json={
             'exposure_id': exposure['exposure_id'], 'client_attempt_id': 'original-attempt', 'answer': 'B'})
         assert attempt.status_code == 201 and attempt.json()['earned_points'] == 2
         revision = client.post(f'/api/admin/questions/{v1_id}/revisions', json={
@@ -383,7 +396,7 @@ def test_cross_version_seen_blocks_evaluation_concurrency(postgres_engine, pract
     def request(client, index):
         return client.get('/api/practice/next?subject=math&purpose=evaluation')
 
-    pids, results = run_concurrent_race(postgres_engine, base_url, headers, is_exposure_read, False, request)
+    pids, results = run_concurrent_race(postgres_engine, base_url, student_headers, is_exposure_read, False, request)
 
     statuses = [response.status_code for _, response in results]
     assert statuses == [404] * WORKERS, [(response.status_code, response.text) for _, response in results]
