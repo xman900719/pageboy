@@ -86,6 +86,29 @@ def source_sha(repo):
     return revision
 
 
+def extract_committed_archive(archive, dest):
+    """Extract trusted Git source into an empty private build root, independent of umask."""
+    dest = safe(dest)
+    need(dest.is_dir() and not any(dest.iterdir()), 'nonempty source destination')
+    need(stat.S_IMODE(dest.stat().st_mode) & 0o077 == 0, 'source destination must be private')
+    members = archive.getmembers()
+    names = set()
+    for m in members:
+        name = name_ok(m.name)
+        need(name not in names and (m.isfile() or m.isdir()), 'source contains duplicate/link/special entry')
+        names.add(name)
+    archive.extractall(dest, members=members, filter='data')
+    # data filter intentionally discards directory modes; normalize only exported descendants.
+    for base, dirs, files_ in os.walk(dest):
+        for n in dirs:
+            p = Path(base)/n
+            need(not p.is_symlink() and p.is_dir(), 'unsafe source directory')
+            p.chmod(0o755)
+    for m in members:
+        if m.isfile():
+            regular(dest/m.name).chmod(0o755 if m.mode & 0o111 else 0o644)
+
+
 def export_source(repo, revision, dest):
     need(source_sha(repo) == revision, 'source SHA mismatch')
     # git archive exports only committed files; no ignored .env, node_modules or dist.
@@ -93,9 +116,7 @@ def export_source(repo, revision, dest):
         subprocess.run(['git','-C',str(repo),'archive','--format=tar',revision], stdout=f, check=True)
         f.seek(0)
         with tarfile.open(fileobj=f, mode='r:') as t:
-            for m in t:
-                need(m.isfile() or m.isdir(), 'source contains link or special file')
-            t.extractall(dest, filter='data')
+            extract_committed_archive(t, dest)
 
 
 def build_web(repo, state):
@@ -107,7 +128,7 @@ def build_web(repo, state):
     need(not dist.exists() or dist.is_dir(), 'invalid live Web dir')
     # Existing build is left untouched until the new clean build is complete.
     with tempfile.TemporaryDirectory(prefix='.c5-web-', dir=state) as d:
-        work = Path(d); src = work/'source'; src.mkdir()
+        work = Path(d); src = work/'source'; src.mkdir(mode=0o700)
         export_source(repo, revision, src)
         home = work/'home'; home.mkdir()
         env = {'PATH':os.environ.get('PATH',os.defpath),'HOME':str(home),'LANG':'C.UTF-8',

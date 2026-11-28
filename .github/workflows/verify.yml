@@ -93,6 +93,30 @@ jobs:
           python -m alembic downgrade 0004
           python -m alembic upgrade head
           python -m alembic check
+      - name: API image migration graph under private build umask and non-root UID
+        run: |
+          umask 077
+          context=$(mktemp -d "$RUNNER_TEMP/pageboy-api.XXXXXX")
+          revision=$(git rev-parse HEAD)
+          python scripts/web_artifact_provenance.py export "$PWD" "$revision" "$context"
+          # Independent defense: deliberately recreate the incident mode before Docker COPY.
+          chmod 0700 "$context/services/api/alembic/versions"
+          docker build --build-arg "SHUTONG_GIT_SHA=$revision" -t pageboy-ci-api:permission-gate -f "$context/infra/Dockerfile.api" "$context"
+          image=$(docker image inspect --format '{{.Id}}' pageboy-ci-api:permission-gate)
+          python scripts/check_api_image_migrations.py "$PWD" "$image" 10001:10001
+          python scripts/check_api_image_migrations.py "$PWD" "$image" 1001:1001
+          # Synthetic DB dedicated to this CI job; never production.
+          python -c "import psycopg; c=psycopg.connect('postgresql://pageboy_ci:pageboy_ci@127.0.0.1:5432/pageboy_ci', autocommit=True); c.execute('CREATE DATABASE pageboy_ci_image'); c.close()"
+          export DATABASE_URL='postgresql+psycopg://pageboy_ci:pageboy_ci@127.0.0.1:5432/pageboy_ci_image'
+          migrate() { docker run --rm --pull=never --network host --user 1001:1001 --env SHUTONG_ENV=prod --env PYTHONDONTWRITEBYTECODE=1 --env DATABASE_URL --entrypoint alembic "$image" "$@"; }
+          migrate upgrade 0022
+          migrate current
+          migrate upgrade 0023
+          migrate current
+          migrate upgrade head
+          migrate check
+          migrate upgrade head
+          echo CI_NONROOT_TCP_MIGRATION_OK
   web-e2e:
     # 用户旅程（Playwright chromium）：双 webServer 自管端口 18765/5173，无需外部服务。
     runs-on: ubuntu-latest
