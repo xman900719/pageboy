@@ -63,3 +63,7 @@ infra/rollback.sh api-1a2b3c4   # 显式回滚到指定本地镜像标签
 `deploy.sh` 的 API 构建从干净 Git 提交导出构建上下文，镜像记录完整 OCI revision；启动后核验运行镜像 ID。`--allow-dirty` 不再允许，`--no-build` 仅接受与当前干净 HEAD 相符的镜像；历史版本另走授权回滚。`--web` 从同一干净提交的独立导出树运行 `npm ci`、`npm run build`，再更新 dist 和本地 `.local/web-provenance.json`；失败不写入虚假的成功记录。构建需要 Python 3.11+（tarfile data filter）、flock、Git、Node/npm、Docker，首次构建使用独立 npm 缓存，网络受限时会失败停止。
 
 旧 Web 没有来源记录时，先备份原始可用产物并标为 UNVERIFIED，不回填。`rollback.sh` 仍为 API-only，C5 不提供生产原子 API/Web 切换或自动 DB 降级；需按恢复手册确认配对与兼容性。Web 目录更新与 API 切换不是跨服务原子事务。正式生产发布另行授权，C5 不执行。
+
+## ST-024-D4 本机校考存储（候选）
+
+本机 Compose 将 `SHUTONG_SCHOOL_EXAMS_DIR` 显式设为附件持久化挂载内部的 `school-exams/`。宿主物理位置为 `${SHUTONG_ATTACHMENTS_DIR}/school-exams`（默认 `production/data/attachments/school-exams`），开发环境默认目录不变；界面逻辑目录描述不代表宿主实际挂载路径。发布前确认旧外部目录没有待迁移文件，并验证运行容器实际根、容器替换和归档恢复。详见 [备份策略](backup-policy.md)。

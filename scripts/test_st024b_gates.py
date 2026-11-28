@@ -54,8 +54,10 @@ class BackupGate(unittest.TestCase):
                         RESTIC_REPOSITORY="mock", RESTIC_PASSWORD_FILE="mock", HEALTHCHECKS_PING_URL="mock")
         self.fake("docker", """echo docker >> "$TEST_LOG"
 case "$*" in
+  *psql*school_paper_attachments*) printf '%s\n' "${TEST_REFS:-[]}" ;;
   *psql*) printf '%s\n' "${TEST_REV-0023}" ;;
   *pg_dump*) printf 'synthetic dump' ;;
+  *printenv*SHUTONG_SCHOOL_EXAMS_DIR*) printf '%s\n' "${TEST_SCHOOL_ROOT:-/var/lib/shutong/attachments/school-exams}" ;;
   *printenv*) printf 'api-aaaaaaa\n' ;;
   *'ps -q api'*) printf 'aaaaaaaaaaaa\n' ;;
   *'.Mounts'*) printf '[{"Type":"bind","Source":"%s","Destination":"/var/lib/shutong/attachments"}]\n' "${TEST_MOUNT:-$ATTACHMENTS_DIR}" ;;
@@ -114,6 +116,16 @@ esac""")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("attachment mount differs", r.stderr)
         self.assertNotIn("restic", self.calls())
+    def test_school_archive_outside_mount_refused(self):
+        r = self.run_backup(TEST_SCHOOL_ROOT='/wrong')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn('restic', self.calls())
+    def test_missing_relative_reference_refused(self):
+        import json
+        refs=json.dumps([['a'*32,'b'*64,1,'missing.pdf']])
+        r=self.run_backup(TEST_REFS=refs)
+        self.assertNotEqual(r.returncode,0)
+        self.assertNotIn('restic',self.calls())
     def test_remote_stub_success(self):
         r = self.run_backup()
         self.assertEqual(r.returncode, 0, r.stderr)

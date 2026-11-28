@@ -41,3 +41,9 @@
 - 新格式 `artifact_format=2`：除 DB dump、附件 tar、manifest 与 SHA256SUMS 外，纳入 `web-dist.tar.gz`；清单同时覆盖 dump、附件、Web tar、manifest 四项。文件树摘要按 UTF-8 相对路径排序，逐项计算 `path + NUL + sha256 + LF` 的 SHA256，并记录文件数。
 - API 来源来自运行容器的实际 image ID、部署标签、镜像标签及构建时 OCI revision 的交叉核验；完整 SHA 必须是本地已有的 Git commit。旧镜像缺 OCI revision 时为 UNVERIFIED，不推断完整 SHA。Web 来源来自干净提交导出的构建流程，缺旧记录时仍归档实际 dist，但来源为 UNVERIFIED；已有记录与实际文件树不符、归档不完整或身份不一致则失败，不发成功心跳。
 - deploy、backup、rollback 共享本地工件锁；不能替代 DB 与附件协调停写、独立备份、全机恢复及镜像保留策略。仅归档 API 镜像身份，不归档镜像本体，不承诺相同镜像可重建。C5 不修改本策略的 RPO/RTO 或保留目标，不执行生产备份。
+
+## ST-024-D4 校考原件覆盖（候选）
+
+- 本机生产容器的校考根固定为 `/var/lib/shutong/attachments/school-exams`，对应现有附件 bind mount 的 `school-exams/` 子目录；旧平面 storage_key 文件不搬迁。`attachments.tar.gz` 同时包含两种路径，v2 五工件及清单格式不变。
+- 备份校验运行容器真实附件 bind mount、拒绝其内部额外挂载；0023 及后续运行版本必须使用上述校考根。对五类 DB 文件引用，按 `relative_path` 或旧 `storage_key` 核对归档内文件的字节数与 SHA-256；采集前后引用变化则拒绝发布成功心跳。此检查仍不能代替跨存储协调停写。
+- 恢复旧快照时保留旧平面路径；新快照须保留 `school-exams/` 子树，不得扁平化。旧生产外部校考目录如有文件，发布前需单独评估，禁止静默迁移或忽略。

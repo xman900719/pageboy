@@ -216,11 +216,45 @@ def validate_attachments(archive, expected_count):
     need(sum(entries.values()) == expected_count, 'attachment count mismatch')
 
 
+def verify_attachment_refs(archive, refs):
+    """Verify each DB file reference against bytes in the captured tar, without extraction."""
+    need(isinstance(refs, list), 'invalid attachment references')
+    expected = {}
+    for row in refs:
+        need(isinstance(row, list) and len(row) == 4, 'invalid attachment reference')
+        key, digest, size, rel = row
+        need(isinstance(key, str) and re.fullmatch('[0-9a-f]{32}', key)
+             and isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest)
+             and type(size) is int and size >= 0 and (rel is None or isinstance(rel, str)), 'invalid attachment metadata')
+        if rel and rel.strip():
+            name = 'school-exams/' + name_ok(rel.strip())
+        else:
+            name = key
+        need(name not in expected or expected[name] == (digest, size), 'conflicting attachment references')
+        expected[name] = (digest, size)
+    found = set()
+    with tarfile.open(regular(archive), 'r:gz') as t:
+        for m in t:
+            name = m.name[2:] if m.name.startswith('./') else m.name
+            if name not in expected:
+                continue
+            need(m.isfile() and name not in found, 'invalid referenced attachment entry')
+            h = hashlib.sha256()
+            with t.extractfile(m) as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                    h.update(chunk)
+            need((h.hexdigest(), m.size) == expected[name], 'referenced attachment content mismatch')
+            found.add(name)
+    need(found == set(expected), 'referenced attachment missing from archive')
+    return len(refs)
+
+
 def verify_mount(raw, directory):
     mounts = json.loads(raw)
     need(isinstance(mounts, list), 'invalid container mounts')
     matches = [m for m in mounts if m.get('Destination') == '/var/lib/shutong/attachments']
     need(len(matches) == 1 and matches[0].get('Type') == 'bind', 'attachment bind mount missing or ambiguous')
+    need(not any(str(m.get('Destination', '')).startswith('/var/lib/shutong/attachments/') for m in mounts), 'nested attachment mount escapes backup root')
     source = matches[0].get('Source', '')
     need(isinstance(source, str) and os.path.isabs(source) and os.path.realpath(source) == os.path.realpath(directory), 'attachment mount differs from backup root')
 
@@ -283,7 +317,7 @@ def restore_web(root,dest):
 
 def main():
     p=argparse.ArgumentParser(); s=p.add_subparsers(dest='cmd',required=True)
-    for cmd,args in [('build',('repo','state')),('export',('repo','revision','dest')),('archive',('dist','record','archive')),('restore',('root','dest')),('verify',('root',)),('api',('tag','deployed','config_image','running_id','tagged_id','label')),('mount',('raw','directory'))]:
+    for cmd,args in [('build',('repo','state')),('export',('repo','revision','dest')),('archive',('dist','record','archive')),('restore',('root','dest')),('verify',('root',)),('refs',('archive',)),('api',('tag','deployed','config_image','running_id','tagged_id','label')),('mount',('raw','directory'))]:
         sub=s.add_parser(cmd)
         for arg in args: sub.add_argument(arg)
     a=p.parse_args(); d=vars(a); cmd=d.pop('cmd')
@@ -293,6 +327,9 @@ def main():
         if cmd=='archive': result=archive_tree(Path(a.dist),Path(a.record),Path(a.archive))
         elif cmd=='restore': restore_web(Path(a.root),Path(a.dest)); return
         elif cmd=='verify': validate_bundle(Path(a.root)); print('BUNDLE_CHECK_OK'); return
+        elif cmd=='refs':
+            import sys
+            print('ATTACHMENT_REFS_OK='+str(verify_attachment_refs(Path(a.archive),json.load(sys.stdin)))); return
         elif cmd=='mount': verify_mount(a.raw,a.directory); return
         else: result=api_identity(**d)
         for k,v in result.items(): print(f'{k}={v}')
