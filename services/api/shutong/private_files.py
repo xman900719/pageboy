@@ -270,8 +270,63 @@ def write_blob(data):
 _ORIGINAL_WRITE_BLOB = write_blob
 
 
+def _exam_bank_read_path(attachment):
+    """Opt-in, pinned environment-specific manifest; never fall back for a mapped original."""
+    import json
+    from .home import normalize_environment, get_env_home
+
+    pin = os.getenv("SHUTONG_EXAM_BANK_MANIFEST_SHA256", "")
+    if not pin or not getattr(attachment, "source_document_id", None):
+        return None
+    try:
+        environment = normalize_environment()
+        if not re.fullmatch(r"[0-9a-f]{64}", pin):
+            raise ValueError("invalid corpus configuration")
+        if environment == "development":
+            root = get_env_home(require_identity=True) / "data" / "exam_bank_2018_2025"
+        else:
+            # Explicit container mount, never infer a host development path.
+            configured = os.getenv("SHUTONG_EXAM_BANK_DIR", "")
+            root = Path(configured)
+            if not configured or not root.is_absolute() or root != private_root().parent / "exam_bank_2018_2025":
+                raise ValueError("invalid production corpus mount")
+        manifest = root / "manifest.json"
+        if root.resolve() != root or manifest.resolve() != manifest or not manifest.is_file():
+            raise ValueError("invalid manifest path")
+        raw = manifest.read_bytes()
+        if sha256(raw).hexdigest() != pin:
+            raise ValueError("manifest digest mismatch")
+        document = json.loads(raw)
+        if environment == "production" and document.get("environment") != "production":
+            raise ValueError("manifest environment mismatch")
+        entries = document["entries"]
+        if not isinstance(entries, list):
+            raise ValueError("invalid entries")
+        matches = [e for e in entries if e["attachment_id"] == attachment.id or e["storage_key"] == attachment.storage_key]
+        if not matches:
+            return None  # attachments outside this pinned historical corpus
+        if len(matches) != 1:
+            raise ValueError("ambiguous attachment")
+        e = matches[0]
+        if (e["attachment_id"], e["source_document_id"], e["storage_key"], e["sha256"], e["bytes"]) != (
+            attachment.id, attachment.source_document_id, attachment.storage_key, attachment.sha256, attachment.byte_size
+        ):
+            raise ValueError("attachment identity mismatch")
+        key = attachment.storage_key
+        if not re.fullmatch(r"[0-9a-f]{32}", key) or not re.fullmatch(
+            r"(?:201[89]|202[0-5])/(?:chinese|english|math|physics)/raw/" + key + r"\.docx", e["raw"]
+        ):
+            raise ValueError("invalid corpus path")
+        path = root / e["raw"]
+        if path.resolve() != path or not path.is_file():
+            raise ValueError("corpus original unavailable")
+        return path
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError):
+        raise HTTPException(409, detail="EXAM_BANK_STORAGE_INVALID") from None
+
+
 def load_blob(attachment):
-    path = attachment_file_path(attachment)
+    path = _exam_bank_read_path(attachment) or attachment_file_path(attachment)
     if path.is_symlink():
         raise HTTPException(409, detail="INVALID_STORAGE_KEY")
     try:

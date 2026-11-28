@@ -22,9 +22,18 @@ services:
       SHUTONG_STANDARDS_DIR: /app/private-data/curriculum_standards
       # Keep the school archive under the existing persistent, backed-up bind mount.
       SHUTONG_SCHOOL_EXAMS_DIR: /var/lib/shutong/attachments/school-exams
+      SHUTONG_EXAM_BANK_DIR: /var/lib/shutong/exam_bank_2018_2025
+      SHUTONG_EXAM_BANK_MANIFEST_SHA256: ${SHUTONG_EXAM_BANK_MANIFEST_SHA256:-}
     volumes:
       # 附件宿主 bind mount（backup.sh 需在宿主直接 tar）。
       - ${SHUTONG_ATTACHMENTS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/attachments}:/var/lib/shutong/attachments
+      # Historical corpus is a separate host directory; backup must cover this mount before activation.
+      - type: bind
+        source: ${SHUTONG_EXAM_BANK_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/exam_bank_2018_2025}
+        target: /var/lib/shutong/exam_bank_2018_2025
+        read_only: true
+        bind:
+          create_host_path: false
       # 官方课标 PDF 原件只读挂载（知识库版本发布 SHA256 强校验门禁依赖）
       - ${SHUTONG_STANDARDS_DIR:-/media/xc/backup_ext4/pageboy-home/production/data/curriculum_standards}:/app/private-data/curriculum_standards:ro
   cloudflared:
